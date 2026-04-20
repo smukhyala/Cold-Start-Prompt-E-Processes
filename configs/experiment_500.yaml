@@ -1,0 +1,54 @@
+trial:
+  name: experiment_500
+  seed: 42
+  num_tasks: 500
+  num_trials: 3
+  paired_streams: true
+  max_agent_steps: 30
+  output_dir: logs/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_initial.yaml
+
+model:
+  type: anthropic
+  id: claude-opus-4-7
+  max_tokens: 1024
+  temperature: 0.0
+  prompt_cache: true
+
+task_source:
+  type: toy
+  params:
+    arm_probs:
+      baseline: 0.35
+      planner: 0.55
+      cautious: 0.50
+      explorer: 0.40
+      balanced: 0.60
+      overthinker: 0.30
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    type: hedged_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    params: { combine: product }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: spruce
+  params: { exploration_c: 1.0 }
+  warmstart: { min_pulls_per_arm: 5 }
+
+logging:
+  level: INFO
+  jsonl: true

@@ -1,0 +1,19 @@
+arms:
+  - arm_id: baseline
+    name: Baseline
+    vector: {planning: 0, verification: 0, agency: 0, expertise: 1, format: 0, goal: 0}
+  - arm_id: planner
+    name: Planner
+    vector: {planning: 3, verification: 1, agency: 1, expertise: 2, format: 2, goal: 1}
+  - arm_id: cautious
+    name: Cautious
+    vector: {planning: 2, verification: 3, agency: 0, expertise: 2, format: 2, goal: 2}
+  - arm_id: explorer
+    name: Explorer
+    vector: {planning: 1, verification: 0, agency: 2, expertise: 2, format: 0, goal: 0}
+  - arm_id: balanced
+    name: Balanced
+    vector: {planning: 2, verification: 2, agency: 1, expertise: 2, format: 1, goal: 1}
+  - arm_id: overthinker
+    name: Overthinker
+    vector: {planning: 3, verification: 3, agency: 1, expertise: 3, format: 3, goal: 2}

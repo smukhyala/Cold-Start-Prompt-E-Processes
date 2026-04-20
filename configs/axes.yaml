@@ -1,0 +1,25 @@
+axes:
+  planning:
+    max: 3
+    weight: 1.0
+    labels: [none, implicit, step-by-step, plan-then-act]
+  verification:
+    max: 3
+    weight: 1.0
+    labels: [none, light, final, every-step]
+  agency:
+    max: 2
+    weight: 1.0
+    labels: [reactive, moderate, proactive]
+  expertise:
+    max: 3
+    weight: 1.0
+    labels: [junior, mid, senior, domain-expert]
+  format:
+    max: 3
+    weight: 1.0
+    labels: [paragraph, light, strict, algorithmic]
+  goal:
+    max: 2
+    weight: 1.0
+    labels: [outcome, process-aware, constraint-aware]

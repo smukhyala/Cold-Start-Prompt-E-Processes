@@ -1,0 +1,54 @@
+trial:
+  name: pilot_toy
+  seed: 1
+  num_tasks: 200
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 20
+  output_dir: logs/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_initial.yaml
+
+model:
+  type: mock
+  id: mock
+  max_tokens: 64
+  temperature: 0.0
+  prompt_cache: false
+
+task_source:
+  type: toy
+  params:
+    arm_probs:
+      baseline: 0.35
+      planner: 0.60
+      cautious: 0.50
+      explorer: 0.40
+      balanced: 0.55
+      overthinker: 0.30
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    type: hedged_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    params: { combine: product }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: spruce
+  params: { exploration_c: 1.0 }
+  warmstart: { min_pulls_per_arm: 5 }
+
+logging:
+  level: INFO
+  jsonl: true

@@ -27,7 +27,7 @@ class AnthropicClient(ModelClient):
         self,
         id: str = "claude-opus-4-7",
         max_tokens: int = 1024,
-        temperature: float = 0.0,
+        temperature: float | None = None,
         prompt_cache: bool = True,
         max_retries: int = 5,
         initial_backoff_s: float = 1.0,
@@ -63,10 +63,11 @@ class AnthropicClient(ModelClient):
         kwargs: dict[str, Any] = {
             "model": self.model_id,
             "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
             "system": system_blocks,
             "messages": messages,
         }
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
         if tools:
             kwargs["tools"] = tools
         kwargs.update(self.extra_params)

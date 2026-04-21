@@ -6,6 +6,10 @@ component so the orchestrator can look them up by name.
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # models
 from cold_start import models  # noqa: F401
 from cold_start.models import mock_client as _mock  # noqa: F401
@@ -18,6 +22,7 @@ except Exception:  # pragma: no cover
 # task sources
 from cold_start.tasks import toy as _toy  # noqa: F401
 from cold_start.tasks import webarena as _wa  # noqa: F401
+from cold_start.tasks import sanity as _sanity  # noqa: F401
 
 # rewards
 from cold_start.rewards import binary as _binary  # noqa: F401

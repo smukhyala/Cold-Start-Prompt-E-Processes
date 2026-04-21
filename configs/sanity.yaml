@@ -1,0 +1,48 @@
+trial:
+  name: sanity
+  seed: 1
+  num_tasks: 30
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 2
+  output_dir: logs/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_initial.yaml
+
+model:
+  type: anthropic
+  id: claude-opus-4-7
+  max_tokens: 256
+  temperature: null
+  prompt_cache: true
+
+task_source:
+  type: sanity
+  params:
+    axes_path: configs/axes.yaml
+    template_path: configs/template.jinja
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    type: hedged_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    params: { combine: product }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: uniform
+  params: {}
+
+logging:
+  level: INFO
+  jsonl: true

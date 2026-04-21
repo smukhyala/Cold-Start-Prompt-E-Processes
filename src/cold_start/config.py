@@ -52,7 +52,7 @@ class ModelSpec(BaseModel):
     type: str = "anthropic"
     id: str = "claude-opus-4-7"
     max_tokens: int = 1024
-    temperature: float = 0.0
+    temperature: float | None = None
     prompt_cache: bool = True
     params: dict[str, Any] = Field(default_factory=dict)
 

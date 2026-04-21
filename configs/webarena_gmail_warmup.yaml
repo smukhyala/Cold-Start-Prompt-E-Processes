@@ -1,0 +1,57 @@
+trial:
+  name: webarena_gmail_warmup
+  seed: 1
+  num_tasks: 12
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 30
+  output_dir: logs/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_initial.yaml
+
+model:
+  type: anthropic
+  id: claude-opus-4-7
+  max_tokens: 256
+  temperature: null
+  prompt_cache: true
+
+task_source:
+  type: webarena
+  params:
+    web_app: apps/gmail
+    task_suite: real-tasks
+    port: 8001
+    sample_mode: cycle
+    use_vision: false
+    headless: true
+    timeout_s: 300
+    llm_model: claude-sonnet-4-6
+    artifacts_dir: logs/webarena
+    axes_path: configs/axes.yaml
+    template_path: configs/template.jinja
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    type: hedged_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    params: { combine: product }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: uniform
+  params: {}
+
+logging:
+  level: INFO
+  jsonl: true

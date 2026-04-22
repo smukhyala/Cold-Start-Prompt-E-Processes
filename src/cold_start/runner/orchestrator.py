@@ -13,6 +13,7 @@ Flow (per trial):
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,13 @@ from cold_start.tasks.base import AgentRunner, EnvironmentAdapter
 from cold_start.types import Arm, PerArmState
 
 
-def run_trial(cfg: RunConfig, trial_idx: int = 0, log_dir: str | Path | None = None) -> Path:
+def run_trial(
+    cfg: RunConfig,
+    trial_idx: int = 0,
+    log_dir: str | Path | None = None,
+    resume_from: str | Path | None = None,
+    start_at: int = 1,
+) -> Path:
     logger = setup_console_logger(cfg.logging.level)
     rng = make_rng(cfg.trial.seed + trial_idx)
 
@@ -71,16 +78,47 @@ def run_trial(cfg: RunConfig, trial_idx: int = 0, log_dir: str | Path | None = N
     per_arm_summary = {a.arm_id: PerArmState() for a in arms}
 
     out_dir = Path(log_dir) if log_dir else Path(cfg.trial.output_dir)
-    rid = run_id(cfg.trial.name, trial_idx)
+    if resume_from is not None:
+        # Inherit the original run_id so the UI and analysis group the
+        # continuation with its origin by shared base_id.
+        origin = _read_first_record(Path(resume_from))
+        base_rid = str(origin.get("run_id", "")) if origin else ""
+        if not base_rid:
+            base_rid = run_id(cfg.trial.name, trial_idx)
+        # Strip any prior _resume_from_N suffix so chained resumes still merge.
+        base_rid = base_rid.split("_resume_from_")[0]
+        rid = f"{base_rid}_resume_from_{start_at}"
+    else:
+        rid = run_id(cfg.trial.name, trial_idx)
     log_path = out_dir / f"{rid}.jsonl"
     cfg_hash = cfg.hash()
 
     arms_by_id: dict[str, Arm] = {a.arm_id: a for a in arms}
 
-    logger.info(f"trial {rid}: T={cfg.trial.num_tasks}, arms={len(arms)}, policy={cfg.policy.type}")
+    if resume_from is not None:
+        resume_path = Path(resume_from)
+        replayed = _replay_state(
+            resume_path,
+            start_at=start_at,
+            arms_by_id=arms_by_id,
+            per_arm_e=per_arm_e,
+            per_arm_cs=per_arm_cs,
+            per_arm_summary=per_arm_summary,
+            state=state,
+            policy=policy,
+        )
+        logger.info(
+            f"resumed from {resume_path.name}: replayed {replayed} records, "
+            f"starting at t={start_at}"
+        )
+
+    logger.info(
+        f"trial {rid}: T={cfg.trial.num_tasks}, arms={len(arms)}, "
+        f"policy={cfg.policy.type}, start_at={start_at}"
+    )
 
     with JSONLWriter(log_path) as writer:
-        for t in range(1, cfg.trial.num_tasks + 1):
+        for t in range(start_at, cfg.trial.num_tasks + 1):
             task = env.sample_task(t)
             arm_id = policy.next_arm(t, state)
             arm = arms_by_id[arm_id]
@@ -184,6 +222,63 @@ def _build_model(cfg: RunConfig) -> ModelClient:
     if cfg.model.type != "anthropic":
         params = cfg.model.params or {}
     return cls(**params)
+
+
+def _read_first_record(p: Path) -> dict[str, Any] | None:
+    with p.open() as f:
+        for line in f:
+            if line.strip():
+                return json.loads(line)
+    return None
+
+
+def _replay_state(
+    resume_path: Path,
+    start_at: int,
+    arms_by_id: dict[str, Arm],
+    per_arm_e: dict[str, Any],
+    per_arm_cs: dict[str, Any],
+    per_arm_summary: dict[str, PerArmState],
+    state: PolicyState,
+    policy: SamplingPolicy,
+) -> int:
+    """Replay prior (arm_id, reward) tuples into per-arm e-processes, confidence
+    sequences, and policy state. Only records with t < start_at are consumed.
+
+    The policy's RNG is NOT advanced to match the original run — resume drops
+    the stream of arm choices that *would have been* made. For uniform or
+    memoryless policies this is harmless; for policies with path-dependent
+    sampling (Thompson, SPRUCE with state) the resumed trajectory diverges.
+    """
+    count = 0
+    for line in resume_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        t = int(rec["t"])
+        if t >= start_at:
+            continue
+        arm_id = rec["arm_id"]
+        if arm_id not in arms_by_id:
+            raise ValueError(
+                f"resume record t={t} references unknown arm {arm_id!r}; "
+                f"arms.yaml may have changed since the original run"
+            )
+        reward = float(rec["reward"])
+        log_e = per_arm_e[arm_id].update(reward)
+        cs_lo, cs_hi = per_arm_cs[arm_id].update(reward)
+        log_e_up = getattr(per_arm_e[arm_id], "log_e_upper", log_e)
+
+        per_arm_summary[arm_id].pulls += 1
+        per_arm_summary[arm_id].successes += int(reward >= 0.5)
+        per_arm_summary[arm_id].log_e = log_e
+        per_arm_summary[arm_id].cs_lo = cs_lo
+        per_arm_summary[arm_id].cs_hi = cs_hi
+
+        state.record(arm_id, reward, log_e, log_e_upper=log_e_up)
+        policy.update(arm_id, reward, info={"steps": int(rec.get("steps", 0))})
+        count += 1
+    return count
 
 
 def _make_runner(client: ModelClient, max_steps: int) -> AgentRunner:

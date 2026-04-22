@@ -41,11 +41,17 @@ webarena = [
     "Pillow>=10.0",
     "requests>=2.31",
 ]
+# Streamlit UI for browsing runs, results, and traces.
+viz = [
+    "streamlit>=1.30",
+    "plotly>=5.20",
+]
 
 [project.scripts]
 cold-start-run = "cold_start.cli.run:main"
 cold-start-report = "cold_start.cli.report:main"
 cold-start-smoke = "cold_start.cli.smoke:main"
+cold-start-viz = "cold_start.viz.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

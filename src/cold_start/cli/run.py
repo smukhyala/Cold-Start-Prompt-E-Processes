@@ -16,7 +16,25 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=None, help="Override trial.seed")
     parser.add_argument("--trials", type=int, default=None, help="Override trial.num_trials")
     parser.add_argument("--out", type=Path, default=None, help="Override output directory")
+    parser.add_argument(
+        "--resume-from",
+        type=Path,
+        default=None,
+        help="Path to a prior run's JSONL. Its records at t < --start-at are replayed "
+        "into e-process/policy state; the run continues from --start-at.",
+    )
+    parser.add_argument(
+        "--start-at",
+        type=int,
+        default=1,
+        help="First task index to execute (1-indexed). Used with --resume-from.",
+    )
     args = parser.parse_args()
+
+    if args.resume_from is not None and args.start_at <= 1:
+        parser.error("--resume-from requires --start-at >= 2")
+    if args.resume_from is None and args.start_at != 1:
+        parser.error("--start-at > 1 requires --resume-from")
 
     cfg = load_config(args.config)
     if args.seed is not None:
@@ -24,9 +42,21 @@ def main() -> None:
     if args.trials is not None:
         cfg.trial.num_trials = args.trials
 
+    if args.resume_from is not None and cfg.trial.num_trials != 1:
+        parser.error(
+            f"--resume-from only supports num_trials=1 (got {cfg.trial.num_trials}); "
+            "resume is per-trial"
+        )
+
     paths = []
     for i in range(cfg.trial.num_trials):
-        p = run_trial(cfg, trial_idx=i, log_dir=args.out or cfg.trial.output_dir)
+        p = run_trial(
+            cfg,
+            trial_idx=i,
+            log_dir=args.out or cfg.trial.output_dir,
+            resume_from=args.resume_from,
+            start_at=args.start_at,
+        )
         paths.append(p)
     for p in paths:
         print(p)

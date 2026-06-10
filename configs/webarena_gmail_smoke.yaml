@@ -1,10 +1,15 @@
+# Tiny smoke config: 4 tasks against the live Gmail app with Claude Opus 4.7,
+# uniform allocation across the 12-arm catalog. Used to verify the WebArena
+# pipeline (server subprocess + browser-use + Anthropic) end-to-end without
+# committing to a full 60-task run.
+
 trial:
-  name: webarena_gmail
+  name: webarena_gmail_smoke
   seed: 1
-  num_tasks: 60
+  num_tasks: 4
   num_trials: 1
   paired_streams: true
-  max_agent_steps: 30
+  max_agent_steps: 15
   output_dir: logs/
 
 prompts:
@@ -12,9 +17,8 @@ prompts:
   template: configs/template.jinja
   arms: configs/arms_initial.yaml
 
-# The model: block is unused by the webarena adapter (the adapter drives its
-# own LLM via browser-use). Kept here because the orchestrator still builds a
-# text-only runner that gets passed through unused.
+# Unused by the webarena adapter (browser-use drives its own LLM). Kept here so
+# the orchestrator's text-only runner has a coherent (unused) configuration.
 model:
   type: anthropic
   id: claude-opus-4-7
@@ -32,11 +36,8 @@ task_source:
     use_vision: false
     headless: true
     timeout_s: 180
-    # Per Mukhyala & Waudby-Smith (2026) § 3.7: "we will use Claude Opus 4.7
-    # Max for all testing" to minimize model variance and isolate prompt-policy
-    # behavior. Override at the CLI if a cheaper Sonnet sweep is desired.
     llm_model: claude-opus-4-7
-    artifacts_dir: logs/webarena
+    artifacts_dir: logs/webarena_smoke
     axes_path: configs/axes.yaml
     template_path: configs/template.jinja
 
@@ -45,11 +46,11 @@ reward:
 
 inference:
   per_arm:
-    type: hedged_capital
+    type: upward_capital
     params: { m0: 0.5 }
   global:
     type: global_null
-    params: { combine: product }
+    params: { combine: linear_mixture }
   confidence_sequence:
     alpha: 0.05
     grid_size: 64

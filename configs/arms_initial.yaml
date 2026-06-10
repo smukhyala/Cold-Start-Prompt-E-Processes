@@ -1,4 +1,21 @@
+# Cold-start arm catalog.
+#
+# Each arm is one point in the six-axis prompt space (Mukhyala & Waudby-Smith
+# § 3.2). The catalog is chosen so the arms span diverse regions across all
+# six axes — paper § 3.7 motivates selecting "arms that differ substantially
+# along the prompt dimensions" to increase the chance of observing meaningful
+# behavioral variation while keeping the search space manageable.
+#
+# Axis ranges (see configs/axes.yaml):
+#   planning      0..3   (none / implicit / step-by-step / plan-then-act)
+#   verification  0..3   (none / light / final / every-step)
+#   agency        0..2   (reactive / moderate / proactive)
+#   expertise     0..3   (junior / mid / senior / domain-expert)
+#   format        0..3   (paragraph / light / strict / algorithmic)
+#   goal          0..2   (outcome / process-aware / constraint-aware)
+
 arms:
+  # ---- Original six (kept; back-compat with all existing logs/configs) ----
   - arm_id: baseline
     name: Baseline
     vector: {planning: 0, verification: 0, agency: 0, expertise: 1, format: 0, goal: 0}
@@ -17,3 +34,32 @@ arms:
   - arm_id: overthinker
     name: Overthinker
     vector: {planning: 3, verification: 3, agency: 1, expertise: 3, format: 3, goal: 2}
+
+  # ---- Catalog expansion: spread coverage across all six axes ----
+  - arm_id: rapid
+    name: Rapid
+    # Fast, low-overhead, outcome-focused: no planning, no verification,
+    # proactive agency, plain format.
+    vector: {planning: 0, verification: 0, agency: 2, expertise: 2, format: 0, goal: 0}
+  - arm_id: verifier
+    name: Verifier
+    # Every-step verification, light planning, reactive — pressure-tests the
+    # paper's claim that excessive verification can suppress success.
+    vector: {planning: 1, verification: 3, agency: 0, expertise: 2, format: 2, goal: 1}
+  - arm_id: exploratory
+    name: Exploratory
+    # Proactive, mid-expertise, freeform format, outcome-focused.
+    vector: {planning: 2, verification: 1, agency: 2, expertise: 1, format: 1, goal: 0}
+  - arm_id: algorithmic
+    name: Algorithmic
+    # Plan-then-act, domain-expert, fully algorithmic format, constraint-aware.
+    # Differs from overthinker in verification (2 vs 3) — isolates that axis.
+    vector: {planning: 3, verification: 2, agency: 1, expertise: 3, format: 3, goal: 2}
+  - arm_id: junior_reactive
+    name: Junior Reactive
+    # Low-expertise, cautious-reactive — anchors the low-capability corner.
+    vector: {planning: 1, verification: 2, agency: 0, expertise: 0, format: 1, goal: 1}
+  - arm_id: domain_expert
+    name: Domain Expert
+    # Expert-driven, proactive, constraint-aware, strict format.
+    vector: {planning: 2, verification: 1, agency: 2, expertise: 3, format: 2, goal: 2}

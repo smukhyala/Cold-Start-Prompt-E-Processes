@@ -145,7 +145,9 @@ def run_trial(
             state.record(arm_id, reward, log_e, log_e_upper=log_e_up)
             policy.update(arm_id, reward, info={"steps": result.steps})
 
-            global_log_e = global_e.log_e(per_arm_e.values())
+            # Pass the full mapping (arm_id → e-process) so combine='linear_mixture'
+            # can match weights by arm_id; product/mixture ignore the keys.
+            global_log_e = global_e.log_e(per_arm_e)
 
             record = {
                 "schema_version": "1.0",

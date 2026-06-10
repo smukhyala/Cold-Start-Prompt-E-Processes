@@ -1,0 +1,73 @@
+# Paper-faithful pilot: instantiates the exact construction stated in
+# Mukhyala & Waudby-Smith (2026), § 3 — one-sided upward-betting per-arm
+# e-processes, linear convex mixture global null, UCB1 allocation, on the
+# synthetic Bernoulli ToyEnv. Runnable without network/model access.
+#
+# Differences from configs/pilot_toy.yaml:
+#   - per_arm e-process:  hedged_capital → upward_capital   (paper § 3.4)
+#   - global combine:     product        → linear_mixture   (paper § 3.4)
+#   - policy:             spruce         → ucb              (paper § 3.5 ref [2])
+
+trial:
+  name: pilot_toy_upward
+  seed: 1
+  num_tasks: 240
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 20
+  output_dir: logs/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_initial.yaml
+
+model:
+  type: mock
+  id: mock
+  max_tokens: 64
+  temperature: 0.0
+  prompt_cache: false
+
+task_source:
+  type: toy
+  params:
+    arm_probs:
+      baseline: 0.35
+      planner: 0.60
+      cautious: 0.50
+      explorer: 0.40
+      balanced: 0.55
+      overthinker: 0.30
+      rapid: 0.45
+      verifier: 0.40
+      exploratory: 0.50
+      algorithmic: 0.65
+      junior_reactive: 0.25
+      domain_expert: 0.62
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    # E_{a,t} = ∏ (1 + λ_{a,i} (Y_i − μ_0)) — one-sided upward betting,
+    # composite null H_0: μ_a ≤ μ_0.
+    type: upward_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    # E_t = Σ_a w_a E_{a,t}; uniform weights when `weights` is omitted.
+    params: { combine: linear_mixture }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: ucb
+  params: { exploration_c: 1.0 }
+  warmstart: { min_pulls_per_arm: 3 }
+
+logging:
+  level: INFO
+  jsonl: true

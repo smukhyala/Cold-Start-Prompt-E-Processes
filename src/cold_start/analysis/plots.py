@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 
@@ -65,6 +66,37 @@ def plot_cs_width(df: pd.DataFrame, out: str | Path | None = None):
     ax.set_title("Confidence-sequence width per arm")
     ax.legend()
     ax.grid(True, alpha=0.3)
+    _save(fig, out)
+    return fig
+
+
+def plot_prompt_distance(
+    matrix: pd.DataFrame,
+    out: str | Path | None = None,
+):
+    """Heatmap of pairwise prompt distances d(a,b) over the arm catalog.
+
+    `matrix` is the DataFrame returned by `analysis.summary.distance_matrix`.
+    """
+    arr = np.asarray(matrix.values, dtype=float)
+    ids = list(matrix.columns)
+    fig, ax = plt.subplots(figsize=(0.6 * len(ids) + 2, 0.6 * len(ids) + 2))
+    im = ax.imshow(arr, cmap="viridis", aspect="equal")
+    ax.set_xticks(range(len(ids)), ids, rotation=45, ha="right")
+    ax.set_yticks(range(len(ids)), ids)
+    ax.set_title("Pairwise prompt distance d(a,b)")
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    # Annotate cells when the catalog is small enough to read.
+    if len(ids) <= 16:
+        for i in range(len(ids)):
+            for j in range(len(ids)):
+                ax.text(
+                    j, i, f"{arr[i, j]:.2f}",
+                    ha="center", va="center",
+                    color="white" if arr[i, j] > arr.max() * 0.5 else "black",
+                    fontsize=7,
+                )
+    fig.tight_layout()
     _save(fig, out)
     return fig
 

@@ -51,6 +51,7 @@ viz = [
 cold-start-run = "cold_start.cli.run:main"
 cold-start-report = "cold_start.cli.report:main"
 cold-start-smoke = "cold_start.cli.smoke:main"
+cold-start-compare = "cold_start.cli.compare:main"
 cold-start-viz = "cold_start.viz.__main__:main"
 
 [tool.setuptools.packages.find]

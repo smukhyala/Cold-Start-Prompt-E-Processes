@@ -26,13 +26,16 @@ from cold_start.tasks import sanity as _sanity  # noqa: F401
 
 # rewards
 from cold_start.rewards import binary as _binary  # noqa: F401
+from cold_start.rewards import continuous as _continuous  # noqa: F401
 
 # inference
 from cold_start.inference import hedged_capital as _hc  # noqa: F401
+from cold_start.inference import upward_capital as _uc  # noqa: F401
 from cold_start.inference import global_null as _gn  # noqa: F401
 
 # policies
 from cold_start.policies import uniform as _u  # noqa: F401
 from cold_start.policies import epsilon_greedy as _eg  # noqa: F401
 from cold_start.policies import thompson as _th  # noqa: F401
+from cold_start.policies import ucb as _ucb  # noqa: F401
 from cold_start.policies import spruce as _sp  # noqa: F401

@@ -29,6 +29,12 @@ task_source:
       explorer: 0.40
       balanced: 0.55
       overthinker: 0.30
+      rapid: 0.45
+      verifier: 0.40
+      exploratory: 0.50
+      algorithmic: 0.65
+      junior_reactive: 0.25
+      domain_expert: 0.62
 
 reward:
   type: binary

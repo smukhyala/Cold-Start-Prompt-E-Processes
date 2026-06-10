@@ -64,6 +64,9 @@ class RunResult:
     wallclock_s: float
     trace: dict[str, Any] = field(default_factory=dict)
     tokens: dict[str, int] = field(default_factory=dict)
+    # Optional graded outcome in [0,1] — used by ContinuousReward when present.
+    # None means the environment reports only binary success.
+    partial_score: float | None = None
 
 
 @dataclass

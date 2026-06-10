@@ -172,7 +172,9 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         use_vision: bool = False,
         headless: bool = True,
         timeout_s: int = 300,
-        llm_model: str = "claude-sonnet-4-6",
+        # Paper § 3.7: "we will use Claude Opus 4.7 Max for all testing".
+        # Override per-experiment via task_source.params.llm_model in YAML.
+        llm_model: str = "claude-opus-4-7",
         artifacts_dir: str = "logs/webarena",
         axes_path: str = "configs/axes.yaml",
         template_path: str = "configs/template.jinja",
@@ -288,6 +290,13 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
                 tokens={},
             )
 
+        # webarena's verifier emits a binary `passed`; some forks add a graded
+        # `partial_score` ∈ [0,1] (e.g. fraction of subgoals satisfied). Surface
+        # it when present so ContinuousReward picks it up; otherwise fall back
+        # to None and binary rewards continue to behave as before.
+        raw_partial = result_dict.get("partial_score")
+        partial_score = float(raw_partial) if raw_partial is not None else None
+
         return RunResult(
             success=bool(result_dict["passed"]),
             reward=float(bool(result_dict["passed"])),
@@ -302,6 +311,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
                 "task_dir": str(task_dir),
             },
             tokens={},
+            partial_score=partial_score,
         )
 
     def close(self) -> None:

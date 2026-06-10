@@ -7,6 +7,7 @@ from cold_start.policies.base import PolicyState
 from cold_start.policies.epsilon_greedy import EpsilonGreedyPolicy
 from cold_start.policies.spruce import SprucePolicy
 from cold_start.policies.thompson import ThompsonPolicy
+from cold_start.policies.ucb import UCBPolicy
 from cold_start.policies.uniform import UniformPolicy
 
 
@@ -64,3 +65,40 @@ def test_spruce_picks_unplayed_first(rng):
     # Because they all have infinite score, the tie-break is random — but any
     # pick among them is acceptable. We check no arm is preferred with zero info.
     assert picks.issubset(set(arm_ids))
+
+
+def test_ucb_picks_unplayed_first(rng):
+    arm_ids = ["a", "b", "c"]
+    state = PolicyState(arm_ids=arm_ids)
+    p = UCBPolicy(rng, exploration_c=1.0)
+    # Any unpulled arm has infinite UCB; in the first call the policy must
+    # pick one of them, never an already-pulled arm.
+    state.record("a", 1.0, log_e=0.0)
+    pick = p.next_arm(t=2, state=state)
+    assert pick in ("b", "c"), f"UCB picked already-pulled arm {pick}"
+
+
+def test_ucb_greedy_when_c_zero():
+    """With c=0, UCB reduces to greedy on empirical means."""
+    rng = np.random.default_rng(0)
+    arm_ids = ["lo", "hi"]
+    state = PolicyState(arm_ids=arm_ids)
+    # Both arms have been played; "hi" has the better mean.
+    state.record("lo", 0.0, log_e=0.0)
+    state.record("lo", 0.0, log_e=0.0)
+    state.record("hi", 1.0, log_e=0.0)
+    state.record("hi", 1.0, log_e=0.0)
+    p = UCBPolicy(rng, exploration_c=0.0)
+    assert p.next_arm(t=5, state=state) == "hi"
+
+
+def test_ucb_concentrates_on_best():
+    probs = {"lo": 0.2, "mid": 0.5, "hi": 0.85}
+    pulls = _run_toy_bandit(UCBPolicy, {"exploration_c": 1.0}, probs, T=800, seed=4)
+    assert pulls["hi"] > 0.4 * 800, f"UCB did not concentrate on 'hi': {pulls}"
+
+
+def test_ucb_rejects_negative_c():
+    rng = np.random.default_rng(0)
+    with pytest.raises(ValueError):
+        UCBPolicy(rng, exploration_c=-0.1)

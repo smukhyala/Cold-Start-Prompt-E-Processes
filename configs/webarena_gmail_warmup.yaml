@@ -29,7 +29,9 @@ task_source:
     use_vision: false
     headless: true
     timeout_s: 300
-    llm_model: claude-sonnet-4-6
+    # Paper § 3.7 uses Claude Opus 4.7 for all testing; the warmup config
+    # mirrors the main webarena config so smoke runs match production.
+    llm_model: claude-opus-4-7
     artifacts_dir: logs/webarena
     axes_path: configs/axes.yaml
     template_path: configs/template.jinja

@@ -1,15 +1,13 @@
-# Tiny smoke config: 4 tasks against the live Gmail app with Claude Opus 4.7,
-# uniform allocation across the 12-arm catalog. Used to verify the WebArena
-# pipeline (server subprocess + browser-use + Anthropic) end-to-end without
-# committing to a full 60-task run.
+# 12-task config used as the resume drill: run, kill at task ~6, resume from 7,
+# and verify the final JSONL is coherent. Haiku 4.5 keeps it cheap.
 
 trial:
-  name: webarena_gmail_smoke
+  name: webarena_gmail_resume
   seed: 1
-  num_tasks: 4
+  num_tasks: 12
   num_trials: 1
   paired_streams: true
-  max_agent_steps: 15
+  max_agent_steps: 12
   output_dir: logs/
 
 prompts:
@@ -17,11 +15,9 @@ prompts:
   template: configs/template.jinja
   arms: configs/arms_initial.yaml
 
-# Unused by the webarena adapter (browser-use drives its own LLM). Kept here so
-# the orchestrator's text-only runner has a coherent (unused) configuration.
 model:
   type: anthropic
-  id: claude-opus-4-7
+  id: claude-haiku-4-5-20251001
   max_tokens: 256
   temperature: null
   prompt_cache: true
@@ -35,9 +31,9 @@ task_source:
     sample_mode: cycle
     use_vision: false
     headless: true
-    timeout_s: 180
-    llm_model: claude-sonnet-4-6
-    artifacts_dir: logs/webarena_smoke
+    timeout_s: 120
+    llm_model: claude-haiku-4-5-20251001
+    artifacts_dir: logs/webarena_resume
     axes_path: configs/axes.yaml
     template_path: configs/template.jinja
 

@@ -29,9 +29,9 @@ task_source:
     use_vision: false
     headless: true
     timeout_s: 300
-    # Paper § 3.7 uses Claude Opus 4.7 for all testing; the warmup config
-    # mirrors the main webarena config so smoke runs match production.
-    llm_model: claude-opus-4-7
+    # Mirrors webarena_gmail.yaml — Sonnet 4.6 for the bootstrap experiment
+    # (Haiku 4.5 is structurally incompatible with browser-use's schema).
+    llm_model: claude-sonnet-4-6
     artifacts_dir: logs/webarena
     axes_path: configs/axes.yaml
     template_path: configs/template.jinja
@@ -40,12 +40,13 @@ reward:
   type: binary
 
 inference:
+  # Paper-faithful (upward_capital + linear_mixture), matches webarena_gmail.yaml.
   per_arm:
-    type: hedged_capital
+    type: upward_capital
     params: { m0: 0.5 }
   global:
     type: global_null
-    params: { combine: product }
+    params: { combine: linear_mixture }
   confidence_sequence:
     alpha: 0.05
     grid_size: 64

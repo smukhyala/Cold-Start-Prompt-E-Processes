@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from cold_start.cli import _bootstrap  # noqa: F401  (registry population)
 from cold_start.config import load_config
 from cold_start.runner.orchestrator import run_trial
+from cold_start.runner.pre_flight import PreflightError, run_preflight
 
 
 def main() -> None:
@@ -29,6 +31,13 @@ def main() -> None:
         default=1,
         help="First task index to execute (1-indexed). Used with --resume-from.",
     )
+    parser.add_argument(
+        "--skip-preflight",
+        action="store_true",
+        help="Skip the pre-flight environment checks (API key, port, sibling repo). "
+        "Useful when intentionally running against a non-standard setup; the run will "
+        "still error inline if something is genuinely broken.",
+    )
     args = parser.parse_args()
 
     if args.resume_from is not None and args.start_at <= 1:
@@ -47,6 +56,13 @@ def main() -> None:
             f"--resume-from only supports num_trials=1 (got {cfg.trial.num_trials}); "
             "resume is per-trial"
         )
+
+    if not args.skip_preflight:
+        try:
+            run_preflight(cfg, output_dir=args.out)
+        except PreflightError as exc:
+            sys.stderr.write(f"pre-flight failed: {exc}\n")
+            sys.exit(2)
 
     paths = []
     for i in range(cfg.trial.num_trials):

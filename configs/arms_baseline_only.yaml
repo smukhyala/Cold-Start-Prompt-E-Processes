@@ -1,0 +1,7 @@
+# Single-arm catalog used by the μ_0 calibration run. Same baseline vector
+# as the main catalog (configs/arms_initial.yaml) so the calibration is
+# referenceable from the H3 experiment without ambiguity.
+arms:
+  - arm_id: baseline
+    name: Baseline
+    vector: {planning: 0, verification: 0, agency: 0, expertise: 1, format: 0, goal: 0}

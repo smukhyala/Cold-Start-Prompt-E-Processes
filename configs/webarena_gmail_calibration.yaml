@@ -1,12 +1,18 @@
-# Tiny smoke config: 4 tasks against the live Gmail app with Claude Opus 4.7,
-# uniform allocation across the 12-arm catalog. Used to verify the WebArena
-# pipeline (server subprocess + browser-use + Anthropic) end-to-end without
-# committing to a full 60-task run.
+# μ_0 calibration: run only the baseline arm against Gmail-easy with Sonnet 4.6
+# to derive μ̂_baseline. The resulting empirical mean replaces the placeholder
+# m_0=0.5 in webarena_gmail*.yaml — this is what makes H_0: μ_a ≤ μ_0 a
+# meaningful "does this arm beat baseline" test rather than a "does this arm
+# beat 50%" test.
+#
+# 25 tasks: enough to bound the mean with reasonable precision (95% CI ≈ ±0.2
+# under a binomial with n=25), cheap enough to run before any decision (~$5.50).
+# E-process and global-null choice doesn't matter for calibration since only
+# one arm is involved — kept paper-faithful for log-schema consistency.
 
 trial:
-  name: webarena_gmail_smoke
+  name: webarena_gmail_calibration
   seed: 1
-  num_tasks: 4
+  num_tasks: 25
   num_trials: 1
   paired_streams: true
   max_agent_steps: 15
@@ -15,13 +21,11 @@ trial:
 prompts:
   axes: configs/axes.yaml
   template: configs/template.jinja
-  arms: configs/arms_initial.yaml
+  arms: configs/arms_baseline_only.yaml
 
-# Unused by the webarena adapter (browser-use drives its own LLM). Kept here so
-# the orchestrator's text-only runner has a coherent (unused) configuration.
 model:
   type: anthropic
-  id: claude-opus-4-7
+  id: claude-sonnet-4-6
   max_tokens: 256
   temperature: null
   prompt_cache: true
@@ -37,7 +41,7 @@ task_source:
     headless: true
     timeout_s: 180
     llm_model: claude-sonnet-4-6
-    artifacts_dir: logs/webarena_smoke
+    artifacts_dir: logs/webarena_calibration
     axes_path: configs/axes.yaml
     template_path: configs/template.jinja
 

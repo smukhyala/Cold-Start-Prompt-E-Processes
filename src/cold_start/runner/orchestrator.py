@@ -14,10 +14,29 @@ Flow (per trial):
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+
+def _now_s() -> float:
+    return time.monotonic()
+
+
+def _format_eta(start_s: float, completed: int, total: int) -> str:
+    """`H:MM:SS` remaining, or `?` if nothing completed yet."""
+    if completed <= 0:
+        return "?"
+    elapsed = _now_s() - start_s
+    avg = elapsed / completed
+    remaining = max(0, total - completed) * avg
+    if remaining < 60:
+        return f"{remaining:.0f}s"
+    h, rem = divmod(int(remaining), 3600)
+    m, s = divmod(rem, 60)
+    return f"{h:d}:{m:02d}:{s:02d}" if h else f"{m:d}:{s:02d}"
 
 from cold_start.config import RunConfig
 from cold_start.inference.confidence_sequence import ConfidenceSequence
@@ -117,75 +136,94 @@ def run_trial(
         f"policy={cfg.policy.type}, start_at={start_at}"
     )
 
-    with JSONLWriter(log_path) as writer:
-        for t in range(start_at, cfg.trial.num_tasks + 1):
-            task = env.sample_task(t)
-            arm_id = policy.next_arm(t, state)
-            arm = arms_by_id[arm_id]
+    # Heartbeat bookkeeping: cumulative successes + wallclock for ETA.
+    cum_success = sum(s.successes for s in per_arm_summary.values())
+    cum_pulls = sum(s.pulls for s in per_arm_summary.values())
+    trial_start_s = _now_s()
 
-            result = env.run_arm(
-                arm=arm,
-                task=task,
-                runner=runner,
-                max_steps=cfg.trial.max_agent_steps,
-            )
-            reward = reward_fn(task, result)
+    # Try/finally so env.close() runs even if a per-task crash bubbles up.
+    # Without this, a thrown exception would leak the webarena server
+    # subprocess + Chromium and hold port 8001 for the next run.
+    try:
+        with JSONLWriter(log_path) as writer:
+            for t in range(start_at, cfg.trial.num_tasks + 1):
+                task = env.sample_task(t)
+                arm_id = policy.next_arm(t, state)
+                arm = arms_by_id[arm_id]
 
-            log_e = per_arm_e[arm_id].update(reward)
-            cs_lo, cs_hi = per_arm_cs[arm_id].update(reward)
-            # One-sided upward-betting log-wealth, used by best-arm UCB policies.
-            log_e_up = getattr(per_arm_e[arm_id], "log_e_upper", log_e)
+                result = env.run_arm(
+                    arm=arm,
+                    task=task,
+                    runner=runner,
+                    max_steps=cfg.trial.max_agent_steps,
+                )
+                reward = reward_fn(task, result)
 
-            per_arm_summary[arm_id].pulls += 1
-            per_arm_summary[arm_id].successes += int(reward >= 0.5)
-            per_arm_summary[arm_id].log_e = log_e
-            per_arm_summary[arm_id].cs_lo = cs_lo
-            per_arm_summary[arm_id].cs_hi = cs_hi
+                log_e = per_arm_e[arm_id].update(reward)
+                cs_lo, cs_hi = per_arm_cs[arm_id].update(reward)
+                # One-sided upward-betting log-wealth for best-arm UCB policies.
+                log_e_up = getattr(per_arm_e[arm_id], "log_e_upper", log_e)
 
-            state.record(arm_id, reward, log_e, log_e_upper=log_e_up)
-            policy.update(arm_id, reward, info={"steps": result.steps})
+                per_arm_summary[arm_id].pulls += 1
+                per_arm_summary[arm_id].successes += int(reward >= 0.5)
+                per_arm_summary[arm_id].log_e = log_e
+                per_arm_summary[arm_id].cs_lo = cs_lo
+                per_arm_summary[arm_id].cs_hi = cs_hi
 
-            # Pass the full mapping (arm_id → e-process) so combine='linear_mixture'
-            # can match weights by arm_id; product/mixture ignore the keys.
-            global_log_e = global_e.log_e(per_arm_e)
+                state.record(arm_id, reward, log_e, log_e_upper=log_e_up)
+                policy.update(arm_id, reward, info={"steps": result.steps})
 
-            record = {
-                "schema_version": "1.0",
-                "run_id": rid,
-                "t": t,
-                "timestamp_utc": utc_now_iso(),
-                "task_id": task.task_id,
-                "task_meta": task.metadata,
-                "arm_id": arm_id,
-                "prompt_vector": arm.vector.as_dict(),
-                "prompt_id": arm.vector.id(),
-                "success": int(result.success),
-                "reward": reward,
-                "steps": result.steps,
-                "wallclock_s": result.wallclock_s,
-                "tokens": result.tokens,
-                "policy": {"type": cfg.policy.type, "scores": policy.scores},
-                "per_arm_state": {aid: per_arm_summary[aid].to_record() for aid in state.arm_ids},
-                "global_e": {
-                    "log_e": global_log_e,
-                    "rejected": reject_null(global_log_e, alpha),
-                },
-                "inference": {
-                    "alpha": alpha,
-                    "m0": cfg.inference.per_arm.params.get("m0", 0.5),
-                },
-                "seed": cfg.trial.seed + trial_idx,
-                "config_hash": cfg_hash,
-            }
-            writer.write(record)
+                # Pass the full mapping (arm_id → e-process) so combine='linear_mixture'
+                # can match weights by arm_id; product/mixture ignore the keys.
+                global_log_e = global_e.log_e(per_arm_e)
 
-            if t % max(cfg.trial.num_tasks // 10, 1) == 0:
+                record = {
+                    "schema_version": "1.0",
+                    "run_id": rid,
+                    "t": t,
+                    "timestamp_utc": utc_now_iso(),
+                    "task_id": task.task_id,
+                    "task_meta": task.metadata,
+                    "arm_id": arm_id,
+                    "prompt_vector": arm.vector.as_dict(),
+                    "prompt_id": arm.vector.id(),
+                    "success": int(result.success),
+                    "reward": reward,
+                    "steps": result.steps,
+                    "wallclock_s": result.wallclock_s,
+                    "tokens": result.tokens,
+                    "policy": {"type": cfg.policy.type, "scores": policy.scores},
+                    "per_arm_state": {aid: per_arm_summary[aid].to_record() for aid in state.arm_ids},
+                    "global_e": {
+                        "log_e": global_log_e,
+                        "rejected": reject_null(global_log_e, alpha),
+                    },
+                    "inference": {
+                        "alpha": alpha,
+                        "m0": cfg.inference.per_arm.params.get("m0", 0.5),
+                    },
+                    "seed": cfg.trial.seed + trial_idx,
+                    "config_hash": cfg_hash,
+                }
+                writer.write(record)
+
+                # Per-task heartbeat: a cloud agent watching the log gets a fresh
+                # line every task so stalls are visible in seconds, not hours.
+                cum_pulls += 1
+                cum_success += int(reward >= 0.5)
                 logger.info(
                     f"t={t}/{cfg.trial.num_tasks} arm={arm_id} r={reward:.0f} "
-                    f"log_e(arm)={log_e:.3f} log_e(global)={global_log_e:.3f}"
+                    f"steps={result.steps} wall={result.wallclock_s:.1f}s "
+                    f"cum={cum_success}/{cum_pulls} "
+                    f"log_e(arm)={log_e:.3f} log_e(global)={global_log_e:.3f} "
+                    f"ETA={_format_eta(trial_start_s, t - start_at + 1, cfg.trial.num_tasks - start_at + 1)}"
                 )
+    finally:
+        try:
+            env.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"env.close() raised during teardown: {exc!r}")
 
-    env.close()
     logger.info(f"trial {rid} complete; log={log_path}")
     return log_path
 

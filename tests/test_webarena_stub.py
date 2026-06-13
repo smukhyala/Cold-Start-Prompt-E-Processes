@@ -51,8 +51,10 @@ def test_adapter_constructs_without_side_effects():
     assert env._server_proc is None
     assert env._agent is None
     assert env._tasks is None
-    # Default model is paper-faithful (Opus 4.7); explicit override still wins.
-    assert env._llm_model == "claude-opus-4-7"
+    # Default model is Sonnet 4.6 for the bootstrap (cheapest model whose JSON
+    # output passes browser-use's AgentOutput schema; Haiku 4.5 was tried but
+    # is structurally incompatible). Explicit override wins.
+    assert env._llm_model == "claude-sonnet-4-6"
 
 
 def test_adapter_rejects_non_cycle_sample_mode():

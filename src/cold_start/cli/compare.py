@@ -81,7 +81,11 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # One sub-run per policy, all sharing the same seed / task stream / e-process.
+    # Each policy is wrapped in try/except so one crash doesn't lose the others'
+    # data — important for long unattended runs where Anthropic 5xx, browser
+    # hangs, or port collisions are plausible mid-experiment.
     runs: dict[str, Path] = {}
+    failures: dict[str, str] = {}
     for pname in policy_names:
         cfg = copy.deepcopy(base_cfg)
         cfg.policy = PolicySpec(
@@ -90,15 +94,38 @@ def main() -> None:
             warmstart=cfg.policy.warmstart if args.keep_warmstart else None,
         )
         cfg.trial.name = f"{base_cfg.trial.name}__cmp_{pname}"
-        log_path = run_trial(cfg, trial_idx=0, log_dir=out_dir / pname)
+        try:
+            log_path = run_trial(cfg, trial_idx=0, log_dir=out_dir / pname)
+        except KeyboardInterrupt:
+            # Don't swallow Ctrl-C: the user wants to stop the whole comparison,
+            # not skip this policy. Any partial log for this policy is still on
+            # disk and can be picked up via --resume-from on a follow-up run.
+            print(f"  ! {pname}: interrupted; remaining policies skipped")
+            failures[pname] = "interrupted (KeyboardInterrupt)"
+            break
+        except Exception as exc:  # noqa: BLE001 — comparison-level resilience
+            failures[pname] = f"{type(exc).__name__}: {exc}"
+            # Best-effort: any JSONL the orchestrator did write before the crash
+            # is still on disk under out_dir / pname / *.jsonl.
+            partials = sorted((out_dir / pname).glob("*.jsonl"))
+            partial_str = partials[-1] if partials else "(no records written)"
+            print(f"  ! {pname}: FAILED — {exc!r}. Partial: {partial_str}")
+            continue
         runs[pname] = log_path
         print(f"  · {pname}: {log_path}")
+
+    if not runs:
+        print("no policies completed; nothing to compare")
+        if failures:
+            for pname, why in failures.items():
+                print(f"  {pname}: {why}")
+        raise SystemExit(1)
 
     # Build per-policy summaries: τ_α, cum-regret, final pulls, log_e series.
     summaries = {name: _summarize_run(path) for name, path in runs.items()}
 
     # Write comparison.md
-    md = _render_markdown(base_cfg.trial.name, summaries)
+    md = _render_markdown(base_cfg.trial.name, summaries, failures=failures)
     (out_dir / "comparison.md").write_text(md)
 
     # Overlaid global log-e plot.
@@ -197,19 +224,45 @@ def _cumulative_regret_proxy(summary: dict) -> float:
     )
 
 
-def _render_markdown(base_name: str, summaries: dict[str, dict]) -> str:
+def _render_markdown(
+    base_name: str,
+    summaries: dict[str, dict],
+    failures: dict[str, str] | None = None,
+) -> str:
     any_summary = next(iter(summaries.values()))
     alpha = any_summary["alpha"]
     T = max(s["ts"][-1] for s in summaries.values())
     log_thresh = math.log(1.0 / alpha)
+    failures = failures or {}
 
     lines: list[str] = [
         f"# Allocation comparison — `{base_name}`",
         "",
         f"- T = {T}",
         f"- α = {alpha}; log(1/α) = {log_thresh:.3f}",
-        f"- policies: {', '.join(summaries.keys())}",
-        "",
+        f"- policies completed: {', '.join(summaries.keys())}",
+    ]
+    if failures:
+        lines.append(f"- policies failed: {', '.join(failures.keys())}")
+    lines.append("")
+
+    if failures:
+        lines += [
+            "## ⚠️ Failed policies",
+            "",
+            "These policies crashed mid-run and are excluded from the comparison",
+            "below. Their partial JSONL logs (if any) remain under "
+            f"`<out_dir>/<policy>/`; rerun individually with `cold-start-run "
+            "--resume-from <partial>` to recover.",
+            "",
+            "| policy | failure |",
+            "|---|---|",
+        ]
+        for pname, why in failures.items():
+            lines.append(f"| {pname} | `{why}` |")
+        lines.append("")
+
+    lines += [
         "## τ_α — first global rejection time",
         "",
         "| policy | τ_α | rejected by T |",

@@ -113,6 +113,69 @@ def test_compare_smoke_writes_expected_artifacts(tmp_path, monkeypatch):
     assert "uniform" in md and "ucb" in md
 
 
+def test_compare_continues_when_one_policy_crashes(tmp_path, monkeypatch):
+    """If one policy's run_trial raises, the comparison should still produce
+    a report for the policies that completed and mark the failed one."""
+    cfg_path = _write_minimal_config(tmp_path / "cmp.yaml", num_tasks=20)
+    out_dir = tmp_path / "out"
+    project_root = Path(__file__).resolve().parents[1]
+    monkeypatch.chdir(project_root)
+
+    # Inject a failure: stub run_trial to raise on the second call only.
+    real_run_trial = compare.run_trial
+    call_count = {"n": 0}
+
+    def flaky_run_trial(*a, **kw):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise RuntimeError("simulated browser-use hang")
+        return real_run_trial(*a, **kw)
+
+    monkeypatch.setattr(compare, "run_trial", flaky_run_trial)
+
+    monkeypatch.setattr(
+        sys, "argv",
+        [
+            "cold-start-compare",
+            "--base", str(cfg_path),
+            "--policies", "uniform,ucb,thompson",
+            "--out", str(out_dir),
+        ],
+    )
+    # main() should not raise — the comparison report is still produced.
+    compare.main()
+
+    md = (out_dir / "comparison.md").read_text()
+    # Failed policy surfaced in its own section
+    assert "Failed policies" in md
+    assert "ucb" in md and "simulated browser-use hang" in md
+    # Completed policies still in the τ_α table
+    assert "uniform" in md and "thompson" in md
+
+
+def test_compare_aborts_cleanly_if_every_policy_fails(tmp_path, monkeypatch):
+    cfg_path = _write_minimal_config(tmp_path / "cmp.yaml", num_tasks=5)
+    out_dir = tmp_path / "out"
+    project_root = Path(__file__).resolve().parents[1]
+    monkeypatch.chdir(project_root)
+
+    def always_fail(*a, **kw):
+        raise RuntimeError("every policy is doomed")
+
+    monkeypatch.setattr(compare, "run_trial", always_fail)
+    monkeypatch.setattr(
+        sys, "argv",
+        [
+            "cold-start-compare",
+            "--base", str(cfg_path),
+            "--policies", "uniform,ucb",
+            "--out", str(out_dir),
+        ],
+    )
+    with pytest.raises(SystemExit):
+        compare.main()
+
+
 @pytest.mark.parametrize("bad_arg", ["", "  ,  "])
 def test_compare_rejects_empty_policies(tmp_path, monkeypatch, bad_arg):
     cfg_path = _write_minimal_config(tmp_path / "cmp.yaml", num_tasks=5)

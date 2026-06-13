@@ -94,6 +94,11 @@ def _get_armed_agent_cls() -> type:
         def __init__(self, *a: Any, **kw: Any) -> None:
             super().__init__(*a, **kw)
             self._prompt_extension: str | None = None
+            # Most recent task's token usage; overwritten by every `run()`.
+            # webarena-infinity's run_task only marshals specific AgentResult
+            # fields into its result_dict, so we stash tokens here for our
+            # adapter to read after run_task returns.
+            self._last_token_summary: dict[str, Any] = {}
 
         def set_prompt_extension(self, extension: str) -> None:
             self._prompt_extension = extension
@@ -117,6 +122,9 @@ def _get_armed_agent_cls() -> type:
                 use_vision=self.use_vision,
                 save_conversation_path=str(task_dir / "conversations"),
                 max_steps=self.max_steps,
+                # Have browser-use accumulate token usage + cost per call
+                # via its TokenCost service; we read the summary after run().
+                calculate_cost=True,
             )
             if self._prompt_extension:
                 agent_kwargs["extend_system_message"] = self._prompt_extension
@@ -139,6 +147,11 @@ def _get_armed_agent_cls() -> type:
                     screenshots_dst.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(path_str, screenshots_dst / f"step_{step_idx}.png")
 
+            # Pull cumulative token usage + cost from browser-use's TokenCost
+            # service. Each Agent instance has its own service (we build a
+            # fresh Agent per task), so this is per-task by construction.
+            self._last_token_summary = await _collect_token_usage(agent)
+
             if timed_out:
                 raise asyncio.TimeoutError()
 
@@ -159,6 +172,52 @@ def _build_llm(model_id: str) -> Any:
     return ChatAnthropic(model=model_id)
 
 
+async def _collect_token_usage(agent: Any) -> dict[str, Any]:
+    """Pull a serializable per-task token summary off a browser-use Agent.
+
+    Reads from `agent.token_cost_service` (populated by browser-use when
+    `calculate_cost=True`). Returns a flat dict matching the orchestrator's
+    log schema (input / output / cache_read / cache_write) plus a `cost_usd`
+    and per-model breakdown for spend audits. Failures (older browser-use
+    versions, missing service) degrade to an empty dict so a token-reporting
+    bug never crashes the run.
+
+    Async because browser-use's `get_usage_summary` is itself async (it
+    lazy-fetches pricing data on first call); the caller is the async
+    `_ArmedBrowserUseAgent.run()` so awaiting here is free.
+    """
+    try:
+        svc = getattr(agent, "token_cost_service", None)
+        if svc is None:
+            return {}
+        summary = await svc.get_usage_summary()
+        if summary is None:
+            return {}
+        by_model: dict[str, dict[str, Any]] = {}
+        for model_id, stats in (summary.by_model or {}).items():
+            by_model[model_id] = {
+                "prompt_tokens": int(stats.prompt_tokens),
+                "completion_tokens": int(stats.completion_tokens),
+                "total_tokens": int(stats.total_tokens),
+                "cost_usd": float(stats.cost),
+                "invocations": int(stats.invocations),
+            }
+        # Standardized fields the orchestrator already logs.
+        return {
+            "input": int(summary.total_prompt_tokens),
+            "output": int(summary.total_completion_tokens),
+            "cache_read": int(summary.total_prompt_cached_tokens),
+            # browser-use's UsageSummary doesn't separate cache-creation from
+            # cache-read in its top-level totals; default to 0 if missing.
+            "cache_write": 0,
+            "cost_usd": float(summary.total_cost),
+            "invocations": int(summary.entry_count),
+            "by_model": by_model,
+        }
+    except Exception:  # pragma: no cover  — never let token logging kill a run
+        return {}
+
+
 @register("webarena", kind="task_source")
 class WebArenaInfinityAdapter(EnvironmentAdapter):
     """Run coldStartPrompts arms against webarena-infinity apps."""
@@ -172,9 +231,12 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         use_vision: bool = False,
         headless: bool = True,
         timeout_s: int = 300,
-        # Paper § 3.7: "we will use Claude Opus 4.7 Max for all testing".
-        # Override per-experiment via task_source.params.llm_model in YAML.
-        llm_model: str = "claude-opus-4-7",
+        # Bootstrap experiment uses Sonnet 4.6 — the cheapest model that
+        # produces browser-use-compatible JSON. Haiku 4.5 was tried first
+        # but its inline-action JSON style fails browser-use's AgentOutput
+        # schema validation (tested on browser-use 0.12.6 and 0.13.1, same
+        # failure mode). Promote to Opus 4.7 for paper-faithful confirmation.
+        llm_model: str = "claude-sonnet-4-6",
         artifacts_dir: str = "logs/webarena",
         axes_path: str = "configs/axes.yaml",
         template_path: str = "configs/template.jinja",
@@ -277,6 +339,9 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
                 )
             )
         except asyncio.TimeoutError:
+            # The armed agent stashes the partial token usage just before it
+            # raises; we surface it so timed-out tasks still bill correctly.
+            partial_tokens = getattr(self._agent, "_last_token_summary", {}) or {}
             return RunResult(
                 success=False,
                 reward=0.0,
@@ -287,7 +352,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
                     "timed_out": True,
                     "task_dir": str(task_dir),
                 },
-                tokens={},
+                tokens=partial_tokens,
             )
 
         # webarena's verifier emits a binary `passed`; some forks add a graded
@@ -296,6 +361,9 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         # to None and binary rewards continue to behave as before.
         raw_partial = result_dict.get("partial_score")
         partial_score = float(raw_partial) if raw_partial is not None else None
+
+        # Token summary was stashed on the armed agent during `agent.run()`.
+        tokens = dict(getattr(self._agent, "_last_token_summary", {}) or {})
 
         return RunResult(
             success=bool(result_dict["passed"]),
@@ -310,7 +378,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
                 "is_done": bool(result_dict.get("is_done", False)),
                 "task_dir": str(task_dir),
             },
-            tokens={},
+            tokens=tokens,
             partial_score=partial_score,
         )
 

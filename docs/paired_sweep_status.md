@@ -7,8 +7,8 @@ eventually receive the same 60-task cycle.
 
 | order | arm | status | log | report |
 |---:|---|---|---|---|
-| 1 | baseline | pending: GPT infra ready |  |  |
-| 2 | planner | pending |  |  |
+| 1 | baseline | done | logs/paired_sweep/webarena_gmail_pair_baseline_60_trial0_2026-06-16T18-47-31Z_FULL.jsonl | reports/paired_sweep/baseline |
+| 2 | planner | done | logs/paired_sweep/webarena_gmail_pair_planner_60_trial0_2026-06-16T20-03-52Z_FULL.jsonl | reports/paired_sweep/planner |
 | 3 | cautious | pending |  |  |
 | 4 | explorer | pending |  |  |
 | 5 | balanced | pending |  |  |

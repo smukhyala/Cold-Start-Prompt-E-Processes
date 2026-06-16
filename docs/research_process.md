@@ -36,7 +36,7 @@ Cost projections:
 | Full paired sweep + adaptive run | 780 | ~$148-$165 | ~16 h |
 
 For the next paired sweep, the infrastructure is configured to use
-`gpt-5.4-mini` through browser-use with `llm_reasoning_effort: medium`. This
+`gpt-5.4-mini` through browser-use with `llm_reasoning_effort: low`. This
 should be much cheaper than the historical Claude run, but a 4-task smoke test
 should be run first to verify model access, structured output compatibility,
 and token accounting.
@@ -54,7 +54,7 @@ Design:
 - Total task executions: 720
 - Allocation: deterministic paired/block design, not adaptive
 - Model: `gpt-5.4-mini`
-- Reasoning effort: `medium`
+- Reasoning effort: `low`
 - Reward: binary verifier success
 
 Primary outputs:
@@ -79,7 +79,7 @@ Design:
 - Total task executions: 60
 - Allocation: adaptive policy
 - Model: `gpt-5.4-mini`
-- Reasoning effort: `medium`
+- Reasoning effort: `low`
 - Reward: binary verifier success
 - Inference: upward-capital per-arm e-process and global linear-mixture null
 

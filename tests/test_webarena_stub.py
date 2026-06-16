@@ -55,6 +55,20 @@ def test_adapter_constructs_without_side_effects():
     # output passes browser-use's AgentOutput schema; Haiku 4.5 was tried but
     # is structurally incompatible). Explicit override wins.
     assert env._llm_model == "claude-sonnet-4-6"
+    assert env._llm_provider == "anthropic"
+
+
+def test_adapter_accepts_openai_provider_without_side_effects():
+    env = WebArenaInfinityAdapter(
+        llm_provider="openai",
+        llm_model="gpt-5.4-mini",
+        llm_reasoning_effort="medium",
+    )
+    assert env._server_proc is None
+    assert env._agent is None
+    assert env._llm_provider == "openai"
+    assert env._llm_model == "gpt-5.4-mini"
+    assert env._llm_reasoning_effort == "medium"
 
 
 def test_adapter_rejects_non_cycle_sample_mode():

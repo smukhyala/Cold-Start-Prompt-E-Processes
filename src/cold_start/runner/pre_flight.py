@@ -3,7 +3,7 @@
 Fail fast on the conditions that are easy to detect before any task runs and
 expensive to discover halfway through one:
 
-- API key set (when the configured model needs one)
+- API key set (when the configured model or WebArena LLM provider needs one)
 - output directory writable
 - (webarena) port free
 - (webarena) sibling repo present, importable
@@ -60,19 +60,33 @@ def _check_output_dir_writable(out_dir: Path) -> None:
 def _check_anthropic_key(cfg: RunConfig) -> None:
     """Only required when a path through the run actually calls Anthropic.
 
-    Toy / mock model + non-webarena task source can run offline. The webarena
-    adapter always needs ANTHROPIC_API_KEY because browser-use's ChatAnthropic
-    reads it at construction; the same is true for the orchestrator's text-only
-    runner when `model.type == 'anthropic'`.
+    Toy / mock model + non-webarena task source can run offline. The WebArena
+    adapter needs the provider-specific key for browser-use's LLM client; the
+    same is true for the orchestrator's text-only runner when
+    `model.type == 'anthropic'`.
     """
-    needs_key = cfg.model.type == "anthropic" or cfg.task_source.type == "webarena"
-    if not needs_key:
-        return
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if cfg.model.type == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
         raise PreflightError(
             "ANTHROPIC_API_KEY not set. Put it in .env or export it before running. "
-            "(Anthropic is reached either via the model: block or the webarena "
-            "browser-use agent.)"
+            "(Anthropic is reached via the model: block.)"
+        )
+    if cfg.task_source.type != "webarena":
+        return
+
+    params = cfg.task_source.params or {}
+    provider = str(params.get("llm_provider", "anthropic")).lower()
+    if provider == "anthropic":
+        env_key = "ANTHROPIC_API_KEY"
+    elif provider == "openai":
+        env_key = "OPENAI_API_KEY"
+    else:
+        raise PreflightError(
+            f"unsupported webarena llm_provider={provider!r}; use 'anthropic' or 'openai'."
+        )
+    if not os.environ.get(env_key):
+        raise PreflightError(
+            f"{env_key} not set. Put it in .env or export it before running. "
+            f"(WebArena browser-use provider is {provider!r}.)"
         )
 
 

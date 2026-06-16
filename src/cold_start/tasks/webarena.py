@@ -14,7 +14,7 @@ Setup
 -----
 1. Clone webarena-infinity as a sibling directory (or set WEBARENA_INFINITY_ROOT).
 2. Install browser-use + Pillow in this env (see `pip install .[webarena]`).
-3. Export ANTHROPIC_API_KEY.
+3. Export ANTHROPIC_API_KEY or OPENAI_API_KEY, depending on llm_provider.
 """
 
 from __future__ import annotations
@@ -167,9 +167,25 @@ def _get_armed_agent_cls() -> type:
     return _ARMED_AGENT_CLS
 
 
-def _build_llm(model_id: str) -> Any:
-    from browser_use.llm.anthropic.chat import ChatAnthropic
-    return ChatAnthropic(model=model_id)
+def _build_llm(
+    provider: str,
+    model_id: str,
+    *,
+    reasoning_effort: str | None = None,
+) -> Any:
+    provider_norm = provider.lower()
+    if provider_norm == "anthropic":
+        from browser_use.llm.anthropic.chat import ChatAnthropic
+
+        return ChatAnthropic(model=model_id)
+    if provider_norm == "openai":
+        from browser_use.llm.openai.chat import ChatOpenAI
+
+        kwargs: dict[str, Any] = {}
+        if reasoning_effort:
+            kwargs["reasoning_effort"] = reasoning_effort
+        return ChatOpenAI(model=model_id, **kwargs)
+    raise ValueError(f"unsupported llm_provider={provider!r}; use 'anthropic' or 'openai'")
 
 
 async def _collect_token_usage(agent: Any) -> dict[str, Any]:
@@ -231,12 +247,14 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         use_vision: bool = False,
         headless: bool = True,
         timeout_s: int = 300,
-        # Bootstrap experiment uses Sonnet 4.6 — the cheapest model that
+        # Bootstrap experiment uses Sonnet 4.6 — the cheapest Anthropic model that
         # produces browser-use-compatible JSON. Haiku 4.5 was tried first
         # but its inline-action JSON style fails browser-use's AgentOutput
         # schema validation (tested on browser-use 0.12.6 and 0.13.1, same
         # failure mode). Promote to Opus 4.7 for paper-faithful confirmation.
+        llm_provider: str = "anthropic",
         llm_model: str = "claude-sonnet-4-6",
+        llm_reasoning_effort: str | None = None,
         artifacts_dir: str = "logs/webarena",
         axes_path: str = "configs/axes.yaml",
         template_path: str = "configs/template.jinja",
@@ -252,7 +270,9 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         self._use_vision = use_vision
         self._headless = headless
         self._timeout_s = timeout_s
+        self._llm_provider = llm_provider
         self._llm_model = llm_model
+        self._llm_reasoning_effort = llm_reasoning_effort
         self._artifacts_dir = Path(artifacts_dir)
         self._axes = load_axes(axes_path)
         self._template_path = template_path
@@ -279,7 +299,11 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
 
         ArmedCls = _get_armed_agent_cls()
         self._agent = ArmedCls(
-            _build_llm(self._llm_model),
+            _build_llm(
+                self._llm_provider,
+                self._llm_model,
+                reasoning_effort=self._llm_reasoning_effort,
+            ),
             use_vision=self._use_vision,
             max_steps=50,
             timeout=self._timeout_s,

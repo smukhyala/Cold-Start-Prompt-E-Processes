@@ -1,0 +1,63 @@
+# Tiny GPT smoke config: 4 WebArena Gmail tasks using browser-use + OpenAI.
+# Run this before any 60-task arm sweep to verify OPENAI_API_KEY, model access,
+# browser-use structured output, token accounting, and WebArena plumbing.
+
+trial:
+  name: webarena_gmail_smoke_openai
+  seed: 1
+  num_tasks: 4
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 15
+  output_dir: logs/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_baseline_only.yaml
+
+model:
+  type: mock
+  id: mock
+  max_tokens: 64
+  temperature: 0.0
+  prompt_cache: false
+
+task_source:
+  type: webarena
+  params:
+    web_app: apps/gmail
+    task_suite: real-tasks
+    port: 8001
+    sample_mode: cycle
+    use_vision: false
+    headless: true
+    timeout_s: 180
+    llm_provider: openai
+    llm_model: gpt-5.4-mini
+    llm_reasoning_effort: medium
+    artifacts_dir: logs/webarena_smoke_openai
+    axes_path: configs/axes.yaml
+    template_path: configs/template.jinja
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    type: upward_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    params: { combine: linear_mixture }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: uniform
+  params: {}
+
+logging:
+  level: INFO
+  jsonl: true

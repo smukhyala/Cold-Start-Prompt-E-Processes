@@ -76,6 +76,24 @@ def test_preflight_detects_busy_port_for_webarena(monkeypatch, tmp_path):
             run_preflight(cfg, output_dir=tmp_path)
 
 
+def test_preflight_requires_openai_key_for_openai_webarena(monkeypatch, tmp_path):
+    monkeypatch.chdir(_PROJECT_ROOT)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    cfg = _load("webarena_gmail_smoke_openai.yaml")
+    with pytest.raises(PreflightError, match="OPENAI_API_KEY"):
+        run_preflight(cfg, output_dir=tmp_path)
+
+
+def test_preflight_accepts_openai_key_for_openai_webarena(monkeypatch, tmp_path):
+    monkeypatch.chdir(_PROJECT_ROOT)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    cfg = _load("webarena_gmail_smoke_openai.yaml")
+    cfg.task_source.params["port"] = _free_port()
+    run_preflight(cfg, output_dir=tmp_path)
+
+
 def test_preflight_detects_missing_webarena_repo(monkeypatch, tmp_path):
     monkeypatch.chdir(_PROJECT_ROOT)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")

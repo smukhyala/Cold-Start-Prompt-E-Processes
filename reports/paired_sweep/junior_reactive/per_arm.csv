@@ -1,0 +1,2 @@
+arm_id,pulls,successes,mu_hat,log_e,cs_low,cs_high,rejected,alpha,m0,total_cost_usd,total_wallclock_s
+junior_reactive,60,42,0.7,4.333848521102326,0.5230769230769231,0.8923076923076924,True,0.05,0.5,3.6692433,3957.6

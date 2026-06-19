@@ -1,0 +1,4 @@
+arms:
+  - arm_id: algorithmic
+    name: Algorithmic
+    vector: {planning: 3, verification: 2, agency: 1, expertise: 3, format: 3, goal: 2}

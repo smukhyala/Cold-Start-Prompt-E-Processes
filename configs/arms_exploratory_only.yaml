@@ -1,0 +1,4 @@
+arms:
+  - arm_id: exploratory
+    name: Exploratory
+    vector: {planning: 2, verification: 1, agency: 2, expertise: 1, format: 1, goal: 0}

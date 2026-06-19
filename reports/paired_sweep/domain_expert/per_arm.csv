@@ -1,0 +1,2 @@
+arm_id,pulls,successes,mu_hat,log_e,cs_low,cs_high,rejected,alpha,m0,total_cost_usd,total_wallclock_s
+domain_expert,60,36,0.6,-0.14099214097106105,0.4153846153846154,0.8,False,0.05,0.5,3.6281919,4952.8

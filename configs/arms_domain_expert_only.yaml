@@ -1,0 +1,4 @@
+arms:
+  - arm_id: domain_expert
+    name: Domain Expert
+    vector: {planning: 2, verification: 1, agency: 2, expertise: 3, format: 2, goal: 2}

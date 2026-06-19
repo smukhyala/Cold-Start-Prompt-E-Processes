@@ -1,0 +1,59 @@
+trial:
+  name: webarena_gmail_pair_algorithmic_60
+  seed: 1
+  num_tasks: 60
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 30
+  output_dir: logs/paired_sweep/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_algorithmic_only.yaml
+
+model:
+  type: mock
+  id: mock
+  max_tokens: 64
+  temperature: 0.0
+  prompt_cache: false
+
+task_source:
+  type: webarena
+  params:
+    web_app: apps/gmail
+    task_suite: real-tasks
+    port: 8001
+    sample_mode: cycle
+    use_vision: false
+    headless: true
+    timeout_s: 180
+    llm_provider: openai
+    llm_model: gpt-5.4-mini
+    llm_reasoning_effort: low
+    artifacts_dir: logs/paired_sweep/webarena/algorithmic
+    axes_path: configs/axes.yaml
+    template_path: configs/template.jinja
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    type: upward_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    params: { combine: linear_mixture }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: uniform
+  params: {}
+
+logging:
+  level: INFO
+  jsonl: true

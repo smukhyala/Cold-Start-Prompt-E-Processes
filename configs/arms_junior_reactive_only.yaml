@@ -1,0 +1,4 @@
+arms:
+  - arm_id: junior_reactive
+    name: Junior Reactive
+    vector: {planning: 1, verification: 2, agency: 0, expertise: 0, format: 1, goal: 1}

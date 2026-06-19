@@ -1,0 +1,2 @@
+arm_id,pulls,successes,mu_hat,log_e,cs_low,cs_high,rejected,alpha,m0,total_cost_usd,total_wallclock_s
+overthinker,60,33,0.55,-1.1315336656334947,0.36923076923076925,0.7538461538461538,False,0.05,0.5,2.8747926,4843.2

@@ -1,0 +1,2 @@
+arm_id,pulls,successes,mu_hat,log_e,cs_low,cs_high,rejected,alpha,m0,total_cost_usd,total_wallclock_s
+verifier,60,34,0.5666666666666667,-1.326966594500327,0.38461538461538464,0.7846153846153847,False,0.05,0.5,3.7238584500000003,5179.3

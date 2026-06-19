@@ -1,0 +1,4 @@
+arms:
+  - arm_id: balanced
+    name: Balanced
+    vector: {planning: 2, verification: 2, agency: 1, expertise: 2, format: 1, goal: 1}

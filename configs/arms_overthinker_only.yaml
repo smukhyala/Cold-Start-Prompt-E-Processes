@@ -1,0 +1,4 @@
+arms:
+  - arm_id: overthinker
+    name: Overthinker
+    vector: {planning: 3, verification: 3, agency: 1, expertise: 3, format: 3, goal: 2}

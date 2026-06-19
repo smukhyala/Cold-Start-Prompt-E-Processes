@@ -1,0 +1,4 @@
+arms:
+  - arm_id: explorer
+    name: Explorer
+    vector: {planning: 1, verification: 0, agency: 2, expertise: 2, format: 0, goal: 0}

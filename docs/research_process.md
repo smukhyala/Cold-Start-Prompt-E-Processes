@@ -69,6 +69,45 @@ Primary outputs:
 This phase answers: which prompt arm is best on the benchmark when task
 assignment is fair?
 
+## Current Uniform Sweep Results
+
+As of 2026-06-18, the first four paired arms have completed all 60 Gmail
+tasks. The remaining eight arms are still pending.
+
+| rank | arm | success | success rate | cost | wall time | log-e | CS |
+|---:|---|---:|---:|---:|---:|---:|---|
+| 1 | baseline | 35/60 | 58.3% | $2.6262 | 58.6 min | -0.582 | 0.400-0.800 |
+| 2 | cautious | 33/60 | 55.0% | $2.6031 | 74.2 min | -1.626 | 0.369-0.769 |
+| 3 | explorer | 33/60 | 55.0% | $2.9363 | 71.8 min | -1.117 | 0.369-0.754 |
+| 4 | planner | 27/60 | 45.0% | $2.6365 | 96.9 min | -1.311 | 0.292-0.646 |
+
+Difficulty breakdown:
+
+| arm | easy | medium | hard |
+|---|---:|---:|---:|
+| baseline | 15/20 | 13/20 | 7/20 |
+| cautious | 15/20 | 13/20 | 5/20 |
+| explorer | 16/20 | 13/20 | 4/20 |
+| planner | 15/20 | 8/20 | 4/20 |
+
+Paired comparison against baseline:
+
+| arm | wins vs baseline | losses vs baseline | ties | net success delta |
+|---|---:|---:|---:|---:|
+| planner | 3 | 11 | 46 | -8 |
+| cautious | 3 | 5 | 52 | -2 |
+| explorer | 5 | 7 | 48 | -2 |
+
+Current interpretation:
+
+- Baseline is the best completed arm so far by success rate and wall time.
+- Cautious and explorer are close on total success, but both trail baseline by
+  2 paired successes.
+- Planner is clearly worse on this benchmark: lower success, more steps, and
+  substantially longer wall time.
+- All completed arms are cheap under `gpt-5.4-mini` low effort: roughly
+  $2.60-$2.94 per 60-task arm.
+
 ## Phase 2: Adaptive Sampling Run
 
 Run a 60-task online adaptive allocation policy, such as UCB or SPRUCE. At each

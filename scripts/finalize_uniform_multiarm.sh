@@ -25,11 +25,37 @@ latest_segments = [
     and not p.name.endswith("_MERGED_SO_FAR.jsonl")
     and p.stat().st_size > 0
 ]
-raw_log = full_logs[-1] if full_logs else (max(latest_segments, key=lambda p: p.stat().st_mtime) if latest_segments else None)
 
 rows = []
-if raw_log and raw_log.exists() and raw_log.stat().st_size > 0:
+raw_log = None
+if full_logs:
+    raw_log = full_logs[-1]
     rows = [json.loads(line) for line in raw_log.read_text().splitlines() if line.strip()]
+elif latest_segments:
+    latest = max(latest_segments, key=lambda p: p.stat().st_mtime)
+    first = next(
+        json.loads(line)
+        for line in latest.read_text().splitlines()
+        if line.strip()
+    )
+    base_run_id = first["run_id"].split("_resume_from_")[0]
+    by_t = {}
+    for p in log_dir.glob(f"{base_run_id}*.jsonl"):
+        name = p.name
+        if name.startswith("INVALID_"):
+            continue
+        if name.endswith("_FULL.jsonl") or name.endswith("_MERGED_SO_FAR.jsonl"):
+            continue
+        for line in p.read_text().splitlines():
+            if not line.strip():
+                continue
+            rec = json.loads(line)
+            by_t[int(rec["t"])] = rec
+    rows = [by_t[t] for t in sorted(by_t)]
+    merged_path = log_dir / f"{base_run_id}_MERGED_SO_FAR.jsonl"
+    if rows:
+        merged_path.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+        raw_log = merged_path
 
 progress = f"{len(rows)}/60"
 done = bool(full_logs and len(rows) == 60)

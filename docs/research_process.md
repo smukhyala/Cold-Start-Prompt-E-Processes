@@ -309,3 +309,31 @@ Use the pilot to validate:
 - resume behavior after browser-use failures.
 
 Then run the full paired sweep once the pipeline is stable.
+
+
+## Final Pilot Results: Uniform vs Adaptive Policy Comparison
+
+The initial pilot now has three completed components:
+
+| component | task executions | purpose | result |
+|---|---:|---|---|
+| Full paired arm benchmark | 720 | Estimate prompt-arm quality with every arm on the same 60 tasks | Best arm: `junior_reactive`, 42/60 (70.0%) |
+| Equal-budget uniform policy | 60 | Non-adaptive policy baseline, five pulls per arm | 39/60 (65.0%), $3.3710, 71.5 min |
+| Adaptive SPRUCE policy | 60 | E-process-aware adaptive allocation | 38/60 (63.3%), $3.2436, 65.8 min |
+
+The adaptive run did not beat the equal-budget uniform run in this pilot. It
+finished one success behind uniform, while slightly reducing cost and wall
+clock time. Its allocation concentrated on `planner` and `baseline`; this is
+methodologically important because `planner` was the weakest arm in the full
+paired benchmark. The result should be framed as a completed pilot validating
+the data collection and e-process logging infrastructure, not as evidence that
+adaptive allocation is already superior.
+
+Paper-ready write-up and data artifacts:
+
+- `reports/comparison_sweeps/initial_uniform_vs_adaptive_methodology.md`
+- `reports/comparison_sweeps/summary.md`
+- `reports/comparison_sweeps/adaptive_eprocess_timeline.csv`
+- `docs/paired_sweep_status.md`
+- `docs/uniform_multiarm_status.md`
+- `docs/adaptive_sweep_status.md`

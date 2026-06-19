@@ -42,3 +42,22 @@ def test_log_schema_fields_present(tmp_log_dir):
         assert not missing, f"record missing fields: {missing}"
     df = load_run(log_path)
     assert len(df) == cfg.trial.num_tasks
+
+
+def test_adaptive_webarena_config_loads():
+    cfg = load_config("configs/webarena_gmail_adaptive_spruce_60.yaml")
+    assert cfg.prompts.arms == "configs/arms_initial.yaml"
+    assert cfg.policy.type == "spruce"
+    assert cfg.policy.params["tie_break"] == "first"
+    assert cfg.policy.warmstart == {"min_pulls_per_arm": 1}
+    assert cfg.inference.per_arm.type == "upward_capital"
+    assert cfg.inference.global_.params["combine"] == "linear_mixture"
+
+
+def test_uniform_multiarm_webarena_config_loads():
+    cfg = load_config("configs/webarena_gmail_uniform_multiarm_60.yaml")
+    assert cfg.prompts.arms == "configs/arms_initial.yaml"
+    assert cfg.policy.type == "uniform"
+    assert cfg.policy.params["mode"] == "round_robin"
+    assert cfg.inference.per_arm.type == "upward_capital"
+    assert cfg.inference.global_.params["combine"] == "linear_mixture"

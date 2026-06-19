@@ -1,0 +1,67 @@
+trial:
+  name: webarena_gmail_adaptive_spruce_60
+  seed: 1
+  num_tasks: 60
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 30
+  output_dir: logs/adaptive_sweep/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_initial.yaml
+
+model:
+  # Unused by the WebArena adapter; keep mock so GPT-backed WebArena runs do
+  # not require ANTHROPIC_API_KEY.
+  type: mock
+  id: mock
+  max_tokens: 64
+  temperature: 0.0
+  prompt_cache: false
+
+task_source:
+  type: webarena
+  params:
+    web_app: apps/gmail
+    task_suite: real-tasks
+    port: 8001
+    sample_mode: cycle
+    use_vision: false
+    headless: true
+    timeout_s: 180
+    llm_provider: openai
+    llm_model: gpt-5.4-mini
+    llm_reasoning_effort: low
+    artifacts_dir: logs/adaptive_sweep/webarena
+    axes_path: configs/axes.yaml
+    template_path: configs/template.jinja
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    # One-sided upward e-process against H_0: mu_a <= m0.
+    type: upward_capital
+    params: { m0: 0.5 }
+  global:
+    # Convex mixture over all 12 per-arm e-processes.
+    type: global_null
+    params: { combine: linear_mixture }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  # Adaptive allocation by empirical upward log-wealth growth plus UCB bonus.
+  # `tie_break: first` makes restart/resume deterministic when scores tie.
+  type: spruce
+  params: { exploration_c: 1.0, tie_break: first }
+  # Every arm gets at least one observation before SPRUCE starts reallocating.
+  warmstart: { min_pulls_per_arm: 1 }
+
+logging:
+  level: INFO
+  jsonl: true

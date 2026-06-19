@@ -27,11 +27,19 @@ from cold_start.registry import register
 
 @register("ucb", kind="policy")
 class UCBPolicy(SamplingPolicy):
-    def __init__(self, rng: np.random.Generator, exploration_c: float = 1.0):
+    def __init__(
+        self,
+        rng: np.random.Generator,
+        exploration_c: float = 1.0,
+        tie_break: str = "random",
+    ):
         super().__init__(rng)
         if exploration_c < 0.0:
-            raise ValueError(f"exploration_c must be ≥ 0; got {exploration_c}")
+            raise ValueError(f"exploration_c must be >= 0; got {exploration_c}")
+        if tie_break not in ("random", "first"):
+            raise ValueError(f"tie_break must be 'random' or 'first'; got {tie_break!r}")
         self.c = float(exploration_c)
+        self.tie_break = tie_break
         self._last_scores: dict[str, float] = {}
 
     def next_arm(self, t: int, state: PolicyState) -> str:
@@ -49,6 +57,8 @@ class UCBPolicy(SamplingPolicy):
         }
         best = max(scores.values())
         ties = [aid for aid, v in scores.items() if v == best]
+        if self.tie_break == "first":
+            return ties[0]
         return str(self.rng.choice(ties))
 
     @property

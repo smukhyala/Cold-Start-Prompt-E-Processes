@@ -67,6 +67,15 @@ def test_spruce_picks_unplayed_first(rng):
     assert picks.issubset(set(arm_ids))
 
 
+def test_spruce_can_break_ties_deterministically(rng):
+    arm_ids = ["a", "b", "c"]
+    state = PolicyState(arm_ids=arm_ids)
+    p = SprucePolicy(rng, exploration_c=1.0, tie_break="first")
+    assert p.next_arm(t=1, state=state) == "a"
+    state.record("a", 1.0, log_e=0.0, log_e_upper=0.0)
+    assert p.next_arm(t=2, state=state) == "b"
+
+
 def test_ucb_picks_unplayed_first(rng):
     arm_ids = ["a", "b", "c"]
     state = PolicyState(arm_ids=arm_ids)
@@ -76,6 +85,15 @@ def test_ucb_picks_unplayed_first(rng):
     state.record("a", 1.0, log_e=0.0)
     pick = p.next_arm(t=2, state=state)
     assert pick in ("b", "c"), f"UCB picked already-pulled arm {pick}"
+
+
+def test_ucb_can_break_ties_deterministically(rng):
+    arm_ids = ["a", "b", "c"]
+    state = PolicyState(arm_ids=arm_ids)
+    p = UCBPolicy(rng, exploration_c=1.0, tie_break="first")
+    assert p.next_arm(t=1, state=state) == "a"
+    state.record("a", 1.0, log_e=0.0)
+    assert p.next_arm(t=2, state=state) == "b"
 
 
 def test_ucb_greedy_when_c_zero():

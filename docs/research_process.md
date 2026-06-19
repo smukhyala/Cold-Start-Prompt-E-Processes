@@ -136,6 +136,35 @@ Primary outputs:
 This phase answers: can adaptive allocation find the strong prompt(s) faster
 and with less token/time expenditure than evaluating every arm uniformly?
 
+Implemented run path:
+
+- Config: `configs/webarena_gmail_adaptive_spruce_60.yaml`
+- Status: `docs/adaptive_sweep_status.md`
+- Runner: `scripts/run_adaptive_spruce.sh`
+- Resume/finalize wrapper: `scripts/resume_adaptive_spruce.sh`
+- Watchdog: `scripts/watchdog_adaptive_spruce.sh`
+- Reports: `reports/adaptive_sweep/spruce_60/`
+- Logs: `logs/adaptive_sweep/`
+
+Start command:
+
+```bash
+bash scripts/run_adaptive_spruce.sh
+```
+
+Live monitoring:
+
+```bash
+tail -f logs/adaptive_sweep/adaptive_stdout.log
+tail -f logs/adaptive_sweep/watchdog_adaptive_spruce.log
+```
+
+The adaptive config uses all 12 arms with `policy.type: spruce`,
+`warmstart.min_pulls_per_arm: 1`, and deterministic tie-breaking. The policy
+scores arms by upward e-process log-wealth growth plus an exploration bonus, so
+the allocation is directly tied to the same evidence process reported in the
+JSONL.
+
 ## Metrics To Track In Every Run
 
 Every JSONL record should preserve:
@@ -231,6 +260,31 @@ an unbiased final ranking of every arm, because it intentionally samples arms
 unequally. Its value is showing whether e-process-guided allocation reaches
 useful evidence earlier, spends fewer tokens, or avoids wasting time on weak
 arms.
+
+## Phase 3: Equal-Budget Uniform Versus Adaptive
+
+To make the adaptive-sampling claim fair, compare the adaptive 60-task run
+against a non-adaptive 60-task multi-arm run with the same total task budget.
+The individual 12 x 60 runs remain the gold-standard prompt-quality benchmark,
+but they are not the equal-budget baseline for adaptivity.
+
+Implemented equal-budget uniform path:
+
+- Config: `configs/webarena_gmail_uniform_multiarm_60.yaml`
+- Status: `docs/uniform_multiarm_status.md`
+- Resume/finalize wrapper: `scripts/resume_uniform_multiarm.sh`
+- Reports: `reports/uniform_multiarm/round_robin_60/`
+- Logs: `logs/uniform_multiarm/`
+
+Sequential comparison command:
+
+```bash
+bash scripts/run_uniform_then_adaptive.sh
+```
+
+This launches the uniform multi-arm baseline first and the adaptive SPRUCE run
+second, under a shared watchdog. They run sequentially because both need the
+same local WebArena port.
 
 A strong paper claim would be:
 

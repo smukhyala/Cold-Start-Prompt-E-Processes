@@ -1,0 +1,16 @@
+replicate,t,event,selected_arm,reward,cumulative_successes,cumulative_tasks,cumulative_rate,global_log_e,cumulative_cost_usd,cumulative_wall_min
+rep1,36,checkpoint,domain_expert,1,27,36,0.75,0.432864,1.705956,23.16
+rep1,60,checkpoint,explorer,0,36,60,0.6,0.124177,2.845531,52.48
+rep1,90,checkpoint,balanced,1,56,90,0.6222,0.385829,4.538951,81.18
+rep1,96,max_global_log_e,balanced,1,61,96,0.6354,0.654396,4.697179,83.81
+rep1,120,checkpoint,planner,0,72,120,0.6,-0.183576,6.05619,116.2
+rep2,36,checkpoint,domain_expert,1,27,36,0.75,0.223144,1.628791,144.45
+rep2,60,checkpoint,explorer,0,37,60,0.6167,-0.30646,3.000026,185.45
+rep2,90,checkpoint,domain_expert,1,59,90,0.6556,0.423034,4.570659,213.69
+rep2,102,max_global_log_e,cautious,1,69,102,0.6765,1.922413,5.232835,224.61
+rep2,120,checkpoint,planner,0,73,120,0.6083,0.721418,6.322597,258.33
+rep3,36,checkpoint,domain_expert,1,25,36,0.6944,0.206336,1.343978,31.18
+rep3,60,checkpoint,algorithmic,0,35,60,0.5833,-0.162213,2.431982,67.14
+rep3,90,checkpoint,verifier,1,57,90,0.6333,0.41563,3.656441,103.93
+rep3,91,max_global_log_e,explorer,1,58,91,0.6374,0.650123,3.680259,104.17
+rep3,120,checkpoint,cautious,0,68,120,0.5667,-0.025664,5.052089,155.12

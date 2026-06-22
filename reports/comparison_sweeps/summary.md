@@ -1,5 +1,21 @@
 # Uniform vs Adaptive Comparison Summary
 
+## 120-Task Replicate Study
+
+The 120-task follow-up completed three uniform/adaptive pairs. Each run used a 120-execution budget over two cycles of the 60-task Gmail task bank.
+
+| policy | tasks | successes | rate | cost | cost per success | wall time |
+|---|---:|---:|---:|---:|---:|---:|
+| uniform | 360 | 202 | 56.1% | $19.1267 | $0.0947 | 428.2 min |
+| adaptive SPRUCE | 360 | 213 | 59.2% | $17.4309 | $0.0818 | 529.6 min |
+
+Adaptive won two of three 120-task replicates and finished +11 successes overall with lower token cost. Wall-clock was worse because of browser-use stalls and watchdog restarts, especially in adaptive replicate 2.
+
+Detailed 120-task write-up: `reports/comparison_sweeps/uniform_vs_adaptive_120_replicates.md`
+Adaptive 120-task e-process timeline: `reports/comparison_sweeps/adaptive_120_eprocess_timeline.csv`
+
+## 60-Task Pilot
+
 ## Completed Runs
 
 | run | budget | successes | rate | cost | wall time | final global log-e | rejected |

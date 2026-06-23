@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+# Watchdog for the unattended WebArena Shopping paired sweep.
+
+set -uo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_DIR"
+
+POLL_SECS="${POLL_SECS:-120}"
+STALL_SECS="${STALL_SECS:-600}"
+NO_LOG_STALL_SECS="${NO_LOG_STALL_SECS:-300}"
+STARTUP_GRACE_SECS="${STARTUP_GRACE_SECS:-300}"
+MAX_RESTARTS="${MAX_RESTARTS:-120}"
+SCREEN_NAME="${SCREEN_NAME:-shopping_pair_full}"
+WATCHDOG_SCREEN_NAME="${WATCHDOG_SCREEN_NAME:-shopping_pair_watchdog}"
+WATCHDOG_PIDFILE="${WATCHDOG_PIDFILE:-/tmp/cold_start_paired_shopping_watchdog.pid}"
+WATCHDOG_LOG="${WATCHDOG_LOG:-logs/paired_sweep_shopping/watchdog_paired_shopping.log}"
+WRAPPER_STDOUT="${WRAPPER_STDOUT:-logs/paired_sweep_shopping/all_arms_screen.log}"
+WRAPPER_SCRIPT="${WRAPPER_SCRIPT:-scripts/run_paired_shopping_all_arms.sh}"
+
+# The local WebArena checkout used for Gmail does not include the Shopify app.
+# Let callers override this, but default to the detached worktree prepared for
+# the current Shopping baseline run.
+DEFAULT_SHOPIFY_ROOT="/tmp/webarena-shopify-web-performance-inspect"
+export WEBARENA_INFINITY_ROOT="${WEBARENA_INFINITY_ROOT:-$DEFAULT_SHOPIFY_ROOT}"
+
+mkdir -p logs/paired_sweep_shopping
+echo $$ > "$WATCHDOG_PIDFILE"
+
+log() {
+    printf '[watchdog-shopping %s] %s\n' "$(date -u +%H:%M:%SZ)" "$*" | tee -a "$WATCHDOG_LOG"
+}
+
+screen_alive() {
+    screen -ls 2>/dev/null | awk '{print $1}' | grep -Eq "^[0-9]+[.]${SCREEN_NAME}$"
+}
+
+runner_alive() {
+    pgrep -f 'cold-start-run --config configs/webarena_shopping_pair_.*_60[.]yaml' >/dev/null 2>&1
+}
+
+wrapper_alive() {
+    screen_alive || pgrep -f '[r]un_paired_shopping_all_arms[.]sh' >/dev/null 2>&1 || runner_alive
+}
+
+shopping_done() {
+    python3 - <<'PY'
+from pathlib import Path
+
+required = {
+    "baseline",
+    "planner",
+    "cautious",
+    "explorer",
+    "balanced",
+    "overthinker",
+    "rapid",
+    "verifier",
+    "exploratory",
+    "algorithmic",
+    "junior_reactive",
+    "domain_expert",
+}
+path = Path("docs/paired_sweep_shopping_status.md")
+if not path.exists():
+    raise SystemExit(1)
+statuses = {}
+for line in path.read_text().splitlines():
+    parts = [p.strip() for p in line.strip().strip("|").split("|")]
+    if len(parts) == 5 and parts[1] in required:
+        statuses[parts[1]] = parts[2]
+raise SystemExit(0 if all(statuses.get(arm) == "done" for arm in required) else 1)
+PY
+}
+
+active_log() {
+    python3 - <<'PY'
+import pathlib
+
+prefixes = [
+    "webarena_shopping_pair_domain_expert_60",
+    "webarena_shopping_pair_junior_reactive_60",
+    "webarena_shopping_pair_algorithmic_60",
+    "webarena_shopping_pair_exploratory_60",
+    "webarena_shopping_pair_verifier_60",
+    "webarena_shopping_pair_rapid_60",
+    "webarena_shopping_pair_overthinker_60",
+    "webarena_shopping_pair_balanced_60",
+    "webarena_shopping_pair_explorer_60",
+    "webarena_shopping_pair_cautious_60",
+    "webarena_shopping_pair_planner_60",
+    "webarena_shopping_pair_baseline_60",
+]
+
+paths = []
+for prefix in prefixes:
+    for p in pathlib.Path("logs/paired_sweep_shopping").glob(f"{prefix}_trial0_*.jsonl"):
+        name = p.name
+        if name.startswith("INVALID_"):
+            continue
+        if name.endswith("_FULL.jsonl") or name.endswith("_MERGED_SO_FAR.jsonl"):
+            continue
+        if p.stat().st_size == 0:
+            continue
+        paths.append(p)
+if paths:
+    print(max(paths, key=lambda p: p.stat().st_mtime))
+PY
+}
+
+last_t() {
+    local log_path="$1"
+    [[ -s "$log_path" ]] || { echo 0; return; }
+    tail -1 "$log_path" | python3 -c '
+import json, sys
+try:
+    print(json.loads(sys.stdin.read())["t"])
+except Exception:
+    print(0)
+' 2>/dev/null
+}
+
+row_count() {
+    local log_path="$1"
+    [[ -f "$log_path" ]] || { echo 0; return; }
+    wc -l < "$log_path" | tr -d " "
+}
+
+log_mtime() {
+    local log_path="$1"
+    stat -f %m "$log_path" 2>/dev/null || stat -c %Y "$log_path" 2>/dev/null || date +%s
+}
+
+stop_screen() {
+    screen -ls 2>/dev/null | awk -v name="$1" '$1 ~ "^[0-9]+[.]" name "$" {print $1}' | while read -r session; do
+        screen -S "$session" -X quit 2>/dev/null || true
+    done
+}
+
+restart_wrapper() {
+    log "stopping screen=${SCREEN_NAME}, Shopping runners, and port 8001"
+    stop_screen "$SCREEN_NAME"
+    pgrep -f 'cold-start-run --config configs/webarena_shopping_pair_.*_60[.]yaml' 2>/dev/null | while read -r pid; do
+        [[ "$pid" == "$$" ]] && continue
+        kill -9 "$pid" 2>/dev/null || true
+    done
+    pgrep -f '[r]un_paired_shopping_all_arms[.]sh' 2>/dev/null | while read -r pid; do
+        [[ "$pid" == "$$" ]] && continue
+        kill "$pid" 2>/dev/null || true
+    done
+    kill -9 $(lsof -ti :8001 2>/dev/null) 2>/dev/null || true
+    sleep 3
+
+    if [[ ! -d "$WEBARENA_INFINITY_ROOT/apps/shopping" ]]; then
+        log "WARNING: $WEBARENA_INFINITY_ROOT/apps/shopping is missing; runner may fail preflight"
+    fi
+
+    log "relaunching ${WRAPPER_SCRIPT} in screen=${SCREEN_NAME}"
+    screen -dmS "$SCREEN_NAME" bash -lc "cd '$REPO_DIR' && export WEBARENA_INFINITY_ROOT='$WEBARENA_INFINITY_ROOT' && bash '$WRAPPER_SCRIPT' >> '$WRAPPER_STDOUT' 2>&1"
+    grace_until=$(( $(date +%s) + STARTUP_GRACE_SECS ))
+    if wrapper_alive; then
+        log "wrapper relaunch confirmed"
+    else
+        log "WARNING: wrapper relaunch was not visible after screen start"
+    fi
+}
+
+log "starting; screen=${SCREEN_NAME} poll=${POLL_SECS}s stall=${STALL_SECS}s no_log_stall=${NO_LOG_STALL_SECS}s startup_grace=${STARTUP_GRACE_SECS}s max_restarts=${MAX_RESTARTS} webarena_root=${WEBARENA_INFINITY_ROOT}"
+
+restarts=0
+no_log_since=""
+grace_until=$(( $(date +%s) + STARTUP_GRACE_SECS ))
+while true; do
+    if shopping_done; then
+        log "Shopping paired sweep is done; exiting"
+        exit 0
+    fi
+
+    log_path="$(active_log)"
+    if [[ -z "$log_path" ]]; then
+        now="$(date +%s)"
+        if [[ -z "$no_log_since" ]]; then
+            no_log_since="$now"
+        fi
+        no_log_gap=$((now - no_log_since))
+        log "no active JSONL found yet"
+        if ! wrapper_alive || (( no_log_gap > NO_LOG_STALL_SECS )); then
+            if (( restarts >= MAX_RESTARTS )); then
+                log "GIVE UP: no active JSONL and max restarts reached"
+                exit 2
+            fi
+            restart_wrapper
+            restarts=$((restarts + 1))
+            no_log_since="$(date +%s)"
+            log "restart #${restarts}/${MAX_RESTARTS} complete"
+        fi
+        sleep "$POLL_SECS"
+        continue
+    fi
+    no_log_since=""
+
+    now="$(date +%s)"
+    mtime="$(log_mtime "$log_path")"
+    gap=$((now - mtime))
+    lt="$(last_t "$log_path")"
+    rows="$(row_count "$log_path")"
+
+    if wrapper_alive; then
+        if (( now < grace_until && gap > STALL_SECS )); then
+            log "grace: ${log_path} rows=${rows} last_t=${lt} stale ${gap}s, but runner is inside startup grace"
+        elif (( gap > STALL_SECS )); then
+            log "STALL: ${log_path} rows=${rows} last_t=${lt} last grew ${gap}s ago"
+            if (( restarts >= MAX_RESTARTS )); then
+                log "GIVE UP: hit MAX_RESTARTS=${MAX_RESTARTS}"
+                exit 2
+            fi
+            restart_wrapper
+            restarts=$((restarts + 1))
+            log "restart #${restarts}/${MAX_RESTARTS} complete"
+        else
+            log "alive: ${log_path} rows=${rows} last_t=${lt} last grew ${gap}s ago"
+        fi
+    else
+        log "wrapper screen missing while run incomplete; restarting"
+        if (( restarts >= MAX_RESTARTS )); then
+            log "GIVE UP: hit MAX_RESTARTS=${MAX_RESTARTS}"
+            exit 2
+        fi
+        restart_wrapper
+        restarts=$((restarts + 1))
+        log "restart #${restarts}/${MAX_RESTARTS} complete"
+    fi
+
+    sleep "$POLL_SECS"
+done

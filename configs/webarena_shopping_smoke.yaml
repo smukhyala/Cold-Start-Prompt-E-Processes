@@ -1,0 +1,64 @@
+# Tiny smoke config: 4 Shopping tasks against the live WebArena app with Claude Opus 4.7,
+# uniform allocation across a 2-arm smoke catalog. Used to verify the WebArena
+# pipeline (server subprocess + browser-use + Anthropic) end-to-end without
+# committing to a full 60-task run.
+
+trial:
+  name: webarena_shopping_smoke
+  seed: 1
+  num_tasks: 4
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 15
+  output_dir: logs/paired_sweep_shopping/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_smoke_shopping.yaml
+
+# Unused by the webarena adapter (browser-use drives its own LLM). Kept here so
+# the orchestrator's text-only runner has a coherent (unused) configuration.
+model:
+  type: anthropic
+  id: claude-opus-4-7
+  max_tokens: 256
+  temperature: null
+  prompt_cache: true
+
+task_source:
+  type: webarena
+  params:
+    web_app: apps/shopping
+    task_suite: real-tasks
+    port: 8001
+    sample_mode: cycle
+    use_vision: false
+    headless: true
+    timeout_s: 180
+    llm_model: claude-sonnet-4-6
+    artifacts_dir: logs/paired_sweep_shopping/webarena_smoke
+    axes_path: configs/axes.yaml
+    template_path: configs/template.jinja
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    type: upward_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    params: { combine: linear_mixture }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: uniform
+  params: {}
+
+logging:
+  level: INFO
+  jsonl: true

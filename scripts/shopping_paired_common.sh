@@ -6,6 +6,7 @@ SHOPPING_LOG_DIR="${SHOPPING_LOG_DIR:-logs/paired_sweep_shopping}"
 SHOPPING_REPORT_DIR="${SHOPPING_REPORT_DIR:-reports/paired_sweep_shopping}"
 SHOPPING_STATUS="${SHOPPING_STATUS:-docs/paired_sweep_shopping_status.md}"
 SHOPPING_EXPECTED_TASKS="${SHOPPING_EXPECTED_TASKS:-60}"
+SHOPPING_FINALIZE_SCRIPT="${SHOPPING_FINALIZE_SCRIPT:-scripts/finalize_paired_sweep_shopping.sh}"
 SHOPPING_ARMS=(baseline planner cautious explorer balanced overthinker rapid verifier exploratory algorithmic junior_reactive domain_expert)
 
 update_shopping_status_row() {
@@ -64,7 +65,7 @@ log_dir=pathlib.Path(sys.argv[1]); base=sys.argv[2]; suffix=sys.argv[3]
 segments=[]
 for p in log_dir.glob(f"{base}*.jsonl"):
     n=p.name
-    if n.startswith('INVALID_') or n.endswith('_FULL.jsonl') or n.endswith('_MERGED_SO_FAR.jsonl'): continue
+    if n.startswith('INVALID_') or n.endswith('_FULL.jsonl') or n.endswith('_FULL80.jsonl') or n.endswith('_MERGED_SO_FAR.jsonl') or n.endswith('_MERGED80_SO_FAR.jsonl'): continue
     lines=[l for l in p.read_text().splitlines() if l.strip()]
     if not lines: continue
     segments.append((json.loads(lines[0])['t'], json.loads(lines[-1])['t'], p, lines))
@@ -87,7 +88,7 @@ shopping_export_arm() {
     cold-start-export-csv --log "$full_log" --out-dir "$report_dir" 2>&1 | tee -a "$stdout_log"
     cold-start-report --log "$full_log" --out-dir "$report_dir" 2>&1 | tee -a "$stdout_log"
     update_shopping_status_row "$arm" done "$full_log" "$report_dir"
-    bash scripts/finalize_paired_sweep_shopping.sh
+    bash "$SHOPPING_FINALIZE_SCRIPT"
 }
 
 shopping_run_or_resume_arm() {

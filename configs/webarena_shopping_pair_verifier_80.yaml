@@ -1,0 +1,60 @@
+# Shopping paired baseline 80-task sweep: mirrors the Gmail paired sweep for this arm.
+trial:
+  name: webarena_shopping_pair_verifier_80
+  seed: 1
+  num_tasks: 80
+  num_trials: 1
+  paired_streams: true
+  max_agent_steps: 30
+  output_dir: logs/paired_sweep_shopping/
+
+prompts:
+  axes: configs/axes.yaml
+  template: configs/template.jinja
+  arms: configs/arms_verifier_only.yaml
+
+model:
+  type: mock
+  id: mock
+  max_tokens: 64
+  temperature: 0.0
+  prompt_cache: false
+
+task_source:
+  type: webarena
+  params:
+    web_app: apps/shopping
+    task_suite: real-tasks
+    port: 8001
+    sample_mode: cycle
+    use_vision: false
+    headless: true
+    timeout_s: 180
+    llm_provider: openai
+    llm_model: gpt-5.4-mini
+    llm_reasoning_effort: low
+    artifacts_dir: logs/paired_sweep_shopping/webarena_80/verifier
+    axes_path: configs/axes.yaml
+    template_path: configs/template.jinja
+
+reward:
+  type: binary
+
+inference:
+  per_arm:
+    type: upward_capital
+    params: { m0: 0.5 }
+  global:
+    type: global_null
+    params: { combine: linear_mixture }
+  confidence_sequence:
+    alpha: 0.05
+    grid_size: 64
+
+policy:
+  type: uniform
+  params: {}
+
+logging:
+  level: INFO
+  jsonl: true

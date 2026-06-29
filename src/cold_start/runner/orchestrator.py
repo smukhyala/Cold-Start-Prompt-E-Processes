@@ -48,7 +48,7 @@ from cold_start.policies.base import PolicyState, SamplingPolicy
 from cold_start.policies.warmstart import WarmStart
 from cold_start.prompts.axes import load_axes
 from cold_start.prompts.catalog import load_arms
-from cold_start.prompts.template import render_prompt
+from cold_start.prompts.template import render_arm_prompt
 from cold_start.registry import get_registered
 from cold_start.rewards.base import RewardFn
 from cold_start.rng import make_rng, spawn
@@ -90,8 +90,8 @@ def run_trial(
     global_e = GlobalNullEProcess(**cfg.inference.global_.params)
     alpha = float(cfg.inference.confidence_sequence.get("alpha", 0.05))
 
-    # Render and cache system prompts per arm (deterministic per vector).
-    system_prompts = {a.arm_id: render_prompt(a.vector, axes, cfg.prompts.template) for a in arms}
+    # Render and cache system prompts per arm.
+    system_prompts = {a.arm_id: render_arm_prompt(a, axes, cfg.prompts.template) for a in arms}
 
     state = PolicyState(arm_ids=[a.arm_id for a in arms])
     per_arm_summary = {a.arm_id: PerArmState() for a in arms}

@@ -56,6 +56,10 @@ class SamplingPolicy(ABC):
     def next_arm(self, t: int, state: PolicyState) -> str:
         """Return the arm_id to pull at time t (1-indexed)."""
 
+    def select_arm(self, t: int, state: PolicyState) -> str:
+        """Compatibility alias for experiment code that uses allocation terminology."""
+        return self.next_arm(t, state)
+
     def update(self, arm_id: str, reward: float, info: dict[str, Any]) -> None:
         """Optional hook; most policies read state via PolicyState directly."""
         return None

@@ -24,6 +24,14 @@ def test_uniform_round_robin(rng):
     assert picks == ["a", "b", "c", "a", "b", "c", "a", "b", "c"]
 
 
+def test_policy_select_arm_alias(rng):
+    arm_ids = ["a", "b", "c"]
+    state = PolicyState(arm_ids=arm_ids)
+    p = UniformPolicy(rng, mode="round_robin")
+    assert p.select_arm(1, state) == "a"
+    assert p.select_arm(2, state) == "b"
+
+
 def _run_toy_bandit(policy_cls, kwargs, probs, T, seed=0):
     """Run a Bernoulli bandit on `probs`, return pull counts."""
     rng = np.random.default_rng(seed)

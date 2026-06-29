@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 
 from cold_start.prompts.axes import load_axes
-from cold_start.prompts.template import render_prompt
+from cold_start.prompts.template import render_arm_prompt
 from cold_start.registry import register
 from cold_start.tasks.base import AgentRunner, EnvironmentAdapter
 from cold_start.types import Arm, RunResult, Task
@@ -89,7 +89,7 @@ class SanityEnv(EnvironmentAdapter):
     ) -> RunResult:
         system_prompt = self._prompt_cache.get(arm.arm_id)
         if system_prompt is None:
-            system_prompt = render_prompt(arm.vector, self._axes, self._template_path)
+            system_prompt = render_arm_prompt(arm, self._axes, self._template_path)
             self._prompt_cache[arm.arm_id] = system_prompt
 
         raw = runner(system_prompt=system_prompt, task=task, max_steps=max_steps)

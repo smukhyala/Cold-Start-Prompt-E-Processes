@@ -47,6 +47,7 @@ class Arm:
     arm_id: str
     name: str
     vector: PromptVector
+    prompt_guidance: str = ""
 
 
 @dataclass(frozen=True, slots=True)

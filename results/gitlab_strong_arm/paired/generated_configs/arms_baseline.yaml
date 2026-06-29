@@ -1,0 +1,10 @@
+arms:
+- arm_id: baseline
+  name: Baseline
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0

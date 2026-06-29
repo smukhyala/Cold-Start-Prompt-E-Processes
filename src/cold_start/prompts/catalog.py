@@ -31,6 +31,7 @@ def load_arms(path: str | Path, axes: AxesSpec) -> list[Arm]:
                 arm_id=entry["arm_id"],
                 name=entry.get("name", entry["arm_id"].title()),
                 vector=vec,
+                prompt_guidance=str(entry.get("prompt_guidance", "") or ""),
             )
         )
     if len({a.arm_id for a in arms}) != len(arms):
@@ -38,6 +39,17 @@ def load_arms(path: str | Path, axes: AxesSpec) -> list[Arm]:
     return arms
 
 
-def generate_arm(arm_id: str, vector: PromptVector, axes: AxesSpec, name: str | None = None) -> Arm:
+def generate_arm(
+    arm_id: str,
+    vector: PromptVector,
+    axes: AxesSpec,
+    name: str | None = None,
+    prompt_guidance: str = "",
+) -> Arm:
     validate_vector(vector, axes)
-    return Arm(arm_id=arm_id, name=name or arm_id.title(), vector=vector)
+    return Arm(
+        arm_id=arm_id,
+        name=name or arm_id.title(),
+        vector=vector,
+        prompt_guidance=prompt_guidance,
+    )

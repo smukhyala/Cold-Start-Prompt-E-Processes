@@ -1,0 +1,86 @@
+# GitLab positive-control arm catalog.
+#
+# The first twelve arms are the existing generic catalog copied unchanged from
+# configs/arms_initial.yaml. The final four arms add GitLab-specific operating
+# guidance without encoding benchmark task answers.
+
+arms:
+  - arm_id: baseline
+    name: Baseline
+    vector: {planning: 0, verification: 0, agency: 0, expertise: 1, format: 0, goal: 0}
+  - arm_id: planner
+    name: Planner
+    vector: {planning: 3, verification: 1, agency: 1, expertise: 2, format: 2, goal: 1}
+  - arm_id: cautious
+    name: Cautious
+    vector: {planning: 2, verification: 3, agency: 0, expertise: 2, format: 2, goal: 2}
+  - arm_id: explorer
+    name: Explorer
+    vector: {planning: 1, verification: 0, agency: 2, expertise: 2, format: 0, goal: 0}
+  - arm_id: balanced
+    name: Balanced
+    vector: {planning: 2, verification: 2, agency: 1, expertise: 2, format: 1, goal: 1}
+  - arm_id: overthinker
+    name: Overthinker
+    vector: {planning: 3, verification: 3, agency: 1, expertise: 3, format: 3, goal: 2}
+  - arm_id: rapid
+    name: Rapid
+    vector: {planning: 0, verification: 0, agency: 2, expertise: 2, format: 0, goal: 0}
+  - arm_id: verifier
+    name: Verifier
+    vector: {planning: 1, verification: 3, agency: 0, expertise: 2, format: 2, goal: 1}
+  - arm_id: exploratory
+    name: Exploratory
+    vector: {planning: 2, verification: 1, agency: 2, expertise: 1, format: 1, goal: 0}
+  - arm_id: algorithmic
+    name: Algorithmic
+    vector: {planning: 3, verification: 2, agency: 1, expertise: 3, format: 3, goal: 2}
+  - arm_id: junior_reactive
+    name: Junior Reactive
+    vector: {planning: 1, verification: 2, agency: 0, expertise: 0, format: 1, goal: 1}
+  - arm_id: domain_expert
+    name: Domain Expert
+    vector: {planning: 2, verification: 1, agency: 2, expertise: 3, format: 2, goal: 2}
+
+  - arm_id: gitlab_domain_expert
+    name: GitLab Domain Expert
+    vector: {planning: 3, verification: 2, agency: 2, expertise: 3, format: 3, goal: 2}
+    prompt_guidance: |
+      Use a highly structured software engineering workflow optimized for GitLab.
+      Read the task completely before acting. Identify the GitLab object involved:
+      repository, issue, merge request, branch, member, milestone, label, settings,
+      or permissions. Determine the desired final state before interacting.
+      Inspect current state before modifying anything. Search before creating.
+      Make minimal reversible edits. Never delete unless explicitly requested.
+      Navigate intentionally through GitLab. Re-open pages after changes to verify
+      success. Gather evidence before acting when uncertain. Avoid repeating failed
+      actions. Prioritize correctness over speed.
+
+  - arm_id: gitlab_rapid_executor
+    name: GitLab Rapid Executor
+    vector: {planning: 0, verification: 0, agency: 2, expertise: 2, format: 1, goal: 0}
+    prompt_guidance: |
+      Execute GitLab tasks quickly with minimal planning. Begin acting quickly,
+      minimize upfront reasoning, and use as few browser actions as possible.
+      Minimize verification and verify only when confidence is low. Prefer speed
+      over exhaustive checking, while recovering quickly after failures.
+
+  - arm_id: gitlab_auditor
+    name: GitLab Auditor
+    vector: {planning: 2, verification: 3, agency: 1, expertise: 3, format: 2, goal: 2}
+    prompt_guidance: |
+      Use maximum verification for GitLab tasks. Inspect repository state before
+      every change. Verify assumptions before acting. Re-check pages after
+      modifications. Confirm permissions before editing. Validate final state
+      carefully. Prefer gathering more evidence over making uncertain changes.
+      Sacrifice speed for correctness.
+
+  - arm_id: gitlab_planner
+    name: GitLab Planner
+    vector: {planning: 3, verification: 2, agency: 1, expertise: 2, format: 2, goal: 1}
+    prompt_guidance: |
+      Decompose GitLab tasks explicitly. Build a concise internal plan, break
+      the task into sequential subtasks, complete one subtask before the next,
+      and re-evaluate progress after every completed step. Use systematic project
+      navigation. Perform one verification pass at the end. Balance planning and
+      efficiency.

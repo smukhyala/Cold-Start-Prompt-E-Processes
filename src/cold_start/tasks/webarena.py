@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from cold_start.prompts.axes import load_axes
-from cold_start.prompts.template import render_prompt
+from cold_start.prompts.template import render_arm_prompt
 from cold_start.registry import register
 from cold_start.tasks.base import AgentRunner, EnvironmentAdapter
 from cold_start.types import Arm, RunResult, Task
@@ -341,7 +341,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
 
         extension = self._prompt_cache.get(arm.arm_id)
         if extension is None:
-            extension = render_prompt(arm.vector, self._axes, self._template_path)
+            extension = render_arm_prompt(arm, self._axes, self._template_path)
             self._prompt_cache[arm.arm_id] = extension
 
         assert self._agent is not None, "reset() must be called before run_arm()"

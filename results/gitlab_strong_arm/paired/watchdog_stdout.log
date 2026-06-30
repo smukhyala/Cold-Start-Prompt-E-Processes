@@ -1,0 +1,11 @@
+[2026-06-30T08:12:16-0700] watchdog starting interval=60s stale=600s
+[2026-06-30T08:12:16-0700] runner active pids=[5910, 5911, 5940]; freshness=10s; completed=2/16; current=top-level
+[2026-06-30T08:13:16-0700] runner active pids=[5910, 5911, 5940]; freshness=2s; completed=2/16; current=top-level
+[2026-06-30T08:14:16-0700] runner active pids=[5910, 5911, 5940]; freshness=2s; completed=2/16; current=cautious
+[2026-06-30T08:15:16-0700] runner active pids=[5910, 5911, 5940]; freshness=1s; completed=2/16; current=cautious
+[2026-06-30T08:16:16-0700] runner active pids=[5910, 5911, 5940]; freshness=2s; completed=2/16; current=cautious
+[2026-06-30T08:17:16-0700] runner active pids=[5910, 5911, 5940]; freshness=1s; completed=2/16; current=cautious
+[2026-06-30T08:18:16-0700] runner active pids=[5910, 5911, 5940]; freshness=6s; completed=2/16; current=cautious
+[2026-06-30T08:19:17-0700] runner active pids=[5910, 5911, 5940]; freshness=4s; completed=2/16; current=cautious
+[2026-06-30T08:20:17-0700] runner active pids=[5910, 5911, 5940]; freshness=0s; completed=2/16; current=cautious
+[2026-06-30T08:21:17-0700] runner active pids=[5910, 5911, 5940]; freshness=1s; completed=2/16; current=cautious

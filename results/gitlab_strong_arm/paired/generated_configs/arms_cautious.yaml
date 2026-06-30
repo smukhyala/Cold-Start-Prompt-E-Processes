@@ -1,0 +1,10 @@
+arms:
+- arm_id: cautious
+  name: Cautious
+  vector:
+    planning: 2
+    verification: 3
+    agency: 0
+    expertise: 2
+    format: 2
+    goal: 2

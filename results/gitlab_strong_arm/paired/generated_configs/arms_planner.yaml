@@ -1,0 +1,10 @@
+arms:
+- arm_id: planner
+  name: Planner
+  vector:
+    planning: 3
+    verification: 1
+    agency: 1
+    expertise: 2
+    format: 2
+    goal: 1

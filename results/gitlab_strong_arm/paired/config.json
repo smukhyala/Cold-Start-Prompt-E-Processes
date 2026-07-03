@@ -1,0 +1,349 @@
+{
+  "true_best_arm": "gitlab_oracle_operator",
+  "paired_estimates": [
+    {
+      "arm_id": "gitlab_oracle_operator",
+      "tasks": 40,
+      "successes": 35,
+      "success_rate": 0.875,
+      "standard_error": 0.05229125165837972,
+      "bootstrap_ci_low": 0.75,
+      "bootstrap_ci_high": 0.975,
+      "total_runtime": 1543.8,
+      "total_token_cost": 1.0228432500000002,
+      "cost_per_success": 0.029224092857142864,
+      "average_runtime": 38.595,
+      "average_interaction_steps": 7.7,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_oracle_operator_trial0_2026-07-01T18-24-06Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "rapid",
+      "tasks": 40,
+      "successes": 28,
+      "success_rate": 0.7,
+      "standard_error": 0.07245688373094719,
+      "bootstrap_ci_low": 0.55,
+      "bootstrap_ci_high": 0.825,
+      "total_runtime": 2144.9,
+      "total_token_cost": 1.2472503000000001,
+      "cost_per_success": 0.044544653571428575,
+      "average_runtime": 53.6225,
+      "average_interaction_steps": 10.825,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_rapid_trial0_2026-06-30T19-33-04Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "baseline",
+      "tasks": 40,
+      "successes": 27,
+      "success_rate": 0.675,
+      "standard_error": 0.07405656621799311,
+      "bootstrap_ci_low": 0.525,
+      "bootstrap_ci_high": 0.825,
+      "total_runtime": 2841.3999999999996,
+      "total_token_cost": 1.8857760000000001,
+      "cost_per_success": 0.06984355555555556,
+      "average_runtime": 71.035,
+      "average_interaction_steps": 14.375,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_baseline_trial0_2026-06-29T17-36-48Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "gitlab_super_operator",
+      "tasks": 40,
+      "successes": 26,
+      "success_rate": 0.65,
+      "standard_error": 0.07541551564499178,
+      "bootstrap_ci_low": 0.5,
+      "bootstrap_ci_high": 0.8,
+      "total_runtime": 3009.0,
+      "total_token_cost": 1.4941422000000002,
+      "cost_per_success": 0.0574670076923077,
+      "average_runtime": 75.225,
+      "average_interaction_steps": 13.7,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_super_operator_trial0_2026-07-01T16-50-10Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "exploratory",
+      "tasks": 40,
+      "successes": 24,
+      "success_rate": 0.6,
+      "standard_error": 0.07745966692414834,
+      "bootstrap_ci_low": 0.45,
+      "bootstrap_ci_high": 0.75,
+      "total_runtime": 3500.5,
+      "total_token_cost": 1.63658985,
+      "cost_per_success": 0.06819124375,
+      "average_runtime": 87.5125,
+      "average_interaction_steps": 16.2,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_exploratory_trial0_2026-06-30T21-35-26Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "gitlab_rapid_executor",
+      "tasks": 40,
+      "successes": 24,
+      "success_rate": 0.6,
+      "standard_error": 0.07745966692414834,
+      "bootstrap_ci_low": 0.45,
+      "bootstrap_ci_high": 0.75,
+      "total_runtime": 3285.4,
+      "total_token_cost": 1.5792993000000002,
+      "cost_per_success": 0.06580413750000001,
+      "average_runtime": 82.135,
+      "average_interaction_steps": 14.4,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_rapid_executor_trial0_2026-07-01T03-11-28Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "junior_reactive",
+      "tasks": 40,
+      "successes": 23,
+      "success_rate": 0.575,
+      "standard_error": 0.07816249100431741,
+      "bootstrap_ci_low": 0.425,
+      "bootstrap_ci_high": 0.725,
+      "total_runtime": 3076.7,
+      "total_token_cost": 1.44930765,
+      "cost_per_success": 0.06301337608695652,
+      "average_runtime": 76.91749999999999,
+      "average_interaction_steps": 13.625,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_junior_reactive_trial0_2026-06-30T23-49-50Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "balanced",
+      "tasks": 40,
+      "successes": 22,
+      "success_rate": 0.55,
+      "standard_error": 0.07866066361276136,
+      "bootstrap_ci_low": 0.4,
+      "bootstrap_ci_high": 0.7,
+      "total_runtime": 3294.4,
+      "total_token_cost": 1.3959830999999998,
+      "cost_per_success": 0.06345377727272726,
+      "average_runtime": 82.36,
+      "average_interaction_steps": 14.475,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_balanced_trial0_2026-06-30T17-22-40Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "overthinker",
+      "tasks": 40,
+      "successes": 22,
+      "success_rate": 0.55,
+      "standard_error": 0.07866066361276136,
+      "bootstrap_ci_low": 0.4,
+      "bootstrap_ci_high": 0.7,
+      "total_runtime": 3120.1000000000004,
+      "total_token_cost": 1.131639,
+      "cost_per_success": 0.051438136363636366,
+      "average_runtime": 78.00250000000001,
+      "average_interaction_steps": 13.9,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_overthinker_trial0_2026-06-30T18-29-52Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "gitlab_auditor",
+      "tasks": 40,
+      "successes": 21,
+      "success_rate": 0.525,
+      "standard_error": 0.07895805848676878,
+      "bootstrap_ci_low": 0.375,
+      "bootstrap_ci_high": 0.675,
+      "total_runtime": 3519.9,
+      "total_token_cost": 1.2276034500000002,
+      "cost_per_success": 0.05845730714285715,
+      "average_runtime": 87.9975,
+      "average_interaction_steps": 14.55,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_auditor_trial0_2026-07-01T04-17-40Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "planner",
+      "tasks": 40,
+      "successes": 21,
+      "success_rate": 0.525,
+      "standard_error": 0.07895805848676878,
+      "bootstrap_ci_low": 0.375,
+      "bootstrap_ci_high": 0.675,
+      "total_runtime": 3951.2000000000003,
+      "total_token_cost": 1.39793505,
+      "cost_per_success": 0.06656833571428572,
+      "average_runtime": 98.78,
+      "average_interaction_steps": 17.25,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_planner_trial0_2026-06-29T21-10-26Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "domain_expert",
+      "tasks": 40,
+      "successes": 20,
+      "success_rate": 0.5,
+      "standard_error": 0.07905694150420949,
+      "bootstrap_ci_low": 0.35,
+      "bootstrap_ci_high": 0.65,
+      "total_runtime": 3631.5,
+      "total_token_cost": 1.2005020499999999,
+      "cost_per_success": 0.0600251025,
+      "average_runtime": 90.7875,
+      "average_interaction_steps": 14.35,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_domain_expert_trial0_2026-07-01T00-53-02Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "verifier",
+      "tasks": 40,
+      "successes": 20,
+      "success_rate": 0.5,
+      "standard_error": 0.07905694150420949,
+      "bootstrap_ci_low": 0.35,
+      "bootstrap_ci_high": 0.65,
+      "total_runtime": 3593.1,
+      "total_token_cost": 1.4452894500000002,
+      "cost_per_success": 0.07226447250000001,
+      "average_runtime": 89.8275,
+      "average_interaction_steps": 15.475,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_verifier_trial0_2026-06-30T20-22-13Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "cautious",
+      "tasks": 40,
+      "successes": 19,
+      "success_rate": 0.475,
+      "standard_error": 0.07895805848676878,
+      "bootstrap_ci_low": 0.325,
+      "bootstrap_ci_high": 0.625,
+      "total_runtime": 3697.6000000000004,
+      "total_token_cost": 1.82000085,
+      "cost_per_success": 0.09578951842105263,
+      "average_runtime": 92.44000000000001,
+      "average_interaction_steps": 15.65,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_cautious_trial0_2026-06-30T15-13-00Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "gitlab_domain_expert",
+      "tasks": 40,
+      "successes": 19,
+      "success_rate": 0.475,
+      "standard_error": 0.07895805848676878,
+      "bootstrap_ci_low": 0.325,
+      "bootstrap_ci_high": 0.625,
+      "total_runtime": 3052.2,
+      "total_token_cost": 1.0788202500000001,
+      "cost_per_success": 0.05678001315789474,
+      "average_runtime": 76.30499999999999,
+      "average_interaction_steps": 12.475,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_domain_expert_trial0_2026-07-01T02-07-16Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "gitlab_planner",
+      "tasks": 40,
+      "successes": 18,
+      "success_rate": 0.45,
+      "standard_error": 0.07866066361276136,
+      "bootstrap_ci_low": 0.3,
+      "bootstrap_ci_high": 0.6,
+      "total_runtime": 4073.6,
+      "total_token_cost": 1.31468325,
+      "cost_per_success": 0.07303795833333333,
+      "average_runtime": 101.84,
+      "average_interaction_steps": 16.975,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_planner_trial0_2026-07-01T05-29-53Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "algorithmic",
+      "tasks": 40,
+      "successes": 17,
+      "success_rate": 0.425,
+      "standard_error": 0.07816249100431741,
+      "bootstrap_ci_low": 0.275,
+      "bootstrap_ci_high": 0.575,
+      "total_runtime": 3037.9,
+      "total_token_cost": 1.17027675,
+      "cost_per_success": 0.06883980882352941,
+      "average_runtime": 75.9475,
+      "average_interaction_steps": 13.075,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_algorithmic_trial0_2026-06-30T22-45-38Z_FULL.jsonl"
+    },
+    {
+      "arm_id": "explorer",
+      "tasks": 40,
+      "successes": 8,
+      "success_rate": 0.2,
+      "standard_error": 0.0632455532033676,
+      "bootstrap_ci_low": 0.075,
+      "bootstrap_ci_high": 0.325,
+      "total_runtime": 3303.4,
+      "total_token_cost": 1.94804955,
+      "cost_per_success": 0.24350619375,
+      "average_runtime": 82.58500000000001,
+      "average_interaction_steps": 15.275,
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_explorer_trial0_2026-06-30T16-22-42Z_FULL.jsonl"
+    }
+  ],
+  "runs": [
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_baseline_trial0_2026-06-29T17-36-48Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_planner_trial0_2026-06-29T21-10-26Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_cautious_trial0_2026-06-30T15-13-00Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_explorer_trial0_2026-06-30T16-22-42Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_balanced_trial0_2026-06-30T17-22-40Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_overthinker_trial0_2026-06-30T18-29-52Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_rapid_trial0_2026-06-30T19-33-04Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_verifier_trial0_2026-06-30T20-22-13Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_exploratory_trial0_2026-06-30T21-35-26Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_algorithmic_trial0_2026-06-30T22-45-38Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_junior_reactive_trial0_2026-06-30T23-49-50Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_domain_expert_trial0_2026-07-01T00-53-02Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_domain_expert_trial0_2026-07-01T02-07-16Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_rapid_executor_trial0_2026-07-01T03-11-28Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_auditor_trial0_2026-07-01T04-17-40Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_planner_trial0_2026-07-01T05-29-53Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_super_operator_trial0_2026-07-01T16-50-10Z_FULL.jsonl",
+      "budget": 40
+    },
+    {
+      "log_path": "results/gitlab_strong_arm/paired/logs/gitlab_strong_paired_gitlab_oracle_operator_trial0_2026-07-01T18-24-06Z_FULL.jsonl",
+      "budget": 40
+    }
+  ]
+}

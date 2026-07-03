@@ -1,0 +1,22 @@
+arms:
+- arm_id: gitlab_auditor
+  name: GitLab Auditor
+  vector:
+    planning: 2
+    verification: 3
+    agency: 1
+    expertise: 3
+    format: 2
+    goal: 2
+  prompt_guidance: 'Use maximum verification for GitLab tasks. Inspect repository
+    state before
+
+    every change. Verify assumptions before acting. Re-check pages after
+
+    modifications. Confirm permissions before editing. Validate final state
+
+    carefully. Prefer gathering more evidence over making uncertain changes.
+
+    Sacrifice speed for correctness.
+
+    '

@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Watchdog for the GitLab paired 40-task sweep.
-
-The WebArena/browser-use stack can occasionally stop producing JSONL heartbeats
-while the Python process remains alive. This watchdog keeps the paired sweep
-moving by:
-
-- merging complete 40-row arm segments into *_FULL.jsonl files;
-- resuming partial arms from the first missing timestep;
-- restarting the top-level paired runner when no runner is active;
-- killing stale idle runners and their GitLab app server on port 8001.
-"""
+"""Watchdog for the GitLab 160-task uniform-vs-SPRUCE allocation sweep."""
 
 from __future__ import annotations
 
@@ -24,16 +14,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "results/gitlab_strong_arm/paired"
+OUT = ROOT / "results/gitlab_strong_arm/allocation_160"
 LOG_DIR = OUT / "logs"
-STDOUT_LOG = OUT / "paired_run.out"
+STDOUT_LOG = OUT / "allocation_run.out"
 WATCHDOG_LOG = OUT / "watchdog.log"
-TARGET_T = 40
+TARGET_T = 160
 PORT = 8001
-WATCHDOG_SCREEN = "gitlab_paired_watchdog"
+POLICIES = ["uniform", "spruce"]
+REPLICATES = [0, 1, 2]
+WATCHDOG_SCREEN = "gitlab_allocation_160_watchdog"
 
 
 @dataclass
@@ -59,7 +49,6 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log(f"watchdog starting interval={args.interval}s stale={args.stale_seconds}s")
-
     while True:
         try:
             tick(args)
@@ -79,78 +68,73 @@ def parse_args() -> argparse.Namespace:
 
 
 def tick(args: argparse.Namespace) -> None:
-    arms = arm_ids()
-    for arm in arms:
-        ensure_full_if_complete(arm)
+    jobs = job_names()
+    for job in jobs:
+        ensure_full_if_complete(job)
 
-    completed = [arm for arm in arms if full_log(arm) is not None]
-    partial = first_partial_arm(arms)
+    completed = [job for job in jobs if full_log(job) is not None]
+    partial = first_partial_job(jobs)
     runner_pids = active_runner_pids()
 
-    if len(completed) == len(arms):
-        log("all GitLab paired arms have complete FULL logs")
+    if len(completed) == len(jobs):
+        log("all GitLab allocation 160 jobs have complete FULL logs")
         kill_gitlab_screens()
         return
 
     if runner_pids:
         age = freshness_age_s()
         if age > args.stale_seconds:
-            log(
-                f"stale runner detected age={age:.0f}s pids={runner_pids}; "
-                "terminating and resuming"
-            )
+            log(f"stale runner detected age={age:.0f}s pids={runner_pids}; terminating and resuming")
             kill_runner_tree()
             if partial is not None:
                 launch_resume(partial)
             else:
-                launch_paired_runner()
+                launch_allocation_runner()
         else:
             active = partial or "top-level"
             log(
                 f"runner active pids={runner_pids}; freshness={age:.0f}s; "
-                f"completed={len(completed)}/{len(arms)}; current={active}"
+                f"completed={len(completed)}/{len(jobs)}; current={active}"
             )
         return
 
     if partial is not None:
-        log(f"no runner active; resuming partial arm {partial}")
+        log(f"no runner active; resuming partial job {partial}")
         launch_resume(partial)
     else:
-        log(f"no runner active; starting paired runner; completed={len(completed)}/{len(arms)}")
-        launch_paired_runner()
+        log(f"no runner active; starting allocation runner; completed={len(completed)}/{len(jobs)}")
+        launch_allocation_runner()
 
 
-def arm_ids() -> list[str]:
-    path = ROOT / "configs/arms_gitlab_strong.yaml"
-    raw = yaml.safe_load(path.read_text())
-    return [str(entry["arm_id"]) for entry in raw["arms"]]
+def job_names() -> list[str]:
+    return [
+        f"gitlab_strong_allocation_{policy}_budget{TARGET_T}_rep{rep}"
+        for rep in REPLICATES
+        for policy in POLICIES
+    ]
 
 
-def trial_name(arm: str) -> str:
-    return f"gitlab_strong_paired_{arm}"
-
-
-def full_log(arm: str) -> Path | None:
-    candidates = sorted(LOG_DIR.glob(f"{trial_name(arm)}_trial0_*_FULL.jsonl"))
+def full_log(job: str) -> Path | None:
+    candidates = sorted(LOG_DIR.glob(f"{job}_trial0_*_FULL.jsonl"))
     for path in reversed(candidates):
         if row_count(path) == TARGET_T:
             return path
     return None
 
 
-def first_partial_arm(arms: list[str]) -> str | None:
-    for arm in arms:
-        if full_log(arm) is not None:
+def first_partial_job(jobs: list[str]) -> str | None:
+    for job in jobs:
+        if full_log(job) is not None:
             continue
-        group = best_group(arm)
+        group = best_group(job)
         if group is not None and group.count > 0:
-            return arm
+            return job
     return None
 
 
-def segment_paths(arm: str) -> list[Path]:
+def segment_paths(job: str) -> list[Path]:
     paths = []
-    for path in LOG_DIR.glob(f"{trial_name(arm)}_trial0_*.jsonl"):
+    for path in LOG_DIR.glob(f"{job}_trial0_*.jsonl"):
         name = path.name
         if name.startswith("INVALID_"):
             continue
@@ -162,48 +146,47 @@ def segment_paths(arm: str) -> list[Path]:
     return sorted(paths, key=lambda p: p.stat().st_mtime)
 
 
-def groups_for(arm: str) -> list[SegmentGroup]:
+def groups_for(job: str) -> list[SegmentGroup]:
     groups: dict[str, dict[int, dict[str, Any]]] = {}
-    for path in segment_paths(arm):
+    for path in segment_paths(job):
         rows = read_rows(path)
         if not rows:
             continue
         base = str(rows[0]["run_id"]).split("_resume_from_")[0]
         rows_by_t = groups.setdefault(base, {})
         for row in rows:
-            t = int(row["t"])
-            rows_by_t[t] = row
+            rows_by_t[int(row["t"])] = row
     return [SegmentGroup(base, rows_by_t) for base, rows_by_t in groups.items()]
 
 
-def best_group(arm: str) -> SegmentGroup | None:
-    groups = groups_for(arm)
+def best_group(job: str) -> SegmentGroup | None:
+    groups = groups_for(job)
     if not groups:
         return None
     return max(groups, key=lambda g: (g.count, g.last_t, g.base_run_id))
 
 
-def ensure_full_if_complete(arm: str) -> Path | None:
-    existing = full_log(arm)
+def ensure_full_if_complete(job: str) -> Path | None:
+    existing = full_log(job)
     if existing is not None:
         return existing
-    group = best_group(arm)
+    group = best_group(job)
     if group is None or group.count < TARGET_T or not group.contiguous:
         return None
     rows = [group.rows_by_t[t] for t in range(1, TARGET_T + 1)]
     out = LOG_DIR / f"{group.base_run_id}_FULL.jsonl"
     out.write_text("\n".join(json.dumps(r, separators=(",", ":"), default=str) for r in rows) + "\n")
     successes = sum(float(r.get("reward", 0.0)) >= 0.5 for r in rows)
-    log(f"merged {arm} FULL log: {out} rows={len(rows)} successes={successes}")
+    log(f"merged {job} FULL log: {out} rows={len(rows)} successes={successes}")
     return out
 
 
-def merged_so_far(arm: str) -> tuple[Path, SegmentGroup]:
-    group = best_group(arm)
+def merged_so_far(job: str) -> tuple[Path, SegmentGroup]:
+    group = best_group(job)
     if group is None or group.count == 0:
-        raise RuntimeError(f"no partial rows found for {arm}")
+        raise RuntimeError(f"no partial rows found for {job}")
     if not group.contiguous:
-        raise RuntimeError(f"partial rows for {arm} are not contiguous: {sorted(group.rows_by_t)}")
+        raise RuntimeError(f"partial rows for {job} are not contiguous: {sorted(group.rows_by_t)}")
     rows = [group.rows_by_t[t] for t in range(1, group.last_t + 1)]
     out = LOG_DIR / f"{group.base_run_id}_MERGED_SO_FAR.jsonl"
     out.write_text("\n".join(json.dumps(r, separators=(",", ":"), default=str) for r in rows) + "\n")
@@ -211,11 +194,7 @@ def merged_so_far(arm: str) -> tuple[Path, SegmentGroup]:
 
 
 def read_rows(path: Path) -> list[dict[str, Any]]:
-    rows = []
-    for line in path.read_text().splitlines():
-        if line.strip():
-            rows.append(json.loads(line))
-    return rows
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
 def row_count(path: Path) -> int:
@@ -226,7 +205,7 @@ def freshness_age_s() -> float:
     mtimes = []
     if STDOUT_LOG.exists():
         mtimes.append(STDOUT_LOG.stat().st_mtime)
-    mtimes.extend(path.stat().st_mtime for path in LOG_DIR.glob("gitlab_strong_paired_*.jsonl"))
+    mtimes.extend(path.stat().st_mtime for path in LOG_DIR.glob("gitlab_strong_allocation_*.jsonl"))
     if not mtimes:
         return float("inf")
     return time.time() - max(mtimes)
@@ -234,14 +213,9 @@ def freshness_age_s() -> float:
 
 def active_runner_pids() -> list[int]:
     repo_s = str(ROOT)
-    paired_s = str(OUT)
+    out_s = str(OUT)
     pids: set[int] = set()
-    proc = subprocess.run(
-        ["ps", "-axo", "pid=,command="],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    proc = subprocess.run(["ps", "-axo", "pid=,command="], text=True, capture_output=True, check=False)
     for line in proc.stdout.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -251,20 +225,20 @@ def active_runner_pids() -> list[int]:
             pid = int(pid_s)
         except ValueError:
             continue
-        if pid == os.getpid() or "watchdog_gitlab_paired.py" in cmd:
+        if pid == os.getpid() or "watchdog_gitlab_allocation_160.py" in cmd:
             continue
         is_top_level = (
             "experiments/run_gitlab_strong_arm.py" in cmd
-            and "--mode paired" in cmd
-            and "results/gitlab_strong_arm/paired" in cmd
+            and "--mode allocation" in cmd
+            and "results/gitlab_strong_arm/allocation_160" in cmd
         )
         is_resume = (
             "-m cold_start.cli.run" in cmd
             and "--config" in cmd
             and (
-                "results/gitlab_strong_arm/paired" in cmd
-                or paired_s in cmd
-                or repo_s in cmd and "gitlab_strong_paired_" in cmd
+                "results/gitlab_strong_arm/allocation_160" in cmd
+                or out_s in cmd
+                or repo_s in cmd and "gitlab_strong_allocation_" in cmd
             )
         )
         if is_top_level or is_resume:
@@ -331,19 +305,19 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
-def launch_resume(arm: str) -> None:
-    ensure_full_if_complete(arm)
-    if full_log(arm) is not None:
-        launch_paired_runner()
+def launch_resume(job: str) -> None:
+    ensure_full_if_complete(job)
+    if full_log(job) is not None:
+        launch_allocation_runner()
         return
-    merged, group = merged_so_far(arm)
+    merged, group = merged_so_far(job)
     next_t = group.last_t + 1
-    config = LOG_DIR / "configs" / f"{trial_name(arm)}.yaml"
+    config = LOG_DIR / "configs" / f"{job}.yaml"
     if not config.exists():
-        log(f"missing config for {arm}: {config}; starting paired runner instead")
-        launch_paired_runner()
+        log(f"missing config for {job}: {config}; starting allocation runner instead")
+        launch_allocation_runner()
         return
-    session = f"gitlab_{arm}_resume_{next_t}"
+    session = f"gitlab_alloc_resume_{job[-18:]}_{next_t}"
     cmd = (
         f"cd {shell(ROOT)} && "
         "env PYTHONUNBUFFERED=1 PYTHONPATH=src "
@@ -352,21 +326,22 @@ def launch_resume(arm: str) -> None:
         f">> {shell(STDOUT_LOG)} 2>&1"
     )
     launch_screen(session, cmd)
-    log(f"launched resume session={session} arm={arm} next_t={next_t} merged={merged}")
+    log(f"launched resume session={session} job={job} next_t={next_t} merged={merged}")
 
 
-def launch_paired_runner() -> None:
-    session = "gitlab_paired_40_continue"
+def launch_allocation_runner() -> None:
+    session = "gitlab_allocation_160_continue"
     cmd = (
         f"cd {shell(ROOT)} && "
         "env PYTHONUNBUFFERED=1 PYTHONPATH=src "
         ".venv/bin/python experiments/run_gitlab_strong_arm.py "
-        "--mode paired --task-family gitlab --num-tasks 40 "
-        "--output-dir results/gitlab_strong_arm/paired --skip-existing "
+        "--mode allocation --task-family gitlab --budgets 160 --num-replicates 3 "
+        "--policies uniform spruce --output-dir results/gitlab_strong_arm/allocation_160 "
+        "--skip-existing "
         f">> {shell(STDOUT_LOG)} 2>&1"
     )
     launch_screen(session, cmd)
-    log(f"launched paired runner session={session}")
+    log(f"launched allocation runner session={session}")
 
 
 def launch_screen(session: str, cmd: str) -> None:

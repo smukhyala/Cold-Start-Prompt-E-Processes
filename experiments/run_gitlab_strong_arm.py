@@ -50,7 +50,11 @@ POLICIES: dict[str, dict[str, Any]] = {
     "epsilon_greedy": {"type": "epsilon_greedy", "params": {"epsilon": 0.1}},
     "ucb": {"type": "ucb", "params": {"exploration_c": 1.0, "tie_break": "first"}},
     "thompson": {"type": "thompson", "params": {"alpha": 1.0, "beta": 1.0}},
-    "spruce": {"type": "spruce", "params": {"exploration_c": 1.0, "tie_break": "first"}},
+    "spruce": {
+        "type": "spruce",
+        "params": {"exploration_c": 1.0, "tie_break": "first"},
+        "warmstart": {"min_pulls_per_arm": 3},
+    },
 }
 
 
@@ -90,6 +94,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--num-tasks", type=int, default=40)
     p.add_argument("--budgets", type=int, nargs="+", default=[60, 120, 240, 480])
     p.add_argument("--num-replicates", type=int, default=5)
+    p.add_argument(
+        "--policies",
+        nargs="+",
+        choices=sorted(POLICIES),
+        default=sorted(POLICIES),
+        help="Allocation policies to run. Defaults to all registered experiment policies.",
+    )
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--seed", type=int, default=2)
     p.add_argument("--arms-config", default="configs/arms_gitlab_strong.yaml")
@@ -146,7 +157,7 @@ def run_allocation(args: argparse.Namespace, out: Path, arms_config: str | Path)
     arms = load_arms(arms_config, load_axes(args.axes))
     for budget in args.budgets:
         for rep in range(args.num_replicates):
-            for policy in POLICIES:
+            for policy in args.policies:
                 name = f"gitlab_strong_allocation_{policy}_budget{budget}_rep{rep}"
                 log_path = (
                     find_existing_log(out / "logs", name, budget)
@@ -303,10 +314,19 @@ def write_arm_catalog(path: Path, arms: list[Arm]) -> Path:
 
 
 def find_existing_log(log_dir: Path, trial_name: str, expected_rows: int) -> Path | None:
-    candidates = sorted(log_dir.glob(f"{trial_name}_trial0_*.jsonl"))
+    full_candidates = sorted(log_dir.glob(f"{trial_name}_trial0_*_FULL.jsonl"))
+    for path in reversed(full_candidates):
+        rows = sum(1 for line in path.read_text().splitlines() if line.strip())
+        if rows == expected_rows:
+            return path
+    candidates = sorted(
+        p
+        for p in log_dir.glob(f"{trial_name}_trial0_*.jsonl")
+        if not p.name.endswith("_MERGED_SO_FAR.jsonl")
+    )
     for path in reversed(candidates):
         rows = sum(1 for line in path.read_text().splitlines() if line.strip())
-        if rows >= expected_rows:
+        if rows == expected_rows:
             return path
     return None
 

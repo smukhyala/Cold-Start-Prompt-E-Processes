@@ -135,7 +135,7 @@ def _get_armed_agent_cls() -> type:
             t0 = time.time()
             try:
                 history = await asyncio.wait_for(agent.run(), timeout=self.timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 timed_out = True
                 history = agent.history
             elapsed = time.time() - t0
@@ -153,7 +153,7 @@ def _get_armed_agent_cls() -> type:
             self._last_token_summary = await _collect_token_usage(agent)
 
             if timed_out:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
 
             return agents_mod.AgentResult(
                 elapsed=round(elapsed, 1),
@@ -258,6 +258,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         artifacts_dir: str = "logs/webarena",
         axes_path: str = "configs/axes.yaml",
         template_path: str = "configs/template.jinja",
+        task_limit: int | None = None,
     ) -> None:
         if sample_mode != "cycle":
             raise ValueError(
@@ -276,6 +277,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         self._artifacts_dir = Path(artifacts_dir)
         self._axes = load_axes(axes_path)
         self._template_path = template_path
+        self._task_limit = task_limit
 
         self._prompt_cache: dict[str, str] = {}
         self._tasks: list[dict] | None = None
@@ -288,6 +290,10 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         _, server_mod, tasks_mod = _import_webarena()
         self._web_app_abs = str(_webarena_root() / self._web_app_rel)
         self._tasks = tasks_mod.load_tasks(self._web_app_abs, self._task_suite)
+        if self._task_limit is not None:
+            if self._task_limit <= 0:
+                raise ValueError(f"task_limit must be positive; got {self._task_limit}")
+            self._tasks = self._tasks[: self._task_limit]
 
         self._server_proc = server_mod.start_server(self._web_app_abs, self._port)
         if not server_mod.wait_for_server(self._port, timeout=15):
@@ -362,7 +368,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
                     task_dir=task_dir,
                 )
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # The armed agent stashes the partial token usage just before it
             # raises; we surface it so timed-out tasks still bill correctly.
             partial_tokens = getattr(self._agent, "_last_token_summary", {}) or {}

@@ -1,0 +1,3 @@
+policy,replicate,budget,n_arms,true_best_arm,successes,success_rate,cumulative_regret,final_entropy,final_normalized_entropy,best_arm_pull_share,identified_true_best,identification_time,total_runtime,total_token_cost,cost_per_success
+uniform,0,160,13,gitlab_oracle_operator,69,0.43125,52.324999999999996,2.5642532854519273,0.999728621538829,0.075,False,,9286.999999999995,4.28441265,0.06209293695652174
+spruce_fast,0,160,13,gitlab_oracle_operator,96,0.6,66.04999999999998,1.924864642143456,0.7504493749726288,0.01875,False,,12912.399999999996,5.863782150000001,0.061081064062500016

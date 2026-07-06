@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -15,15 +16,23 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "results/gitlab_strong_arm/allocation_160"
+OUT_REL = os.environ.get("GITLAB_ALLOCATION_OUT", "results/gitlab_strong_arm/allocation_160")
+OUT = ROOT / OUT_REL
 LOG_DIR = OUT / "logs"
 STDOUT_LOG = OUT / "allocation_run.out"
 WATCHDOG_LOG = OUT / "watchdog.log"
-TARGET_T = 160
-PORT = 8001
-POLICIES = ["uniform", "spruce"]
-REPLICATES = [0, 1, 2]
-WATCHDOG_SCREEN = "gitlab_allocation_160_watchdog"
+TARGET_T = int(os.environ.get("GITLAB_ALLOCATION_TARGET_T", "160"))
+PORT = int(os.environ.get("GITLAB_ALLOCATION_PORT", "8001"))
+POLICIES = os.environ.get("GITLAB_ALLOCATION_POLICIES", "uniform spruce").split()
+REPLICATES = list(range(int(os.environ.get("GITLAB_ALLOCATION_REPLICATES", "3"))))
+WATCHDOG_SCREEN = os.environ.get("GITLAB_ALLOCATION_WATCHDOG_SCREEN", "gitlab_allocation_160_watchdog")
+RUNNER_SCREEN = os.environ.get("GITLAB_ALLOCATION_RUNNER_SCREEN", "gitlab_allocation_160_continue")
+RUNNER_ARGS = os.environ.get(
+    "GITLAB_ALLOCATION_RUNNER_ARGS",
+    "--mode allocation --task-family gitlab --budgets 160 --num-replicates 3 "
+    "--policies uniform spruce --output-dir results/gitlab_strong_arm/allocation_160 "
+    "--skip-existing",
+)
 
 
 @dataclass
@@ -227,16 +236,17 @@ def active_runner_pids() -> list[int]:
             continue
         if pid == os.getpid() or "watchdog_gitlab_allocation_160.py" in cmd:
             continue
+        out_rel = str(OUT.relative_to(ROOT))
         is_top_level = (
             "experiments/run_gitlab_strong_arm.py" in cmd
             and "--mode allocation" in cmd
-            and "results/gitlab_strong_arm/allocation_160" in cmd
+            and (out_rel in cmd or out_s in cmd)
         )
         is_resume = (
             "-m cold_start.cli.run" in cmd
             and "--config" in cmd
             and (
-                "results/gitlab_strong_arm/allocation_160" in cmd
+                out_rel in cmd
                 or out_s in cmd
                 or repo_s in cmd and "gitlab_strong_allocation_" in cmd
             )
@@ -330,18 +340,15 @@ def launch_resume(job: str) -> None:
 
 
 def launch_allocation_runner() -> None:
-    session = "gitlab_allocation_160_continue"
     cmd = (
         f"cd {shell(ROOT)} && "
         "env PYTHONUNBUFFERED=1 PYTHONPATH=src "
         ".venv/bin/python experiments/run_gitlab_strong_arm.py "
-        "--mode allocation --task-family gitlab --budgets 160 --num-replicates 3 "
-        "--policies uniform spruce --output-dir results/gitlab_strong_arm/allocation_160 "
-        "--skip-existing "
+        f"{RUNNER_ARGS} "
         f">> {shell(STDOUT_LOG)} 2>&1"
     )
-    launch_screen(session, cmd)
-    log(f"launched allocation runner session={session}")
+    launch_screen(RUNNER_SCREEN, cmd)
+    log(f"launched allocation runner session={RUNNER_SCREEN}")
 
 
 def launch_screen(session: str, cmd: str) -> None:
@@ -350,7 +357,7 @@ def launch_screen(session: str, cmd: str) -> None:
 
 
 def shell(path: Path) -> str:
-    return "'" + str(path).replace("'", "'\\''") + "'"
+    return shlex.quote(str(path))
 
 
 def log(message: str) -> None:

@@ -55,6 +55,16 @@ POLICIES: dict[str, dict[str, Any]] = {
         "params": {"exploration_c": 1.0, "tie_break": "first"},
         "warmstart": {"min_pulls_per_arm": 3},
     },
+    "spruce_fast": {
+        "type": "spruce",
+        "params": {"exploration_c": 0.10, "tie_break": "random"},
+        "warmstart": {"min_pulls_per_arm": 2},
+    },
+    "spruce_moderate": {
+        "type": "spruce",
+        "params": {"exploration_c": 0.25, "tie_break": "random"},
+        "warmstart": {"min_pulls_per_arm": 3},
+    },
 }
 
 
@@ -104,6 +114,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output-dir", type=Path, required=True)
     p.add_argument("--seed", type=int, default=2)
     p.add_argument("--arms-config", default="configs/arms_gitlab_strong.yaml")
+    p.add_argument(
+        "--arm-ids",
+        nargs="+",
+        default=None,
+        help="Optional ordered subset of arm IDs to include in allocation runs.",
+    )
     p.add_argument("--axes", default="configs/axes.yaml")
     p.add_argument("--template", default="configs/template_gitlab.jinja")
     p.add_argument("--max-agent-steps", type=int, default=30)
@@ -130,7 +146,7 @@ def parse_args() -> argparse.Namespace:
 
 def run_paired(args: argparse.Namespace, out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
-    arms = load_arms(args.arms_config, load_axes(args.axes))
+    arms = selected_arms(args)
     log_specs: list[RunSpec] = []
     for arm in arms:
         name = f"gitlab_strong_paired_{arm.arm_id}"
@@ -154,7 +170,12 @@ def run_allocation(args: argparse.Namespace, out: Path, arms_config: str | Path)
     paired_summary = read_paired_summary(out.parent / "paired")
     true_best = choose_true_best(paired_summary)
     log_specs: list[RunSpec] = []
-    arms = load_arms(arms_config, load_axes(args.axes))
+    arms = selected_arms(args)
+    effective_arms_config = arms_config
+    if args.arm_ids:
+        effective_arms_config = write_arm_catalog(
+            out / "generated_configs" / "arms_selected.yaml", arms
+        )
     for budget in args.budgets:
         for rep in range(args.num_replicates):
             for policy in args.policies:
@@ -168,7 +189,7 @@ def run_allocation(args: argparse.Namespace, out: Path, arms_config: str | Path)
                     cfg = build_config(
                         args,
                         name,
-                        arms_config,
+                        effective_arms_config,
                         policy,
                         budget,
                         out / "logs",
@@ -179,6 +200,18 @@ def run_allocation(args: argparse.Namespace, out: Path, arms_config: str | Path)
                     log_specs.append(RunSpec("allocation", policy, rep, budget, len(arms), log_path))
 
     summarize_allocation(out, log_specs, paired_summary, true_best)
+
+
+def selected_arms(args: argparse.Namespace) -> list[Arm]:
+    arms = load_arms(args.arms_config, load_axes(args.axes))
+    if not args.arm_ids:
+        return arms
+    wanted = list(args.arm_ids)
+    by_id = {arm.arm_id: arm for arm in arms}
+    missing = [arm_id for arm_id in wanted if arm_id not in by_id]
+    if missing:
+        raise ValueError(f"--arm-ids contains unknown arms: {missing}")
+    return [by_id[arm_id] for arm_id in wanted]
 
 
 def run_arm_scaling(args: argparse.Namespace, out: Path) -> None:
@@ -278,6 +311,7 @@ def build_config(
                 "artifacts_dir": str(output_dir / "webarena" / name),
                 "axes_path": args.axes,
                 "template_path": args.template,
+                "task_limit": args.num_tasks,
             },
         },
         "reward": {"type": "binary"},

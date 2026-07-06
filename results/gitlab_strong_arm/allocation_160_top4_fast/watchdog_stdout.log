@@ -1,0 +1,50 @@
+[2026-07-03T11:29:05-0700] watchdog starting interval=60s stale=600s
+[2026-07-03T11:29:05-0700] runner active pids=[12521, 12523, 12528]; freshness=0s; completed=0/6; current=top-level
+[2026-07-03T11:30:05-0700] runner active pids=[12521, 12523, 12528]; freshness=1s; completed=0/6; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:31:05-0700] runner active pids=[12521, 12523, 12528]; freshness=2s; completed=0/6; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:32:05-0700] watchdog starting interval=60s stale=600s
+[2026-07-03T11:32:05-0700] no runner active; resuming partial job gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:32:05-0700] launched resume session=gitlab_alloc_resume_orm_budget160_rep0_5 job=gitlab_strong_allocation_uniform_budget160_rep0 next_t=5 merged=/Users/sanjay/projects/BerkeleyProjects/Research/IanWaudbySmith/coldStartPrompts/results/gitlab_strong_arm/allocation_160_top4_fast/logs/gitlab_strong_allocation_uniform_budget160_rep0_trial0_2026-07-03T18-29-17Z_MERGED_SO_FAR.jsonl
+[2026-07-03T11:33:05-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:34:06-0700] runner active pids=[13911, 13912, 13913]; freshness=0s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:35:06-0700] runner active pids=[13911, 13912, 13913]; freshness=0s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:36:06-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:37:06-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:38:06-0700] runner active pids=[13911, 13912, 13913]; freshness=5s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:39:06-0700] runner active pids=[13911, 13912, 13913]; freshness=5s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:40:06-0700] runner active pids=[13911, 13912, 13913]; freshness=4s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:41:06-0700] runner active pids=[13911, 13912, 13913]; freshness=3s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:42:06-0700] runner active pids=[13911, 13912, 13913]; freshness=5s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:43:06-0700] runner active pids=[13911, 13912, 13913]; freshness=3s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:44:07-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:45:07-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:46:07-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:47:07-0700] runner active pids=[13911, 13912, 13913]; freshness=0s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:48:07-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:49:07-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:50:07-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:51:07-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:52:07-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:53:07-0700] runner active pids=[13911, 13912, 13913]; freshness=0s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:54:07-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:55:08-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:56:08-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:57:08-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:58:08-0700] runner active pids=[13911, 13912, 13913]; freshness=4s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T11:59:08-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:00:08-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:01:08-0700] runner active pids=[13911, 13912, 13913]; freshness=0s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:02:08-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:03:08-0700] runner active pids=[13911, 13912, 13913]; freshness=0s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:04:09-0700] runner active pids=[13911, 13912, 13913]; freshness=2s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:05:09-0700] runner active pids=[13911, 13912, 13913]; freshness=7s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:06:09-0700] runner active pids=[13911, 13912, 13913]; freshness=8s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:07:09-0700] runner active pids=[13911, 13912, 13913]; freshness=3s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:08:09-0700] runner active pids=[13911, 13912, 13913]; freshness=6s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:09:09-0700] runner active pids=[13911, 13912, 13913]; freshness=15s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:10:09-0700] runner active pids=[13911, 13912, 13913]; freshness=4s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:11:09-0700] runner active pids=[13911, 13912, 13913]; freshness=1s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:12:09-0700] runner active pids=[13911, 13912, 13913]; freshness=51s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:13:09-0700] runner active pids=[13911, 13912, 13913]; freshness=111s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:14:10-0700] runner active pids=[13911, 13912, 13913]; freshness=171s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0
+[2026-07-03T12:15:10-0700] runner active pids=[13911, 13912, 13913]; freshness=231s; completed=0/2; current=gitlab_strong_allocation_uniform_budget160_rep0

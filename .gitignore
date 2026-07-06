@@ -15,3 +15,7 @@ build/
 
 logs/
 reports/
+results/
+
+# Large generated replay artifacts.
+results/gitlab_strong_arm/replay_oracle_policy/

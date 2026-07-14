@@ -1,21 +1,62 @@
+# OS/editor noise
+.DS_Store
+._*
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python/build artifacts
 .venv/
+venv/
+env/
 __pycache__/
 *.egg-info/
-*.pyc
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+coverage.xml
 htmlcov/
 dist/
 build/
 
+# Local secrets/config
 .env
-.env.local
+.env.*
+!.env.example
+secrets/
+private/
+credentials*.json
+token*.json
+secrets*.json
+*.pem
+*.key
 
+# Runtime scratch
+*.log
+*.out
+*.pid
+*.tmp
+*.bak
+*.db
+*.sqlite
+*.sqlite3
+.ipynb_checkpoints/
+
+# Local assistant/editor state
+.claude/*.lock
+.claude/settings.local.json
+
+# Experiment logs and generated reports/results can contain private task data.
 logs/
 reports/
 results/
+
+# Generated analysis artifacts derived from private logs.
+analysis/adaptive_framework_analysis/*.csv
+analysis/adaptive_framework_analysis/figures/
 
 # Large generated replay artifacts.
 results/gitlab_strong_arm/replay_oracle_policy/

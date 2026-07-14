@@ -1,1 +1,0 @@
-gitlab_oracle_operator

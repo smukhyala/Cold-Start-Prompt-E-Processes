@@ -15,7 +15,16 @@ T = TypeVar("T")
 
 _REGISTRIES: dict[str, dict[str, type]] = {}
 
-KINDS = ("model", "task_source", "reward", "eprocess", "policy")
+KINDS = (
+    "model",
+    "task_source",
+    "reward",
+    "eprocess",
+    "policy",
+    "reservoir",
+    "allocation",
+    "search_policy",
+)
 
 
 def register(name: str, *, kind: str) -> Callable[[type[T]], type[T]]:

@@ -33,6 +33,12 @@ from cold_start.inference import hedged_capital as _hc  # noqa: F401
 from cold_start.inference import upward_capital as _uc  # noqa: F401
 from cold_start.inference import global_null as _gn  # noqa: F401
 
+# growing-arm study: (n, S)-indexed mixture e-process + confidence-sequence tables
+from cold_start.growing import evidence as _growing_evidence  # noqa: F401
+
+# growing-arm reservoirs (infinite arm pools)
+from cold_start.growing import reservoirs as _reservoirs  # noqa: F401
+
 # policies
 from cold_start.policies import uniform as _u  # noqa: F401
 from cold_start.policies import epsilon_greedy as _eg  # noqa: F401

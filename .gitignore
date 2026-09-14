@@ -60,3 +60,6 @@ analysis/adaptive_framework_analysis/figures/
 
 # Large generated replay artifacts.
 results/gitlab_strong_arm/replay_oracle_policy/
+
+# Generated synthetic datasets for the growing-bandits study (see src/cold_start/growing/).
+data/

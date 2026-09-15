@@ -8,9 +8,10 @@ so that three things hold by construction rather than by convention:
   scripts: a policy tuned in `tune_baselines.py` and re-run in `run_deployment.py` on
   the same split sees the same episodes.
 * **Splits never overlap.** Tuning (schedule constants), validation (thresholds, model
-  selection) and test seeds live in reserved bands `SPLIT_BASE[split] + cell_id * 1000`
-  that are disjoint from each other, from the corpus (`[20.26M, 343.4M]`) and from the
-  old benchmark (`[4.5k, 14.1k]`) -- failure-mode register #9, #10.
+  selection), test and on-policy (M9 relabelling) seeds live in reserved bands
+  `SPLIT_BASE[split] + cell_id * 1000` that are disjoint from each other, from the
+  corpus (`[20.26M, 343.4M]`) and from the old benchmark (`[4.5k, 14.1k]`) --
+  failure-mode register #9, #10.
 * **The guard is computed, not remembered.** `assert_seed_disjointness` rebuilds the
   corpus seed set from `label_states.build_shards` with the production arguments of
   RUNBOOK.md section 1 and the old benchmark's `4242 + crc32(name) % 10000`, so a later
@@ -125,8 +126,17 @@ EXTRA_HORIZONS: tuple[int, ...] = (2000,)
 #: Live-arm caps of the cap sweep; ``"T"`` means ``cap == horizon`` (effectively no cap).
 CAPS: tuple[int | str, ...] = (32, 64, "T")
 
-SPLIT_BASE: dict[str, int] = {"tune": 1_000_000, "val": 5_000_000, "test": 10_000_000}
+#: ``onpolicy`` (M9): fresh episodes of the deployed learned policy, harvested for
+#: on-policy relabelling; above the test band, below the corpus minimum (asserted below).
+SPLIT_BASE: dict[str, int] = {
+    "tune": 1_000_000,
+    "val": 5_000_000,
+    "test": 10_000_000,
+    "onpolicy": 15_000_000,
+}
 CELL_STRIDE = 1_000
+#: Smallest seed the corpus consumed (`corpus_seed_set`); every split band must end below it.
+CORPUS_SEED_MIN = 20_262_460
 
 #: Environment ids in enumeration order (sorted, so the order is a property of the ids).
 ENV_ORDER: tuple[str, ...] = tuple(sorted(ALL_ENVS))
@@ -142,6 +152,11 @@ for _lo, _hi in zip(_bases, _bases[1:], strict=False):
         raise RuntimeError(
             f"seed bands overlap: {N_CELLS} cells x {CELL_STRIDE} from {_lo} reaches {_hi}"
         )
+if _bases[-1] + (N_CELLS - 1) * CELL_STRIDE >= CORPUS_SEED_MIN:
+    raise RuntimeError(
+        f"the highest split band ({_bases[-1]} + {N_CELLS} x {CELL_STRIDE}) reaches the "
+        f"corpus seed range starting at {CORPUS_SEED_MIN}"
+    )
 
 
 def resolve_cap(horizon: int, cap: int | str) -> int:

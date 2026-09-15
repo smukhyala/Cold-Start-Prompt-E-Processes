@@ -50,6 +50,7 @@ for _p in (ROOT / "src", HERE.parent, HERE):
 
 from corpus import (  # noqa: E402
     DEFAULT_DATA_DIR,
+    MAX_LIVE_ARMS,
     ambiguous_mask,
     decided_mask,
     label_columns,
@@ -681,7 +682,7 @@ def weight_and_label_diagnostics(df: pd.DataFrame) -> list[dict]:
         dec = decided_mask(df, k)
         amb = ambiguous_mask(df, k)
         trunc = df["f_remaining_budget"].to_numpy(dtype=np.float64) < k
-        demoted = df["f_K"].to_numpy(dtype=np.float64) + k > 64
+        demoted = df["f_K"].to_numpy(dtype=np.float64) + k > MAX_LIVE_ARMS
         rows.append(_diag("ess", f"k={k}|all", ess(w)))
         rows.append(_diag("ess", f"k={k}|decided", ess(w[dec])))
         rows.append(_diag("ess_frac", f"k={k}|all", ess(w) / len(w)))

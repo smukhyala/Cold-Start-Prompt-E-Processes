@@ -11,7 +11,8 @@ register #1). This script asks the question directly, in three resumable steps:
   environments x five horizons, on a fresh seed block (``cells.SPLIT_BASE["onpolicy"]``),
   and detach `Snapshot`s at eight times spread evenly in remaining budget. States at
   the live-arm cap are dropped, as the corpus dropped them: a forced SEARCH is
-  undefined there.
+  undefined there -- and ``phi_k16`` is at the cap for most of every long-horizon
+  episode, so ``--early-times`` can add pre-cap snapshot times (off by default).
 * ``label`` -- oracle-label every snapshot at ``k = 16`` with **phi_k16 itself as the
   continuation policy** in both branches (`labeling.label_state`, oracle-prior
   recommender, ``target_se = 5e-4``, ``max_replicates = 2048``). The only things that

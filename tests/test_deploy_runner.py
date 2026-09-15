@@ -171,6 +171,35 @@ def test_cell_grids_against_the_real_cells_module():
     ]
 
 
+def test_build_work_logs_only_learned_and_rule_policies(tmp_path):
+    cells = _cells(horizon=20, n_replicates=4)
+    common = dict(
+        out_dir=tmp_path, baseline_params=None, thresholds=None, models_dir=tmp_path,
+        dynamics_grid=10, done=set(), git_sha="test",
+    )
+    items = rd.build_work("smoke", cells, ["rule_reservoir", "cp0"], log_states=True, **common)
+    by_policy = {(i.cell, i.policy): i for i in items}
+    assert len(items) == 4
+    for cell in cells:
+        rule = by_policy[(rd.cell_name(cell), "rule_reservoir")]
+        assert rule.log_states is not None and rule.snapshots_path is not None
+        ref = by_policy[(rd.cell_name(cell), "cp0")]
+        assert ref.log_states is None and ref.snapshots_path is None
+        assert Path(rule.prefix_path).exists()
+        assert np.load(rule.prefix_path).shape == (4, 20)
+        assert rule.oracle_prior == ref.oracle_prior
+    # `--log-policies` narrows logging; a name outside the loggable groups logs nothing.
+    items = rd.build_work(
+        "smoke", cells, ["rule_reservoir", "cp0"], log_states=True, log_policies={"cp0"}, **common
+    )
+    assert all(i.snapshots_path is None for i in items)
+    # Skipping honours `done`, and cells with nothing pending build no constants.
+    done = {("smoke", rd.cell_name(cells[0]), p) for p in ("rule_reservoir", "cp0")}
+    items = rd.build_work("smoke", cells, ["rule_reservoir", "cp0"], log_states=False, done=done,
+                          **{k: v for k, v in common.items() if k != "done"})
+    assert {i.cell for i in items} == {rd.cell_name(cells[1])}
+
+
 @pytest.mark.parametrize("horizon", [50, 100, 1000])
 def test_log_spec_times_are_visited_states(horizon):
     spec = CellSpec("e", ENV_SPECS["beta_good_common"], horizon, 64, 1, 200)
@@ -276,6 +305,16 @@ def test_smoke_baselines_resume_and_summary(tmp_path):
     assert third["n_run"] == 1 and third["n_skipped"] == 5
     assert victim.exists()
     assert len(_read_manifest(manifest)) == 7  # appended, not rewritten
+
+    # A later run of a policy subset without --resume redoes just that subset, appends
+    # to the manifest (latest line per item wins) and the summary still covers all.
+    subset = [a if a != ",".join(policies) else "cp0" for a in argv]
+    fourth = rd.main(subset, cells=cells)
+    assert fourth["n_run"] == 2 and fourth["n_skipped"] == 0
+    records = _read_manifest(manifest)
+    assert len(records) == 9
+    assert len(rd.latest_records(records)) == 6
+    assert len(pd.read_csv(out / "summary_smoke.csv")) == 2 * 3 * len(RECOMMENDER_NAMES)
 
 
 # ---- runner: learned policy with a tiny artifact ---------------------------------------------

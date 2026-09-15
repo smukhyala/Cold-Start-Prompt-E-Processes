@@ -17,8 +17,10 @@ per draw for the mixture family) and the oracle prior. Both are computed once, t
 prefix saved to disk, and every `run_cell` of the cell receives them.
 
 The manifest (``manifest_<test>.jsonl``, one line per finished item, appended by the
-parent as results arrive) is what makes a run resumable: ``--resume`` skips every
-item already in it whose parquet still exists. It also records provenance -- the
+parent as results arrive; never truncated, the latest line per item wins) is what
+makes a run resumable: ``--resume`` skips every item already in it whose parquet
+still exists, and a run without ``--resume`` redoes what it was asked for while
+leaving every other item's record in place. It also records provenance -- the
 resolved parameters (the tau or c actually deployed), the policy's diagnostic counters
 (a non-zero ``n_nonfinite_rows`` fails the item: a non-finite feature at deployment is
 a parity bug, not a normal state), the git sha and the wall time.
@@ -401,12 +403,14 @@ def build_work(
     done: set[tuple[str, str, str]],
     git_sha: str,
     artifacts: dict[str, dict] | None = None,
+    log_policies: set[str] | None = None,
 ) -> list[WorkItem]:
     """Resolve every (cell, policy) into a `WorkItem`, skipping those in `done`.
 
     Parameters are resolved here, in the parent, so every placeholder warning is
     printed once and the manifest can carry the values actually deployed. `artifacts`
-    (variant -> loaded model) saves re-reading each joblib once per cell.
+    (variant -> loaded model) saves re-reading each joblib once per cell. Snapshots are
+    logged for the policies of `LOGGED_GROUPS` (or the `log_policies` subset of them).
     """
     comparators_dir = out_dir / "comparators"
     artifacts = artifacts or {}
@@ -429,7 +433,9 @@ def build_work(
             )
             group = pt.POLICIES[policy]["group"]
             parquet, dynamics, snapshots = output_paths(out_dir, test, name, policy)
-            logged = log_states and group in LOGGED_GROUPS
+            logged = log_states and group in LOGGED_GROUPS and (
+                log_policies is None or policy in log_policies
+            )
             items.append(
                 WorkItem(
                     test=test,
@@ -643,13 +649,20 @@ def read_manifest(path: Path) -> list[dict]:
     return records
 
 
-def completed_items(records: list[dict]) -> set[tuple[str, str, str]]:
-    """Items whose manifest line exists *and* whose parquet is still on disk."""
-    done: set[tuple[str, str, str]] = set()
+def latest_records(records: list[dict]) -> dict[tuple[str, str, str], dict]:
+    """The last manifest line per (test, cell, policy): a rerun supersedes its predecessor."""
+    latest: dict[tuple[str, str, str], dict] = {}
     for rec in records:
-        if rec.get("parquet") and Path(rec["parquet"]).exists():
-            done.add((rec["test"], rec["cell"], rec["policy"]))
-    return done
+        latest[(rec["test"], rec["cell"], rec["policy"])] = rec
+    return latest
+
+
+def completed_items(records: list[dict]) -> set[tuple[str, str, str]]:
+    """Items whose latest manifest line exists *and* whose parquet is still on disk."""
+    return {
+        key for key, rec in latest_records(records).items()
+        if rec.get("parquet") and Path(rec["parquet"]).exists()
+    }
 
 
 def _format_eta(seconds: float) -> str:
@@ -803,7 +816,7 @@ def write_summary(out_dir: Path, test: str, records: list[dict], *, n_boot: int)
     """``summary_<test>.csv`` from every completed item in the manifest, cell by cell
     (so a Test-A run never holds 1,300 frames at once)."""
     by_cell: dict[str, dict[str, str]] = {}
-    for rec in records:
+    for rec in latest_records(records).values():
         if rec.get("parquet") and Path(rec["parquet"]).exists():
             by_cell.setdefault(rec["cell"], {})[rec["policy"]] = rec["parquet"]
     rows: list[dict] = []
@@ -833,6 +846,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--cells", default=None, help="manual cell list env:T:cap,... (overrides the test's grid)")
     p.add_argument("--dynamics-grid", type=int, default=50)
     p.add_argument("--log-states", action="store_true", help="log on-policy snapshots for learned policies")
+    p.add_argument("--log-policies", default=None,
+                   help="comma-separated subset of the learned/rule policies to log under --log-states "
+                        "(default: all of them; ~7 GB of pickles for the whole Test-A table)")
     p.add_argument("--resume", action="store_true", help="skip items already in the manifest")
     p.add_argument("--n-boot", type=int, default=2000, help="paired-bootstrap resamples in the summary")
     p.add_argument("--skip-summary", action="store_true")
@@ -892,17 +908,17 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     thresholds = pt.load_thresholds(args.thresholds or out_dir / "thresholds.json")
 
     manifest = manifest_path(out_dir, test)
+    done: set[tuple[str, str, str]] = set()
     if args.resume:
-        prior = read_manifest(manifest)
-        done = completed_items(prior)
+        done = completed_items(read_manifest(manifest))
         log.info("resume: %d items already complete in %s", len(done), manifest)
-    else:
-        prior = []
-        done = set()
-        if manifest.exists():
-            log.warning("overwriting existing %s (use --resume to continue it)", manifest)
-            manifest.unlink()
+    elif manifest.exists():
+        log.info("appending to existing %s; requested items are redone", manifest)
 
+    log_policies = None
+    if args.log_policies:
+        log_policies = {p.strip() for p in args.log_policies.split(",") if p.strip()}
+        pt.check_policies(sorted(log_policies))
     artifacts = {
         v: load_model(pt.artifact_path(v, models_dir))
         for v in {pt.variant_of(p) for p in policies} - {None}
@@ -921,6 +937,7 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
         done=done,
         git_sha=git_sha,
         artifacts=artifacts,
+        log_policies=log_policies,
     )
     n_total = len(cells) * len(policies)
     log.info(

@@ -330,6 +330,9 @@ def build_thresholds(
     out: dict[str, dict] = {}
     if len(df) == 0:
         return out
+    # Two concurrent runs could both append the same row; the last write wins.
+    df = df.assign(_key=[row_key(row) for _, row in df.iterrows()])
+    df = df.drop_duplicates("_key", keep="last").drop(columns="_key")
     for variant, artifact in artifacts.items():
         sub = df[(df["variant"] == variant) & (df["split"] == split)]
         if n_replicates is not None:

@@ -481,7 +481,11 @@ def restrict(
         and row_key(row)[5:] in keys
         for _, row in df.iterrows()
     ]
-    return df[np.asarray(keep, dtype=bool)].reset_index(drop=True)
+    out = df[np.asarray(keep, dtype=bool)].reset_index(drop=True)
+    # Two concurrent runs could both append the same row; the last write wins rather
+    # than counting twice in the pooled mean.
+    out = out.assign(_key=[row_key(row) for _, row in out.iterrows()])
+    return out.drop_duplicates("_key", keep="last").drop(columns="_key").reset_index(drop=True)
 
 
 def write_csv_atomic(df: pd.DataFrame, path: Path) -> None:

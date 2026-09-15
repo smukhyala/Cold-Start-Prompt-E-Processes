@@ -18,8 +18,11 @@ so that three things hold by construction rather than by convention:
   change to either enumeration is caught at the next startup instead of trusted.
 
 `cell_id` enumerates the plan's grid (33 environments sorted by id x `HORIZONS` x
-`CAPS`) first, so those ids are stable, and appends the Test-D extrapolation horizon
-(`EXTRA_HORIZONS`) as a second block after it.
+`CAPS`) first, so those ids are stable, appends the Test-D extrapolation horizon
+(`EXTRA_HORIZONS`) as a second block after it, and appends the cap-128 sweep
+(`EXTRA_CAPS`, at the main `HORIZONS` only) as a third block after that -- each
+appended block leaves every earlier id, and therefore every earlier `base_seed`,
+untouched.
 """
 
 from __future__ import annotations
@@ -125,6 +128,9 @@ HORIZONS: tuple[int, ...] = (50, 100, 200, 500, 1000)
 EXTRA_HORIZONS: tuple[int, ...] = (2000,)
 #: Live-arm caps of the cap sweep; ``"T"`` means ``cap == horizon`` (effectively no cap).
 CAPS: tuple[int | str, ...] = (32, 64, "T")
+#: The cap=128 sweep (``run_deployment.py --test cap``); enumerated after the
+#: `EXTRA_HORIZONS` block, at the main `HORIZONS` only, so no earlier id moves.
+EXTRA_CAPS: tuple[int | str, ...] = (128,)
 
 #: ``onpolicy`` (M9): fresh episodes of the deployed learned policy, harvested for
 #: on-policy relabelling; above the test band, below the corpus minimum (asserted below).
@@ -142,7 +148,11 @@ CORPUS_SEED_MIN = 20_262_460
 ENV_ORDER: tuple[str, ...] = tuple(sorted(ALL_ENVS))
 _ENV_INDEX: dict[str, int] = {env_id: i for i, env_id in enumerate(ENV_ORDER)}
 N_MAIN_GRID_CELLS = len(ENV_ORDER) * len(HORIZONS) * len(CAPS)
-N_CELLS = N_MAIN_GRID_CELLS + len(ENV_ORDER) * len(EXTRA_HORIZONS) * len(CAPS)
+#: Size of the `EXTRA_HORIZONS` block (env x `EXTRA_HORIZONS` x `CAPS`).
+N_EXTRA_HORIZONS_CELLS = len(ENV_ORDER) * len(EXTRA_HORIZONS) * len(CAPS)
+#: Size of the `EXTRA_CAPS` block (env x `HORIZONS` x `EXTRA_CAPS`).
+N_EXTRA_CAPS_CELLS = len(ENV_ORDER) * len(HORIZONS) * len(EXTRA_CAPS)
+N_CELLS = N_MAIN_GRID_CELLS + N_EXTRA_HORIZONS_CELLS + N_EXTRA_CAPS_CELLS
 
 # The bands must not touch: the largest seed of one split must sit below the base of
 # the next. Checked at import so a grid extension cannot silently break it.
@@ -169,6 +179,11 @@ def resolve_cap(horizon: int, cap: int | str) -> int:
 
 
 def _cap_index(horizon: int, cap: int | str) -> int:
+    """Index of `cap` within `CAPS` (main grid and `EXTRA_HORIZONS` block only).
+
+    Raises `ValueError` for a cap outside `CAPS` -- including every `EXTRA_CAPS`
+    value -- so `cell_id` can fall back to `_extra_cap_index` without ambiguity.
+    """
     cap_int = resolve_cap(horizon, cap)
     for i, c in enumerate(CAPS):
         if c != "T" and cap_int == c:
@@ -178,26 +193,54 @@ def _cap_index(horizon: int, cap: int | str) -> int:
     raise ValueError(f"cap {cap!r} is not one of {CAPS} at horizon {horizon}")
 
 
+def _extra_cap_index(cap: int | str) -> int:
+    """Index of `cap` within `EXTRA_CAPS`; these are fixed ints, no ``"T"`` alias."""
+    if not isinstance(cap, str):
+        cap_int = int(cap)
+        for i, c in enumerate(EXTRA_CAPS):
+            if c != "T" and cap_int == c:
+                return i
+    raise ValueError(f"cap {cap!r} is not one of EXTRA_CAPS={EXTRA_CAPS}")
+
+
 def cell_id(env_id: str, horizon: int, cap: int | str) -> int:
     """Deterministic index of the cell ``(env, T, cap)``; injective over the study's grid.
 
     Main grid first (`ENV_ORDER` x `HORIZONS` x `CAPS`, env-major), then the
-    `EXTRA_HORIZONS` block in the same layout. Anything outside raises rather than
-    silently sharing a seed with a real cell.
+    `EXTRA_HORIZONS` block in the same layout, then the `EXTRA_CAPS` block
+    (`ENV_ORDER` x `HORIZONS` x `EXTRA_CAPS`, env-major) -- `EXTRA_CAPS` is only
+    defined at the main `HORIZONS`, not `EXTRA_HORIZONS`. Anything outside raises
+    rather than silently sharing a seed with a real cell.
     """
     if env_id not in _ENV_INDEX:
         raise KeyError(f"unknown environment {env_id!r}; known={ENV_ORDER}")
     e = _ENV_INDEX[env_id]
-    c = _cap_index(horizon, cap)
     horizon = int(horizon)
-    if horizon in HORIZONS:
-        h = HORIZONS.index(horizon)
-        return (e * len(HORIZONS) + h) * len(CAPS) + c
-    if horizon in EXTRA_HORIZONS:
-        h = EXTRA_HORIZONS.index(horizon)
-        return N_MAIN_GRID_CELLS + (e * len(EXTRA_HORIZONS) + h) * len(CAPS) + c
-    raise ValueError(
-        f"horizon {horizon} is not in HORIZONS={HORIZONS} or EXTRA_HORIZONS={EXTRA_HORIZONS}"
+    try:
+        c = _cap_index(horizon, cap)
+    except ValueError:
+        c = None
+    if c is not None:
+        if horizon in HORIZONS:
+            h = HORIZONS.index(horizon)
+            return (e * len(HORIZONS) + h) * len(CAPS) + c
+        if horizon in EXTRA_HORIZONS:
+            h = EXTRA_HORIZONS.index(horizon)
+            return N_MAIN_GRID_CELLS + (e * len(EXTRA_HORIZONS) + h) * len(CAPS) + c
+        raise ValueError(
+            f"horizon {horizon} is not in HORIZONS={HORIZONS} or EXTRA_HORIZONS={EXTRA_HORIZONS}"
+        )
+    ec = _extra_cap_index(cap)
+    if horizon not in HORIZONS:
+        raise ValueError(
+            f"cap {cap!r} (EXTRA_CAPS) is only defined at HORIZONS={HORIZONS}; got horizon {horizon}"
+        )
+    h = HORIZONS.index(horizon)
+    return (
+        N_MAIN_GRID_CELLS
+        + N_EXTRA_HORIZONS_CELLS
+        + (e * len(HORIZONS) + h) * len(EXTRA_CAPS)
+        + ec
     )
 
 

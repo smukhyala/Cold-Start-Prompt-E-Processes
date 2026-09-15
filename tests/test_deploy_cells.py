@@ -57,6 +57,9 @@ def _all_cells():
         for horizon in cells.HORIZONS + cells.EXTRA_HORIZONS:
             for cap in cells.CAPS:
                 yield env_id, horizon, cap
+        for horizon in cells.HORIZONS:
+            for cap in cells.EXTRA_CAPS:
+                yield env_id, horizon, cap
 
 
 # ---- cells -----------------------------------------------------------------------------
@@ -161,6 +164,84 @@ def test_seed_disjointness_guard():
     ]
     cells.assert_seed_disjointness(study)
     cells.assert_seed_disjointness([])
+
+
+def test_extra_caps_block_adds_cap_128_without_moving_existing_ids():
+    """`EXTRA_CAPS=(128,)` is a third block, appended after `EXTRA_HORIZONS`, so
+    `run_deployment.py --test cap` can use cap=128 without disturbing any id (and
+    therefore any `base_seed`) a prior run already consumed.
+
+    The pins below were captured with `cells.cell_id` *before* `EXTRA_CAPS` existed
+    (main grid + `EXTRA_HORIZONS` only) and must still hold afterwards.
+    """
+    assert cells.cell_id("beta_good_common", 50, 32) == 0
+    assert cells.cell_id("beta_good_common", 1000, "T") == 14
+    assert cells.cell_id("tail_b8.0_mu1.0_c1.0", 200, 64) == 472
+    assert cells.cell_id("tail_b2.0_mu1.0_c1.0", 1000, 32) == 372
+    assert cells.cell_id("beta_rare_excellent", 200, "T") == 53
+    assert cells.cell_id(cells.ENV_ORDER[-1], 1000, "T") == 494
+    assert cells.cell_id("beta_good_common", 2000, 32) == 495
+    assert cells.cell_id(cells.ENV_ORDER[-1], 2000, "T") == 593
+    assert cells.N_MAIN_GRID_CELLS == 495
+
+    assert cells.EXTRA_CAPS == (128,)
+    lo = cells.N_MAIN_GRID_CELLS + cells.N_EXTRA_HORIZONS_CELLS
+
+    # cap=128 exists at every corpus+heldout env x the main HORIZONS, and is unique.
+    new_ids = {
+        cells.cell_id(env_id, horizon, 128)
+        for env_id in cells.ENV_ORDER
+        for horizon in cells.HORIZONS
+    }
+    n_extra_caps = len(cells.ENV_ORDER) * len(cells.HORIZONS) * len(cells.EXTRA_CAPS)
+    assert len(new_ids) == n_extra_caps == cells.N_EXTRA_CAPS_CELLS
+    assert min(new_ids) == lo
+    assert max(new_ids) == lo + n_extra_caps - 1 == cells.N_CELLS - 1
+
+    # Disjoint from every pre-existing (main grid + EXTRA_HORIZONS) id.
+    existing_ids = {
+        cells.cell_id(env_id, horizon, cap)
+        for env_id in cells.ENV_ORDER
+        for horizon in cells.HORIZONS + cells.EXTRA_HORIZONS
+        for cap in cells.CAPS
+    }
+    assert len(existing_ids) == lo
+    assert not (existing_ids & new_ids)
+
+    # cap=128 is only wired up at the main HORIZONS, not EXTRA_HORIZONS.
+    with pytest.raises(ValueError):
+        cells.cell_id("beta_good_common", 2000, 128)
+
+    # Every new base_seed (any split, any env, either target horizon) is disjoint from
+    # every pre-existing split seed and from the corpus.
+    new_seeds = {
+        cells.base_seed(split, env_id, horizon, 128)
+        for split in cells.SPLIT_BASE
+        for env_id in cells.ENV_ORDER
+        for horizon in cells.HORIZONS
+    }
+    existing_seeds = {
+        cells.base_seed(split, env_id, horizon, cap)
+        for split in cells.SPLIT_BASE
+        for env_id in cells.ENV_ORDER
+        for horizon in cells.HORIZONS + cells.EXTRA_HORIZONS
+        for cap in cells.CAPS
+    }
+    assert not (new_seeds & existing_seeds)
+    assert max(new_seeds) < cells.CORPUS_SEED_MIN
+    cells.assert_seed_disjointness(new_seeds)  # real check against the corpus seed set
+
+    # The four run_deployment.py --test cap envs, at both requested horizons.
+    for env_id in (
+        "beta_good_common",
+        "beta_rare_excellent",
+        "tail_b2.0_mu1.0_c1.0",
+        "tail_b8.0_mu1.0_c1.0",
+    ):
+        for horizon in (200, 1000):
+            spec = cells.make_cell("test", env_id, horizon, 128, 16)
+            assert spec.cap == 128
+            assert spec.base_seed == cells.base_seed("test", env_id, horizon, 128)
 
 
 # ---- tune_baselines -----------------------------------------------------------------------

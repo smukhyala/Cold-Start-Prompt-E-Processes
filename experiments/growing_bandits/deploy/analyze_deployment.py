@@ -46,7 +46,7 @@ import os
 import sys
 import time
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -1026,6 +1026,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--no-oof", action="store_true",
                    help="score corpus rows with the deployed refit model instead of out-of-fold "
                         "(the OOF pass follows the trainer's protocol, ~2 min, cached in oof_scores.parquet)")
+    p.add_argument("--gate-from", default=None, metavar="TEST",
+                   help="for a test run without --log-states: accept another test's passing "
+                        "onpolicy_parity table (the same policies and feature layer) as the gate")
     p.add_argument("--allow-unverified", action="store_true",
                    help="write main tables even when no on-policy snapshots exist to verify parity")
     p.add_argument("--log-level", default="INFO")
@@ -1066,20 +1069,18 @@ def main(argv: list[str] | None = None) -> dict:
         gate_ok = bool(prev["passed"].all()) and n_states >= ood.PARITY_MIN_STATES if "passed" in prev else False
         log.info("reusing %s: passed=%s, n_states=%d", parity_path.name, gate_ok, n_states)
     else:
-        oof_path = None
-        if not args.no_oof and not args.skip_ood:
-            oof_path = ensure_oof_scores(
-                out_dir, sorted({pt.variant_of(p) for c in cells for p in c.policies} - {None}),
-                n_jobs=int(args.workers),
-            )
         items = build_diag_items(
             out_dir, test, cells, manifest, sample=args.parity_sample or None,
-            skip_ood=args.skip_ood, oof_path=oof_path,
+            skip_ood=args.skip_ood, oof_path=None,
             offline_path=out_dir / "reservoir_diagnostics_offline.csv",
         )
         log.info("diagnostics: %d logged (cell, policy) items", len(items))
         if items:
             prebuild_tables(cells)
+            if not args.no_oof and not args.skip_ood:
+                variants = sorted({pt.variant_of(d.item.policy) for d in items} - {None})
+                oof_path = ensure_oof_scores(out_dir, variants, n_jobs=int(args.workers))
+                items = [replace(d, oof_path=str(oof_path)) for d in items]
         results = run_diagnostics(items, int(args.workers))
         if results:
             detail = pd.concat([r["parity"] for r in results], ignore_index=True)
@@ -1118,6 +1119,15 @@ def main(argv: list[str] | None = None) -> dict:
         else:
             log.warning("no logged snapshots for test %s: the parity gate cannot be evaluated", test)
 
+    if not gate_ok and n_states == 0 and args.gate_from:
+        other = tables_dir / table_name("onpolicy_parity", args.gate_from)
+        if other.exists():
+            prev = pd.read_csv(other)
+            n_other = int(prev["n_rows"].max()) if len(prev) else 0
+            gate_ok = bool(prev["passed"].all()) and n_other >= ood.PARITY_MIN_STATES
+            log.warning("gate taken from test %s (%s): passed=%s on %d states", args.gate_from, other.name, gate_ok, n_other)
+        else:
+            log.error("--gate-from %s: %s does not exist", args.gate_from, other)
     if not gate_ok:
         if args.allow_unverified and n_states == 0:
             log.warning("--allow-unverified: writing main tables WITHOUT the on-policy parity gate")

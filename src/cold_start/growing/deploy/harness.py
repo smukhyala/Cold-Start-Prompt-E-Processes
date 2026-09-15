@@ -23,6 +23,12 @@ and kept only cell means. Four rules fix that here:
 
 Policy hook contract (duck-typed; every baseline works with none of them):
 
+* ``policy.reset()`` -- called once per `run_cell`, before the policy's generator is
+  isolated and before the warm start. A policy that carries per-episode state across
+  steps (a decision history, commitment counters, diagnostics) must clear it here,
+  because the runner may reuse one instance across cells of the same ``(M, T)`` and
+  stale history would pollute HISTORY features silently. Called before the RNG is
+  replaced so a reset can never undo the isolation.
 * ``policy.before_step(state, t)`` -- called before `Simulator.step` at time ``t``.
 * ``policy.after_step(state, res, t, best_posterior_mean)`` -- called after the step
   with the `StepResult` and `Simulator.best_posterior_mean(state)`; a model policy
@@ -167,9 +173,10 @@ class EpisodeResult:
         """One row per episode, wide.
 
         Columns: ``policy, env_id, horizon, cap, base_seed, alpha, n_initial_arms,
-        policy_seed, episode, mu_star, mu_star_cap, best_discovered, regret_disc,
-        k_final, search_frac, cap_hit, t_cap_hit, n_eliminated_final, herfindahl,
-        n_singletons_final, n_demoted`` and, for every recommender ``r`` in
+        policy_seed`` (``-1`` for a policy without an ``rng``), ``episode, mu_star,
+        mu_star_cap, best_discovered, regret_disc, k_final, search_frac, cap_hit,
+        t_cap_hit, n_eliminated_final, herfindahl, n_singletons_final, n_demoted``
+        and, for every recommender ``r`` in
         ``self.q``: ``q_r, n_rec_r, regret_r, regret_sel_r, regret_sup_r``.
         """
         m = self.n_episodes
@@ -181,7 +188,7 @@ class EpisodeResult:
             "base_seed": int(spec.base_seed),
             "alpha": float(spec.alpha),
             "n_initial_arms": int(spec.n_initial_arms),
-            "policy_seed": self.policy_seed,
+            "policy_seed": -1 if self.policy_seed is None else int(self.policy_seed),
             "episode": np.arange(m, dtype=np.int64),
             "mu_star": self.mu_star,
             "mu_star_cap": self.mu_star_cap,
@@ -239,6 +246,15 @@ def _hidden_truth_best_discovered(state: GrowingState) -> np.ndarray:
     """Max TRUE mean over the active arms of each replicate. Reads ``state.mu``."""
     mu = state.view(state.mu).astype(np.float64)
     return np.where(state.active_mask(), mu, -np.inf).max(axis=1)
+
+
+def _hidden_truth_q_primary(state: GrowingState) -> np.ndarray:
+    """TRUE mean of the arm the primary recommender would name now, per replicate.
+
+    The recommender itself is deployable (it reads only ``(n, S)``); what makes this
+    hidden truth is scoring its choice by ``state.mu`` (`Recommendation.mu`).
+    """
+    return recommend(state, PRIMARY_RECOMMENDER).mu.astype(np.float64)
 
 
 def _pull_herfindahl(state: GrowingState) -> np.ndarray:
@@ -361,7 +377,7 @@ class _Dynamics:
         k_t = float(state.Kt.mean())
         best_disc = float(_hidden_truth_best_discovered(state).mean())
         best_pm = float(sim.best_posterior_mean(state).mean())
-        q_primary = float(recommend(state, PRIMARY_RECOMMENDER).mu.mean())
+        q_primary = float(_hidden_truth_q_primary(state).mean())
         n_elim = float(n_eliminated(state).mean())
         hh = float(_pull_herfindahl(state).mean())
         if self._steps_since:
@@ -441,6 +457,11 @@ def run_cell(
     if table_horizon is not None and int(table_horizon) < horizon:
         raise ValueError(f"table covers n <= {table_horizon} but the horizon is {horizon}")
 
+    # Stale per-episode state (history, commitments) from a previous cell must go
+    # first; the RNG is isolated afterwards so nothing a reset does can touch it.
+    reset = getattr(policy, "reset", None)
+    if reset is not None:
+        reset()
     used_seed = _isolate_policy_rng(policy, spec, policy_seed)
     policy_name = str(getattr(policy, "name", type(policy).__name__))
 

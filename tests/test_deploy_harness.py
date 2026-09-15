@@ -223,6 +223,74 @@ def test_hooks_are_called_in_order_and_demotions_are_counted(table):
     assert all(0.0 <= pm <= 1.0 for _, _, pm in policy.after)
 
 
+class _StatefulStub(BernoulliSearch):
+    """Carries cross-call state the way `ModelPolicy` does: a history and a commitment counter.
+
+    Constructed dirty on purpose (`history=None`, `commit_left=99`) so a run that skipped
+    `reset()` would fail loudly at the first `after_step` and be visible in `events`.
+    """
+
+    name = "stateful_stub"
+
+    def __init__(self) -> None:
+        super().__init__(p=0.5)
+        self.history: list[np.ndarray] | None = None
+        self.commit_left = 99
+        self.events: list = []
+
+    def reset(self) -> None:
+        self.history = []
+        self.commit_left = 0
+        self.events.append("reset")
+
+    def before_step(self, state, t: int) -> None:
+        self.events.append(("before", int(t), len(self.history), self.commit_left))
+
+    def should_search(self, state, ctx):
+        self.commit_left += 1
+        return super().should_search(state, ctx)
+
+    def after_step(self, state, res, t: int, best_pm) -> None:
+        self.history.append(res.searched.copy())
+
+
+def test_reused_policy_is_reset_before_every_run(table):
+    spec = _spec(cap=32, m=8)
+    policy = _StatefulStub()
+    run_cell(spec, policy, table=table)
+    n_steps = HORIZON - spec.n_initial_arms
+    assert len(policy.history) == n_steps
+
+    second = _spec(cap=32, m=8, seed=spec.base_seed + 1)
+    run_cell(second, policy, table=table)
+    assert len(policy.history) == n_steps, "history from the first cell leaked into the second"
+
+    resets = [i for i, e in enumerate(policy.events) if e == "reset"]
+    assert len(resets) == 2
+    for start in resets:
+        first_step = policy.events[start + 1]
+        assert first_step == ("before", spec.n_initial_arms, 0, 0), first_step
+    assert policy.events[0] == "reset"
+    assert resets[1] == 1 + n_steps  # reset, n_steps befores, reset, ...
+
+
+def test_policy_without_rng_gets_seed_sentinel(table):
+    class _NoRng:
+        name = "no_rng"
+        needs_evidence = False
+
+        def should_search(self, state, ctx):
+            return np.zeros(state.M, dtype=bool)
+
+    spec = _spec(cap=32, m=4)
+    res = run_cell(spec, _NoRng(), table=table)
+    assert res.policy_seed is None
+    df = res.to_frame("no_rng", spec)
+    assert df["policy_seed"].dtype.kind == "i"
+    assert set(df["policy_seed"]) == {-1}
+    assert np.all(res.k_final == spec.n_initial_arms)
+
+
 class _AliasingPolicy(BernoulliSearch):
     name = "aliasing"
 

@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-import importlib
 import json
 import os
 import sys
@@ -42,8 +41,9 @@ import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
-# Own directory first: the reservoir-rule artifact pickles `train_policies.reservoir_rule_features`
-# by reference, so any process that imports this module (under any name) can also unpickle it.
+# `corpus` lives next to this file and `fit_models` one level up (sibling-script convention
+# of experiments/growing_bandits). Nothing an artifact pickles by reference lives in either:
+# pipeline-internal transforms come from `cold_start.growing.deploy.transforms`.
 for _p in (ROOT / "src", HERE.parent, HERE):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
@@ -62,24 +62,19 @@ from fit_models import fit_with_weights, precision_weights  # noqa: E402
 
 from cold_start.growing.deploy import artifacts  # noqa: E402
 from cold_start.growing.deploy import feature_groups as fg  # noqa: E402
+from cold_start.growing.deploy.transforms import (  # noqa: E402
+    RESERVOIR_RULE_FEATURES,
+    RESERVOIR_RULE_INPUTS,
+    beta_excess_mean,
+    reservoir_rule_features,
+)
 
 DEFAULT_OUT_DIR = ROOT / "results" / "growing_bandits" / "deploy"
 
 # ---- variants -------------------------------------------------------------------
 
-# The reservoir-aware rule (plan P11). The pipeline derives `est_I_hat` from the last three
-# columns, so every column the *artifact* declares is a corpus column; see
-# `reservoir_rule_features`.
-RESERVOIR_RULE_FEATURES: tuple[str, ...] = (
-    "est_p_new_beats_incumbent",
-    "f_remaining_frac",
-    "f_leader_width",
-    "f_log_K",
-    "est_beta_a",
-    "est_beta_b",
-    "f_best_mean",
-)
-
+# The reservoir-aware rule (plan P11) declares `transforms.RESERVOIR_RULE_FEATURES`; its
+# pipeline derives `est_I_hat` from the last three inside `transforms.reservoir_rule_features`.
 FEATURE_SETS: dict[str, tuple[str, ...]] = dict(fg.FEATURE_SETS)
 FEATURE_SETS["reservoir_rule"] = RESERVOIR_RULE_FEATURES
 
@@ -160,46 +155,6 @@ def feature_list(variant: dict) -> tuple[str, ...]:
     return tuple(FEATURE_SETS[variant["feature_set"]])
 
 
-# ---- reservoir rule -----------------------------------------------------------------
-
-
-def beta_excess_mean(a, b, c) -> np.ndarray:
-    """`E[(X - c)_+]` for `X ~ Beta(a, b)`: the expected improvement of one fresh draw over `c`.
-
-    Closed form `(a/(a+b)) (1 - I_c(a+1, b)) - c (1 - I_c(a, b))`, the integral of the Beta
-    survival function from `c` to 1. It is the observable analogue of the oracle
-    `I_t = int_c^1 P(mu > x) dx` in the plan's reservoir diagnostics.
-    """
-    from scipy.special import betainc
-
-    a = np.maximum(np.asarray(a, dtype=np.float64), 1e-12)
-    b = np.maximum(np.asarray(b, dtype=np.float64), 1e-12)
-    c = np.clip(np.asarray(c, dtype=np.float64), 0.0, 1.0)
-    return (a / (a + b)) * (1.0 - betainc(a + 1.0, b, c)) - c * (1.0 - betainc(a, b, c))
-
-
-def reservoir_rule_features(X: np.ndarray) -> np.ndarray:
-    """Pipeline step: the 7 declared corpus columns -> the 5 inputs of the logistic rule.
-
-    Input columns follow `RESERVOIR_RULE_FEATURES`; the output keeps the first four and
-    appends `est_I_hat` computed from `(est_beta_a, est_beta_b, f_best_mean)`.
-    """
-    X = np.asarray(X, dtype=np.float64)
-    i_hat = beta_excess_mean(X[:, 4], X[:, 5], X[:, 6])
-    return np.column_stack([X[:, :4], i_hat])
-
-
-def _importable_reservoir_rule_features():
-    """The function object as seen from the importable module, never from `__main__`.
-
-    A function defined in `__main__` pickles as `__main__.reservoir_rule_features`, which
-    no other process can resolve. Resolving it through the module name keeps the saved
-    artifact loadable wherever `experiments/growing_bandits/deploy` is on `sys.path`.
-    """
-    mod = importlib.import_module("train_policies")
-    return mod.reservoir_rule_features
-
-
 # ---- estimators --------------------------------------------------------------------
 
 
@@ -221,7 +176,10 @@ def make_estimator(estimator: str, feature_set: str):
         raise ValueError(f"unknown estimator {estimator!r}; expected one of {ESTIMATORS}")
     steps = []
     if feature_set == "reservoir_rule":
-        steps.append(FunctionTransformer(_importable_reservoir_rule_features()))
+        # Importable from `cold_start`, so the pickled reference resolves wherever the
+        # artifact is loaded (a function defined in this script would pickle as
+        # `__main__.*` or `train_policies.*` and load nowhere else).
+        steps.append(FunctionTransformer(reservoir_rule_features))
     steps.append(StandardScaler())
     steps.append(LogisticRegression(C=1.0, max_iter=2000))
     return make_pipeline(*steps)
@@ -472,8 +430,13 @@ def train_variant(
     y = df[label].to_numpy(dtype=np.float64) > 0
     w = None
     if variant["estimator"] == "logit_w":
-        # Weights are normalised over the whole corpus, ties included, exactly as the
-        # published fit did; the regularised objective is not invariant to their scale.
+        # `precision_weights`' floor (SE quantile), cap (multiple of the median weight) and
+        # mean-normalisation are computed over the WHOLE corpus, ties included, exactly as
+        # the published fit did -- the reproduction gate depends on it, and the regularised
+        # objective is not invariant to the weights' scale. They are label-side scalar
+        # hyperparameters (three numbers from the SE column, no feature or label sign), so
+        # the held-out rows leak nothing about their own sign; a strictly clean protocol
+        # would still recompute them on each training fold.
         w = precision_weights(df[se_col].to_numpy(dtype=np.float64))
 
     base = {
@@ -559,11 +522,20 @@ def train_variant(
         **provenance,
     }
     if variant["feature_set"] == "reservoir_rule":
-        meta["derived_inputs"] = ["est_p_new_beats_incumbent", "f_remaining_frac",
-                                  "f_leader_width", "f_log_K", "est_I_hat"]
-        meta["unpickle_requires"] = (
-            "experiments/growing_bandits/deploy on sys.path (module `train_policies`)"
-        )
+        meta["derived_inputs"] = list(RESERVOIR_RULE_INPUTS)
+        meta["transform"] = "cold_start.growing.deploy.transforms.reservoir_rule_features"
+    if variant["estimator"] == "hgb":
+        # sklearn enables early stopping automatically above 10k rows: 10% of the training
+        # rows are held out internally (split seeded by random_state) and `max_iter` is
+        # only an upper bound on the trees actually grown.
+        meta["hgb"] = {
+            "early_stopping": "auto (n > 10_000 -> on)",
+            "validation_fraction": 0.1,
+            "n_iter_no_change": 10,
+            "max_iter": 300,
+            "n_iter_": int(model.n_iter_),
+            "random_state": 0,
+        }
     artifacts.save_model(
         out_dir / "models" / f"{name}.joblib",
         {"pipeline": model, "features": list(features), "k": k, "tau": float(tau_off),
@@ -856,6 +828,24 @@ def parse_variants(spec: str, quick: bool) -> list[str]:
     return names
 
 
+def merge_metrics(path: Path, fresh: pd.DataFrame, trained: list[str]) -> pd.DataFrame:
+    """Replace the rows of the variants just trained, keeping every other variant's rows.
+
+    Re-training one variant (`--variants name`) must not erase the table the full run
+    wrote for the other twenty. Rows are ordered by the `VARIANTS` table so the file is
+    stable across partial runs.
+    """
+    if path.exists():
+        old = pd.read_csv(path)
+        old = old[~old["variant"].isin(trained)]
+        fresh = pd.concat([old, fresh], ignore_index=True).reindex(columns=fresh.columns)
+    order = {name: i for i, name in enumerate(VARIANTS)}
+    fresh = fresh.assign(_order=fresh["variant"].map(order)).sort_values(
+        "_order", kind="stable"
+    )
+    return fresh.drop(columns="_order").reset_index(drop=True)
+
+
 def check_reproduction_gate(meta: dict) -> tuple[bool, float, float]:
     env = meta["metrics"]["meta_env"]
     bal, a = env["bal_acc_05_fold_mean"], env["auc_fold_mean"]
@@ -932,6 +922,7 @@ def main(argv: list[str] | None = None) -> dict:
                "auc_fold_mean", "bal_acc_05", "bal_acc_05_fold_mean", "tau_off", "bal_acc_tau_off",
                "ess", "n_cells"]
     metrics_df = pd.DataFrame(metric_rows).reindex(columns=columns)
+    metrics_df = merge_metrics(out_dir / "offline_metrics.csv", metrics_df, names)
     metrics_df.to_csv(out_dir / "offline_metrics.csv", index=False)
 
     gate = None

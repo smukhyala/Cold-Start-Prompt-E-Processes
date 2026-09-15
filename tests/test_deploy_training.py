@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import glob
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -27,7 +28,7 @@ if str(DEPLOY) not in sys.path:
 import corpus  # noqa: E402
 import train_policies as tp  # noqa: E402
 
-from cold_start.growing.deploy import artifacts  # noqa: E402
+from cold_start.growing.deploy import artifacts, transforms  # noqa: E402
 from cold_start.growing.deploy import feature_groups as fg  # noqa: E402
 
 HAVE_CORPUS = bool(glob.glob(str(ROOT / "data" / "oracle_labels" / "part-*.parquet")))
@@ -97,7 +98,7 @@ def test_variants_table_never_names_a_forbidden_column():
     assert leaves
     bad = [s for s in leaves if s.startswith(fg.FORBIDDEN_PREFIXES)]
     assert bad == []
-    assert tp.feature_list(tp.VARIANTS["reservoir_rule_k16"]) == tp.RESERVOIR_RULE_FEATURES
+    assert tp.feature_list(tp.VARIANTS["reservoir_rule_k16"]) == transforms.RESERVOIR_RULE_FEATURES
     assert tp.feature_list(tp.VARIANTS["legacy_E_k16_weighted"]) == fg.ALL_DEPLOYABLE
     assert len(tp.feature_list(tp.VARIANTS["all71_k16"])) == 71
 
@@ -142,7 +143,7 @@ def test_beta_excess_mean_matches_numeric_integration():
         a, b = rng.uniform(0.5, 10.0, size=2)
         c = rng.uniform(0.05, 0.95)
         numeric, err = quad(lambda x, a=a, b=b: beta.sf(x, a, b), c, 1.0)
-        closed = float(tp.beta_excess_mean(a, b, c))
+        closed = float(transforms.beta_excess_mean(a, b, c))
         assert abs(closed - numeric) < 1e-8 + 10 * err
         assert closed >= 0.0
     # vectorised and appended as the fifth column of the pipeline input
@@ -150,10 +151,13 @@ def test_beta_excess_mean_matches_numeric_integration():
         [rng.random(5), rng.random(5), rng.random(5), rng.random(5),
          rng.uniform(1, 5, 5), rng.uniform(1, 5, 5), rng.random(5)]
     )
-    Z = tp.reservoir_rule_features(X)
+    Z = transforms.reservoir_rule_features(X)
     assert Z.shape == (5, 5)
     assert np.array_equal(Z[:, :4], X[:, :4])
-    assert np.allclose(Z[:, 4], tp.beta_excess_mean(X[:, 4], X[:, 5], X[:, 6]))
+    assert np.allclose(Z[:, 4], transforms.beta_excess_mean(X[:, 4], X[:, 5], X[:, 6]))
+    # the trainer must pickle the importable function, not a private copy of it
+    assert tp.reservoir_rule_features is transforms.reservoir_rule_features
+    assert transforms.reservoir_rule_features.__module__ == "cold_start.growing.deploy.transforms"
 
 
 # ---- corpus masks ----------------------------------------------------------------------
@@ -315,3 +319,47 @@ def test_saved_artifact_reproduces_in_sample_predictions(quick_run):
         assert tp.auc(y, p_saved) > 0.5
         # the saved pipeline consumes exactly the declared columns, in the declared order
         assert art["pipeline"].n_features_in_ == len(art["features"])
+
+
+# Runs in a child interpreter with `-I` (isolated: no cwd, no PYTHONPATH, no user site), so
+# sys.path is the stdlib, the venv's site-packages and the editable `src/` only -- never
+# `experiments/`. Reads one feature row from stdin and prints the artifact's P(SEARCH).
+ARTIFACT_LOADER = r"""
+import json, sys
+src = sys.argv[2]
+if src not in sys.path:
+    sys.path.insert(0, src)
+leaked = [p for p in sys.path if "experiments" in p]
+assert not leaked, leaked
+assert "train_policies" not in sys.modules
+import numpy as np
+from cold_start.growing.deploy.artifacts import load_model
+art = load_model(sys.argv[1])
+x = np.asarray([json.load(sys.stdin)], dtype=float)
+p = art["pipeline"].predict_proba(x)[:, 1]
+print(json.dumps({"p": float(p[0]), "n_features": len(art["features"]), "k": art["k"]}))
+"""
+
+
+@needs_corpus
+def test_every_artifact_loads_in_a_bare_interpreter(quick_run):
+    """Regression for the reservoir rule: its transform used to pickle as `train_policies.*`."""
+    df = corpus.load_corpus(max_shards=1)
+    for name in tp.QUICK_VARIANTS:
+        path = quick_run["out_dir"] / "models" / f"{name}.joblib"
+        art = artifacts.load_model(path)
+        row = tp.design_matrix(df.iloc[:1], tuple(art["features"]))[0]
+        expected = float(art["pipeline"].predict_proba(row[None, :])[0, 1])
+        proc = subprocess.run(
+            [sys.executable, "-I", "-c", ARTIFACT_LOADER, str(path), str(ROOT / "src")],
+            input=json.dumps(row.tolist()),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert proc.returncode == 0, f"{name}: {proc.stderr}"
+        out = json.loads(proc.stdout.strip().splitlines()[-1])
+        assert out["n_features"] == len(art["features"])
+        assert out["k"] == art["k"]
+        assert np.isfinite(out["p"]) and 0.0 <= out["p"] <= 1.0
+        assert out["p"] == pytest.approx(expected, abs=1e-12)

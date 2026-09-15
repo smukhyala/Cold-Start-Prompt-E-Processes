@@ -323,16 +323,54 @@ def _tuned_p3_star(name: str, horizon: int, baseline_params: dict | None) -> tup
     return float(sel["alpha"]), float(sel["c"])
 
 
-def _tuned_tau(name: str, variant: str, thresholds: dict | None, fallback: float | None) -> float | None:
-    """``tau_val`` for `variant`, else `fallback` (the artifact's offline tau, or the
-    registered hand-rule tau). ``None`` is returned only when there is no fallback at
-    all, in which case `ModelPolicy` applies its own default."""
+#: Where a deployed threshold came from (recorded in ``params["tau_source"]``).
+TAU_SOURCES: tuple[str, ...] = (
+    "tau_val_excl_heldout",  # validation, excluding the variant's held-out horizons
+    "tau_val",  # validation over every horizon
+    "artifact_tau",  # the artifact's offline tau_off (no thresholds.json entry)
+    "registered",  # the hand rule's registered placeholder
+    "fixed",  # set by the policy table itself (the tau05 twin)
+)
+
+
+def heldout_horizons(artifact: dict | None) -> tuple[int, ...]:
+    """Horizons the trainer excluded from this variant (``meta.subset.exclude_horizons``)."""
+    meta = (artifact or {}).get("meta") or {}
+    subset = meta.get("subset") or {}
+    return tuple(int(h) for h in subset.get("exclude_horizons", ()))
+
+
+def _tuned_tau(
+    name: str,
+    variant: str,
+    thresholds: dict | None,
+    fallback: float | None,
+    fallback_source: str,
+    *,
+    horizon_holdout: bool = False,
+) -> tuple[float | None, str]:
+    """``(tau, source)`` for `variant`.
+
+    A horizon-holdout model (trained without T=1000, say) must deploy the threshold
+    selected *without* that horizon's validation cells -- ``tau_val_excl_heldout`` --
+    wherever it runs, or its transfer test would have peeked at the held-out horizon
+    through tau. Every other model deploys ``tau_val``. Missing keys fall back in
+    that order, then to `fallback` (the artifact's offline tau or the registered
+    hand-rule value), each step logged once. ``None`` is returned only when there is
+    no fallback at all, in which case `ModelPolicy` applies its own default.
+    """
     entry = thresholds.get(variant) if thresholds else None
-    tau = entry.get("tau_val") if entry else None
-    if tau is None:
-        _warn_once(name, f"no validation tau for {variant}; falling back to {fallback}")
-        return fallback
-    return float(tau)
+    if entry:
+        if horizon_holdout:
+            tau = entry.get("tau_val_excl_heldout")
+            if tau is not None:
+                return float(tau), "tau_val_excl_heldout"
+            _warn_once(name, f"no tau_val_excl_heldout for horizon-holdout {variant}; using tau_val")
+        tau = entry.get("tau_val")
+        if tau is not None:
+            return float(tau), "tau_val"
+    _warn_once(name, f"no validation tau for {variant}; falling back to {fallback}")
+    return fallback, fallback_source
 
 
 # ---- resolution -----------------------------------------------------------------------
@@ -357,7 +395,9 @@ def resolve_params(
     placeholder, with a warning). For a learned policy the artifact's own ``tau`` is
     the fallback, so the artifact is loaded here unless `artifact` is passed; the
     result carries ``artifact`` as the resolved *path* (a plain string, so the dict
-    is JSON-serialisable and can go into the manifest as provenance).
+    is JSON-serialisable and can go into the manifest as provenance) and, for any
+    thresholded policy, ``tau_source`` (one of `TAU_SOURCES`) saying where its tau
+    came from.
     """
     if name not in POLICIES:
         raise KeyError(f"unknown policy {name!r}; known={sorted(POLICIES)}")
@@ -377,14 +417,27 @@ def resolve_params(
             params["K0"] = _tuned_k0(name, horizon, baseline_params)
     elif kind == "reservoir_rule":
         if params["tau"] is None:
-            params["tau"] = _tuned_tau(name, "reservoir_rule", thresholds, _PLACEHOLDER_RULE_TAU)
+            params["tau"], params["tau_source"] = _tuned_tau(
+                name, "reservoir_rule", thresholds, _PLACEHOLDER_RULE_TAU, "registered"
+            )
+        else:
+            params["tau_source"] = "fixed"
     elif kind == "model":
         variant = params["artifact"]
         path = artifact_path(variant, models_dir)
         if params["tau"] is None:
             if artifact is None:
                 artifact = load_model(path)
-            params["tau"] = _tuned_tau(name, variant, thresholds, artifact.get("tau"))
+            params["tau"], params["tau_source"] = _tuned_tau(
+                name,
+                variant,
+                thresholds,
+                artifact.get("tau"),
+                "artifact_tau",
+                horizon_holdout=bool(heldout_horizons(artifact)),
+            )
+        else:
+            params["tau_source"] = "fixed"
         params["artifact"] = str(path)
     return params
 
@@ -415,6 +468,7 @@ def build_policy(
     entry = POLICIES[name]
     kind = entry["kind"]
     build_params = dict(params)
+    build_params.pop("tau_source", None)  # provenance for the manifest, not a constructor arg
     if kind == "model" and artifact is not None:
         build_params["artifact"] = artifact
     policy = rules.make_policy(

@@ -18,9 +18,13 @@ prefix saved to disk, and every `run_cell` of the cell receives them.
 
 The manifest (``manifest_<test>.jsonl``, one line per finished item, appended by the
 parent as results arrive; never truncated, the latest line per item wins) is what
-makes a run resumable: ``--resume`` skips every item already in it whose parquet
-still exists, and a run without ``--resume`` redoes what it was asked for while
-leaving every other item's record in place. It also records provenance -- the
+makes a run resumable: ``--resume`` skips an item only when its latest line still
+describes the item about to run -- same resolved parameters (so a tau or schedule
+constant that changed when M5's tuning outputs landed re-runs the cell), same
+seed and replicate count, same model artifact bytes, and snapshots present if
+they are requested now -- and its parquet still exists; anything else is re-run
+with a loud log line. A run without ``--resume`` redoes what it was asked for
+while leaving every other item's record in place. It also records provenance -- the
 resolved parameters (the tau or c actually deployed), the policy's diagnostic counters
 (a non-zero ``n_nonfinite_rows`` fails the item: a non-finite feature at deployment is
 a parity bug, not a normal state), the git sha and the wall time.
@@ -39,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import logging
 import multiprocessing as mp
@@ -112,6 +117,11 @@ CAP_SWEEP_HORIZONS: tuple[int, ...] = (200, 1000)
 CAP_SWEEP_CAPS: tuple[int | str, ...] = (32, 64, "T")
 SMOKE_ENVS: tuple[str, ...] = ("beta_good_common", "tail_b2.0_mu1.0_c1.0")
 SMOKE_HORIZON = 100
+
+#: Smoke runs draw validation seeds: no effect size is ever quoted from test seeds
+#: before the real run. Every other test uses the test split.
+SMOKE_SPLIT = "val"
+TEST_SPLIT = "test"
 
 #: ``--log-states``: 24 normalized times x 128 replicates per learned policy (plan §10).
 LOG_TIMES = 24
@@ -229,7 +239,8 @@ def build_cells(
     cells_mod,
     overrides: list[tuple[str, int, int, int | None]] | None = None,
 ) -> list[CellSpec]:
-    """The `CellSpec` list for `test`, seeded by `cells.make_cell` on the test split.
+    """The `CellSpec` list for `test`, seeded by `cells.make_cell` on the test split
+    (the validation split for the smoke test, see `SMOKE_SPLIT`).
 
     Without `cells.py` only the smoke test may run, on stand-in seeds -- a real test
     on ad-hoc seeds would not be the pre-registered study.
@@ -243,11 +254,12 @@ def build_cells(
     if not grid:
         raise RuntimeError(f"no cells for test {test!r}")
     default_m = int(n_replicates) if n_replicates is not None else DEFAULT_REPLICATES[test]
+    split = SMOKE_SPLIT if test == "smoke" else TEST_SPLIT
     specs: list[CellSpec] = []
     for index, (env_id, horizon, cap, m_override) in enumerate(grid):
         m = default_m if (m_override is None or n_replicates is not None) else int(m_override)
         if cells_mod is not None:
-            specs.append(cells_mod.make_cell("test", env_id, int(horizon), int(cap), m))
+            specs.append(cells_mod.make_cell(split, env_id, int(horizon), int(cap), m))
         else:
             log.warning(
                 "cells.py absent: cell %s_T%d_cap%d uses stand-in seed %d (smoke only)",
@@ -363,6 +375,7 @@ class WorkItem:
     dynamics_path: str
     snapshots_path: str | None
     git_sha: str
+    artifact_sha: str | None = None
 
 
 def _git_sha() -> str:
@@ -374,6 +387,40 @@ def _git_sha() -> str:
         return out.stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+
+
+def file_sha256(path: str | Path) -> str:
+    """Content hash of a model artifact, so a retrained model invalidates its items."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def stale_reason(record: dict, item: WorkItem) -> str | None:
+    """Why a manifest `record` no longer describes `item`, or ``None`` if it still does.
+
+    The checks are the inputs that change an item's *result*: its resolved
+    parameters (a tau or schedule constant that arrived with the tuning outputs),
+    its seed and replicate count, the artifact's bytes, and whether snapshots were
+    requested but never logged. Dynamics grid changes are not tracked.
+    """
+    if not record.get("parquet") or not Path(record["parquet"]).exists():
+        return "parquet missing"
+    if record.get("params") != item.params:
+        return f"params changed {record.get('params')} -> {item.params}"
+    if int(record.get("n_replicates", -1)) != int(item.spec.n_replicates):
+        return f"n_replicates {record.get('n_replicates')} -> {item.spec.n_replicates}"
+    if int(record.get("base_seed", -1)) != int(item.spec.base_seed):
+        return f"base_seed {record.get('base_seed')} -> {item.spec.base_seed}"
+    if int(record.get("horizon", -1)) != int(item.spec.horizon) or int(record.get("cap", -1)) != int(item.spec.cap):
+        return "horizon/cap changed"
+    if item.artifact_sha is not None and record.get("artifact_sha") != item.artifact_sha:
+        return f"artifact bytes changed ({record.get('artifact_sha')} -> {item.artifact_sha})"
+    if item.snapshots_path is not None and not record.get("snapshots"):
+        return "snapshots requested but not logged before"
+    return None
 
 
 def output_paths(out_dir: Path, test: str, cell: str, policy: str) -> tuple[Path, Path, Path]:
@@ -400,28 +447,31 @@ def build_work(
     models_dir: Path,
     dynamics_grid: int,
     log_states: bool,
-    done: set[tuple[str, str, str]],
+    done: dict[tuple[str, str, str], dict],
     git_sha: str,
     artifacts: dict[str, dict] | None = None,
     log_policies: set[str] | None = None,
+    artifact_shas: dict[str, str] | None = None,
 ) -> list[WorkItem]:
-    """Resolve every (cell, policy) into a `WorkItem`, skipping those in `done`.
+    """Resolve every (cell, policy) into a `WorkItem`, skipping those `done` describes.
 
-    Parameters are resolved here, in the parent, so every placeholder warning is
-    printed once and the manifest can carry the values actually deployed. `artifacts`
-    (variant -> loaded model) saves re-reading each joblib once per cell. Snapshots are
-    logged for the policies of `LOGGED_GROUPS` (or the `log_policies` subset of them).
+    `done` maps an item key to its latest manifest record; the item is skipped only
+    if `stale_reason` finds nothing changed, otherwise it is re-run and the reason
+    logged. Parameters are resolved here, in the parent, so every placeholder warning
+    is printed once and the manifest can carry the values actually deployed.
+    `artifacts` (variant -> loaded model) saves re-reading each joblib once per cell;
+    `artifact_shas` (variant -> sha256 of the file) is stamped on every learned item.
+    Snapshots are logged for the policies of `LOGGED_GROUPS` (or the `log_policies`
+    subset of them).
     """
     comparators_dir = out_dir / "comparators"
     artifacts = artifacts or {}
+    artifact_shas = artifact_shas or {}
     items: list[WorkItem] = []
     for spec in cells:
         name = cell_name(spec)
-        pending = [p for p in policies if (test, name, p) not in done]
-        if not pending:
-            continue
-        prefix_path, prior = prepare_cell_constants(spec, comparators_dir)
-        for policy in pending:
+        candidates: list[WorkItem] = []
+        for policy in policies:
             variant = pt.variant_of(policy)
             params = pt.resolve_params(
                 policy,
@@ -436,25 +486,36 @@ def build_work(
             logged = log_states and group in LOGGED_GROUPS and (
                 log_policies is None or policy in log_policies
             )
-            items.append(
-                WorkItem(
-                    test=test,
-                    cell=name,
-                    policy=policy,
-                    group=group,
-                    spec=spec,
-                    params=params,
-                    policy_seed=pt.policy_seed(policy),
-                    prefix_path=str(prefix_path),
-                    oracle_prior=prior,
-                    dynamics_grid=int(dynamics_grid),
-                    log_states=log_spec_for(spec) if logged else None,
-                    parquet_path=str(parquet),
-                    dynamics_path=str(dynamics),
-                    snapshots_path=str(snapshots) if logged else None,
-                    git_sha=git_sha,
-                )
+            item = WorkItem(
+                test=test,
+                cell=name,
+                policy=policy,
+                group=group,
+                spec=spec,
+                params=params,
+                policy_seed=pt.policy_seed(policy),
+                prefix_path="",  # filled once the cell is known to have work
+                oracle_prior=(float("nan"), float("nan")),
+                dynamics_grid=int(dynamics_grid),
+                log_states=log_spec_for(spec) if logged else None,
+                parquet_path=str(parquet),
+                dynamics_path=str(dynamics),
+                snapshots_path=str(snapshots) if logged else None,
+                git_sha=git_sha,
+                artifact_sha=artifact_shas.get(variant) if variant is not None else None,
             )
+            record = done.get((test, name, policy))
+            if record is not None:
+                reason = stale_reason(record, item)
+                if reason is None:
+                    continue
+                log.warning("resume: re-running %s/%s: %s", name, policy, reason)
+            candidates.append(item)
+        if not candidates:
+            continue
+        prefix_path, prior = prepare_cell_constants(spec, comparators_dir)
+        for item in candidates:
+            items.append(replace(item, prefix_path=str(prefix_path), oracle_prior=prior))
     items.sort(key=_item_sort_key)
     return items
 
@@ -603,6 +664,7 @@ def run_item(item: WorkItem) -> dict:
         "n_replicates": int(spec.n_replicates),
         "policy_seed": int(item.policy_seed),
         "params": item.params,
+        "artifact_sha": item.artifact_sha,
         "counters": counters,
         "search_frac_mean": float(np.mean(res.search_frac)),
         "parquet": str(parquet),
@@ -657,10 +719,10 @@ def latest_records(records: list[dict]) -> dict[tuple[str, str, str], dict]:
     return latest
 
 
-def completed_items(records: list[dict]) -> set[tuple[str, str, str]]:
-    """Items whose latest manifest line exists *and* whose parquet is still on disk."""
+def completed_records(records: list[dict]) -> dict[tuple[str, str, str], dict]:
+    """Latest manifest line per item, for those whose parquet is still on disk."""
     return {
-        key for key, rec in latest_records(records).items()
+        key: rec for key, rec in latest_records(records).items()
         if rec.get("parquet") and Path(rec["parquet"]).exists()
     }
 
@@ -748,9 +810,12 @@ def summarize_cell(
 ) -> list[dict]:
     """Per (policy, recommender) rows for one cell, from its policies' episode frames.
 
-    The paired difference vs each reference is over episodes aligned by ``episode``
-    (the CRN pairing), and is exactly zero for a reference against itself -- which is
-    how a reader can tell the alignment is right.
+    The paired difference vs each reference is ``regret_policy - regret_ref`` over
+    episodes aligned by ``episode`` (the CRN pairing): negative means the policy is
+    better, and it is exactly zero for a reference against itself -- which is how a
+    reader can tell the alignment is right. ``_win`` is the share of episodes the
+    *policy* wins (lower regret; a tie counts half), i.e. `stats.paired_bootstrap`'s
+    ``win_rate`` evaluated on ``-diff``.
     """
     rows: list[dict] = []
     ref_frames = {r: frames[r].sort_values("episode").reset_index(drop=True) for r in references if r in frames}
@@ -806,7 +871,8 @@ def summarize_cell(
                 row[prefix] = boot["mean"]
                 row[prefix + "_lo"] = boot["lo"]
                 row[prefix + "_hi"] = boot["hi"]
-                row[prefix + "_win"] = boot["win_rate"]
+                # Policy wins where diff < 0: the bootstrap's win_rate is P(diff > 0).
+                row[prefix + "_win"] = boot["frac_negative"] + 0.5 * boot["frac_zero"]
                 row[prefix + "_se"] = boot["se_paired"]
             rows.append(row)
     return rows
@@ -908,10 +974,10 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     thresholds = pt.load_thresholds(args.thresholds or out_dir / "thresholds.json")
 
     manifest = manifest_path(out_dir, test)
-    done: set[tuple[str, str, str]] = set()
+    done: dict[tuple[str, str, str], dict] = {}
     if args.resume:
-        done = completed_items(read_manifest(manifest))
-        log.info("resume: %d items already complete in %s", len(done), manifest)
+        done = completed_records(read_manifest(manifest))
+        log.info("resume: %d items recorded complete in %s", len(done), manifest)
     elif manifest.exists():
         log.info("appending to existing %s; requested items are redone", manifest)
 
@@ -919,10 +985,9 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     if args.log_policies:
         log_policies = {p.strip() for p in args.log_policies.split(",") if p.strip()}
         pt.check_policies(sorted(log_policies))
-    artifacts = {
-        v: load_model(pt.artifact_path(v, models_dir))
-        for v in {pt.variant_of(p) for p in policies} - {None}
-    }
+    variants = {pt.variant_of(p) for p in policies} - {None}
+    artifacts = {v: load_model(pt.artifact_path(v, models_dir)) for v in variants}
+    artifact_shas = {v: file_sha256(pt.artifact_path(v, models_dir)) for v in variants}
     git_sha = _git_sha()
     items = build_work(
         test,
@@ -938,8 +1003,10 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
         git_sha=git_sha,
         artifacts=artifacts,
         log_policies=log_policies,
+        artifact_shas=artifact_shas,
     )
     n_total = len(cells) * len(policies)
+    n_skipped = n_total - len(items)
     log.info(
         "test %s: %d cells x %d policies = %d items, %d to run (%d workers, git %s)",
         test, len(cells), len(policies), n_total, len(items), args.workers, git_sha,
@@ -961,14 +1028,14 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
         summary_path = write_summary(out_dir, test, records, n_boot=int(args.n_boot))
     wall = time.time() - t_run
     log.info("test %s done: %d run, %d skipped, %d failed, %.1fs wall", test, len(items) - n_failed,
-             len(done), n_failed, wall)
+             n_skipped, n_failed, wall)
     result = {
         "test": test,
         "n_cells": len(cells),
         "n_policies": len(policies),
         "n_items": n_total,
         "n_run": len(items) - n_failed,
-        "n_skipped": len(done),
+        "n_skipped": n_skipped,
         "n_failed": n_failed,
         "failures": failures,
         "manifest": str(manifest),

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import pickle
 import sys
+from dataclasses import replace as rd_replace
 from pathlib import Path
 
 import numpy as np
@@ -119,7 +120,9 @@ def test_resolve_params_uses_tuning_outputs_and_falls_back_to_placeholders(caplo
         assert p == {"alpha": 0.5, "c": rules.POLICY_SPECS["power_sqrt"]["c"]}
         assert pt.resolve_params("refine_after_init", 100) == {"K0": pt._PLACEHOLDER_K0}
         assert pt.resolve_params("p3_star", 100) == pt._PLACEHOLDER_P3_STAR
-        assert pt.resolve_params("rule_reservoir", 100) == {"tau": pt._PLACEHOLDER_RULE_TAU}
+        assert pt.resolve_params("rule_reservoir", 100) == {
+            "tau": pt._PLACEHOLDER_RULE_TAU, "tau_source": "registered"
+        }
         pt.resolve_params("power_a0.5", 200)
     assert sum("power_a0.5" in r.message for r in caplog.records) == 1
 
@@ -139,7 +142,48 @@ def test_resolve_params_uses_tuning_outputs_and_falls_back_to_placeholders(caplo
     assert pt.resolve_params("refine_after_init", 500, baseline_params=tuned)["K0"] == pt._PLACEHOLDER_K0
 
     thresholds = {"reservoir_rule": {"tau_val": 2.5, "tau_off": None, "curve": {}}}
-    assert pt.resolve_params("rule_reservoir", 100, thresholds=thresholds) == {"tau": 2.5}
+    assert pt.resolve_params("rule_reservoir", 100, thresholds=thresholds) == {
+        "tau": 2.5, "tau_source": "tau_val"
+    }
+
+
+def test_learned_tau_resolution_prefers_excl_heldout_for_horizon_holdouts(tmp_path, caplog):
+    """A horizon-holdout model deploys `tau_val_excl_heldout` everywhere; others `tau_val`."""
+    pipeline = _fit_clock_pipeline(n_rows=300)
+    base = {"pipeline": pipeline, "features": CLOCK, "k": 16, "tau": 0.45}
+    save_model(tmp_path / "clock_quality_evidence_k16.joblib", {**base, "meta": {"subset": {}}})
+    save_model(
+        tmp_path / "clock_quality_evidence_k16_noT1000.joblib",
+        {**base, "meta": {"subset": {"exclude_horizons": [1000]}}},
+    )
+    thresholds = {
+        "clock_quality_evidence_k16": {"tau_val": 0.6, "tau_val_excl_heldout": 0.1},
+        "clock_quality_evidence_k16_noT1000": {"tau_val": 0.6, "tau_val_excl_heldout": 0.4},
+    }
+    kw = dict(models_dir=tmp_path, thresholds=thresholds)
+    # Whatever the horizon (T=1000 included), the holdout model uses the excl-heldout tau.
+    for T in (200, 1000):
+        p = pt.resolve_params("phi_k16_noT1000", T, **kw)
+        assert (p["tau"], p["tau_source"]) == (0.4, "tau_val_excl_heldout")
+    # A non-holdout model never reads that key, even when M5 happens to write one.
+    p = pt.resolve_params("phi_k16", 1000, **kw)
+    assert (p["tau"], p["tau_source"]) == (0.6, "tau_val")
+    # Key absent or None -> tau_val with a logged warning; no thresholds -> artifact tau.
+    pt._warned.clear()
+    with caplog.at_level("WARNING", logger="deploy.policy_table"):
+        thresholds["clock_quality_evidence_k16_noT1000"]["tau_val_excl_heldout"] = None
+        p = pt.resolve_params("phi_k16_noT1000", 200, **kw)
+        assert (p["tau"], p["tau_source"]) == (0.6, "tau_val")
+        p = pt.resolve_params("phi_k16_noT1000", 200, models_dir=tmp_path, thresholds=None)
+        assert (p["tau"], p["tau_source"]) == (0.45, "artifact_tau")
+    assert any("tau_val_excl_heldout" in r.message for r in caplog.records)
+    # The fixed twin records its source too, and the source never reaches the constructor.
+    p = pt.resolve_params("phi_k16_tau05", 200, **kw)
+    assert (p["tau"], p["tau_source"]) == (0.5, "fixed")
+    table = CSTable.load_or_build(50, alpha=0.05)
+    policy = pt.build_policy("phi_k16_tau05", p, horizon=50, n_replicates=4, table=table)
+    assert policy.tau == 0.5 and policy.name == "phi_k16_tau05"
+    assert pt.heldout_horizons(load_model(tmp_path / "clock_quality_evidence_k16_noT1000.joblib")) == (1000,)
 
 
 def test_build_cells_refuses_a_real_test_without_cells_module():
@@ -159,6 +203,11 @@ def test_cell_grids_against_the_real_cells_module():
         m_default = rd.DEFAULT_REPLICATES[test]
         for c in cells:
             assert c.n_replicates == (rd.T2000_REPLICATES if c.horizon == 2000 else m_default)
+    # Smoke draws validation seeds; every real test draws test seeds.
+    for c in rd.build_cells("smoke", n_replicates=None, cells_mod=CELLS_MOD):
+        assert c.base_seed == CELLS_MOD.base_seed("val", c.env_id, c.horizon, c.cap)
+    for c in rd.build_cells("A", n_replicates=None, cells_mod=CELLS_MOD):
+        assert c.base_seed == CELLS_MOD.base_seed("test", c.env_id, c.horizon, c.cap)
     caps = {(c.horizon, c.cap) for c in rd.build_cells("cap", n_replicates=None, cells_mod=CELLS_MOD)}
     assert caps == {(200, 32), (200, 64), (200, 200), (1000, 32), (1000, 64), (1000, 1000)}
     # A manual cell list and a replicate override are honoured.
@@ -175,7 +224,7 @@ def test_build_work_logs_only_learned_and_rule_policies(tmp_path):
     cells = _cells(horizon=20, n_replicates=4)
     common = dict(
         out_dir=tmp_path, baseline_params=None, thresholds=None, models_dir=tmp_path,
-        dynamics_grid=10, done=set(), git_sha="test",
+        dynamics_grid=10, done={}, git_sha="test",
     )
     items = rd.build_work("smoke", cells, ["rule_reservoir", "cp0"], log_states=True, **common)
     by_policy = {(i.cell, i.policy): i for i in items}
@@ -193,11 +242,39 @@ def test_build_work_logs_only_learned_and_rule_policies(tmp_path):
         "smoke", cells, ["rule_reservoir", "cp0"], log_states=True, log_policies={"cp0"}, **common
     )
     assert all(i.snapshots_path is None for i in items)
-    # Skipping honours `done`, and cells with nothing pending build no constants.
-    done = {("smoke", rd.cell_name(cells[0]), p) for p in ("rule_reservoir", "cp0")}
+    # Skipping honours `done` only while the record still describes the item.
+    items = rd.build_work("smoke", cells, ["rule_reservoir", "cp0"], log_states=False, **common)
+    done = {}
+    for item in items:
+        if item.cell == rd.cell_name(cells[0]):
+            Path(item.parquet_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(item.parquet_path).touch()
+            done[(item.test, item.cell, item.policy)] = {
+                "parquet": item.parquet_path, "params": item.params, "artifact_sha": None,
+                "n_replicates": item.spec.n_replicates, "base_seed": item.spec.base_seed,
+                "horizon": item.spec.horizon, "cap": item.spec.cap, "snapshots": None,
+            }
+    rest = {k: v for k, v in common.items() if k != "done"}
     items = rd.build_work("smoke", cells, ["rule_reservoir", "cp0"], log_states=False, done=done,
-                          **{k: v for k, v in common.items() if k != "done"})
+                          **rest)
     assert {i.cell for i in items} == {rd.cell_name(cells[1])}
+    # ... a changed tau, replicate count, artifact or newly requested snapshots re-run it.
+    key = ("smoke", rd.cell_name(cells[0]), "rule_reservoir")
+    stale = {**done[key], "params": {**done[key]["params"], "tau": 9.0}}
+    items = rd.build_work("smoke", cells, ["rule_reservoir"], log_states=False,
+                          done={key: stale}, **rest)
+    assert [(i.cell, i.policy) for i in items] == [(c, "rule_reservoir") for c in
+                                                   (rd.cell_name(cells[0]), rd.cell_name(cells[1]))]
+    item = items[0]
+    assert rd.stale_reason(done[key], item) is None
+    assert "params" in rd.stale_reason(stale, item)
+    assert "n_replicates" in rd.stale_reason({**done[key], "n_replicates": 3}, item)
+    assert "base_seed" in rd.stale_reason({**done[key], "base_seed": 1}, item)
+    assert "artifact" in rd.stale_reason({**done[key], "artifact_sha": "old"},
+                                         rd_replace(item, artifact_sha="new"))
+    assert "snapshots" in rd.stale_reason(done[key], rd_replace(item, snapshots_path="x.pkl"))
+    Path(item.parquet_path).unlink()
+    assert "parquet" in rd.stale_reason(done[key], item)
 
 
 @pytest.mark.parametrize("horizon", [50, 100, 1000])
@@ -317,6 +394,39 @@ def test_smoke_baselines_resume_and_summary(tmp_path):
     assert len(pd.read_csv(out / "summary_smoke.csv")) == 2 * 3 * len(RECOMMENDER_NAMES)
 
 
+def _planted_frame(policy: str, regret: list[float], cell: str = "c") -> pd.DataFrame:
+    """A minimal episode frame with one recommender, as `summarize_cell` reads it."""
+    m = len(regret)
+    r = np.asarray(regret, dtype=np.float64)
+    frame = {
+        "test": "t", "cell": cell, "env_id": "e", "family": "A", "horizon": 10, "cap": 64,
+        "base_seed": 1, "group": "x", "policy": policy, "episode": np.arange(m),
+        "regret_disc": np.zeros(m), "k_final": np.full(m, 2.0), "search_frac": np.zeros(m),
+        "cap_hit": np.zeros(m, dtype=bool), "t_cap_hit": np.full(m, -1), "n_eliminated_final": np.zeros(m),
+        "herfindahl": np.ones(m), "n_singletons_final": np.zeros(m), "mu_star": np.ones(m),
+        "mu_star_cap": np.ones(m), "best_discovered": np.ones(m), "n_demoted": np.zeros(m),
+        "q_lcb": 1.0 - r, "n_rec_lcb": np.ones(m), "regret_lcb": r, "regret_sel_lcb": r,
+        "regret_sup_lcb": r,
+    }
+    return pd.DataFrame(frame)
+
+
+def test_summary_win_rate_is_the_share_of_episodes_the_policy_wins():
+    """Planted: the policy has lower regret in 3 of 4 episodes -> win 0.75 vs cp0."""
+    frames = {
+        "cp0": _planted_frame("cp0", [0.5, 0.5, 0.5, 0.5]),
+        "better": _planted_frame("better", [0.1, 0.2, 0.3, 0.9]),
+        "tied": _planted_frame("tied", [0.1, 0.5, 0.5, 0.5]),
+    }
+    rows = {r["policy"]: r for r in rd.summarize_cell(frames, n_boot=50)}
+    assert rows["better"]["d_regret_vs_cp0_win"] == 0.75
+    assert rows["better"]["d_regret_vs_cp0"] == pytest.approx(np.mean([-0.4, -0.3, -0.2, 0.4]))
+    assert rows["cp0"]["d_regret_vs_cp0_win"] == 0.5 and rows["cp0"]["d_regret_vs_cp0"] == 0.0
+    # One strict win and three ties: 0.25 + 0.5 * 0.75.
+    assert rows["tied"]["d_regret_vs_cp0_win"] == pytest.approx(0.625)
+    assert np.isnan(rows["better"]["d_regret_vs_p3_star_win"])
+
+
 # ---- runner: learned policy with a tiny artifact ---------------------------------------------
 
 
@@ -374,9 +484,11 @@ def test_learned_policy_smoke_logs_states_and_counters(tmp_path):
     records = {(r["cell"], r["policy"]): r for r in _read_manifest(out / "manifest_smoke.jsonl")}
     for cell in cells:
         rec = records[(rd.cell_name(cell), "phi_k16_clock")]
-        # No thresholds.json: the artifact's own tau is deployed, and recorded.
+        # No thresholds.json: the artifact's own tau is deployed, and recorded as such.
         assert rec["params"]["tau"] == artifact["tau"] == 0.45
+        assert rec["params"]["tau_source"] == "artifact_tau"
         assert rec["params"]["artifact"] == str(models / "clock_k16.joblib")
+        assert rec["artifact_sha"] == rd.file_sha256(models / "clock_k16.joblib")
         assert rec["counters"]["n_nonfinite_rows"] == 0
         assert rec["counters"]["n_decisions"] > 0 and rec["counters"]["n_committed_steps"] > 0
         assert rec["policy_seed"] == pt.policy_seed("phi_k16_clock")
@@ -400,3 +512,30 @@ def test_learned_policy_smoke_logs_states_and_counters(tmp_path):
     assert len(learned) == 2 * len(RECOMMENDER_NAMES)
     assert learned["d_regret_vs_cp0"].notna().all()
     assert learned["d_regret_vs_p3_star"].isna().all()
+
+    # thresholds.json lands with a different tau: --resume must redo the learned items
+    # (and only those), and the manifest must carry the new tau and its source.
+    (out / "thresholds.json").write_text(json.dumps(
+        {"clock_k16": {"tau_val": 0.6, "tau_off": 0.45, "curve": {"0.6": 0.1}}}
+    ))
+    resumed = rd.main(argv + ["--resume"], cells=cells)
+    assert resumed["n_run"] == 2 and resumed["n_skipped"] == 2 and resumed["n_failed"] == 0
+    latest = rd.latest_records(_read_manifest(out / "manifest_smoke.jsonl"))
+    for cell in cells:
+        rec = latest[("smoke", rd.cell_name(cell), "phi_k16_clock")]
+        assert (rec["params"]["tau"], rec["params"]["tau_source"]) == (0.6, "tau_val")
+        assert pd.read_parquet(rec["parquet"])["search_frac"].mean() < frame["search_frac"].mean()
+    # Nothing changed since: a further --resume does no work at all.
+    again = rd.main(argv + ["--resume"], cells=cells)
+    assert again["n_run"] == 0 and again["n_skipped"] == 4
+    # A changed replicate count is a changed item for every policy.
+    more = rd.main([a if a != "16" else "8" for a in argv] + ["--resume"], cells=cells)
+    assert more["n_run"] == 4 and more["n_skipped"] == 0
+    # A retrained artifact (new bytes) is a changed item for the learned policy only.
+    save_model(
+        models / "clock_k16.joblib",
+        {"pipeline": _fit_clock_pipeline(seed=1), "features": CLOCK, "k": 4, "tau": 0.45,
+         "meta": {"variant": "clock_k16"}},
+    )
+    retrained = rd.main([a if a != "16" else "8" for a in argv] + ["--resume"], cells=cells)
+    assert retrained["n_run"] == 2 and retrained["n_skipped"] == 2

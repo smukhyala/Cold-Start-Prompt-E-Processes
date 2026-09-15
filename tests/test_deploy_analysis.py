@@ -14,6 +14,7 @@ form. Figures are rendered on the synthetic tables under the Agg backend.
 
 from __future__ import annotations
 
+import json
 import pickle
 import sys
 import zlib
@@ -257,6 +258,30 @@ def test_decomposition_table_sums(cells, per_cell):
     assert (dec["regret_disc_lo"] <= dec["regret_disc"]).all() and (dec["regret_disc"] <= dec["regret_disc_hi"]).all()
 
 
+def test_recommender_independent_quantities_share_one_resample(cells):
+    a = ad.compute_cell_stats(cells[0], RECOMMENDER_NAMES[0], 300)
+    b = ad.compute_cell_stats(cells[0], RECOMMENDER_NAMES[1], 300)
+    for q in ("regret_disc", "d_disc_vs_cp0"):
+        assert np.array_equal(a.boot[("phi_k16", q)], b.boot[("phi_k16", q)])
+    assert not np.array_equal(a.boot[("phi_k16", "regret")], b.boot[("phi_k16", "regret")])
+
+
+def test_tau_curves_keep_heldout_horizon_rows_apart(cells, per_cell):
+    strata = ad.strata_of(cells)
+    full = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    ts = pd.DataFrame({
+        "variant": "clock_quality_evidence_k16_noT1000", "tau": [0.5] * 4, "split": "val",
+        "env": ["e1", "e2", "e1", "e2"], "T": [200, 200, 1000, 1000],
+        "heldout_T": [False, False, True, True], "mean_regret": [0.10, 0.12, 0.30, 0.32],
+        "mean_search_frac": 0.2,
+    })
+    tau = ad.tau_curves("synthetic", full, ts, {})
+    val = tau[~tau["posthoc"]]
+    assert len(val) == 2 and set(val["heldout_T"]) == {False, True}
+    assert val[~val["heldout_T"]]["regret"].iloc[0] == pytest.approx(0.11)
+    assert val[val["heldout_T"]]["regret"].iloc[0] == pytest.approx(0.31)
+
+
 def test_recommender_sensitivity_and_cap_table(cells, per_cell):
     strata = ad.strata_of(cells)
     tabs = []
@@ -310,11 +335,17 @@ def test_ood_fraction_is_zero_in_distribution_and_one_when_shifted():
 
     r_same = ood.ood_for_policy(same, corpus, "same_horizon", features, p_corpus=rng.uniform(size=4000), seed=1)
     r_shift = ood.ood_for_policy(shifted, corpus, "same_horizon", features, p_corpus=rng.uniform(size=4000), seed=1)
-    assert r_same.summary["ood_frac"] < 0.10
-    assert r_shift.summary["ood_frac"] > 0.99
+    # Primary columns are clock-free (the four QUALITY columns here); the all-feature
+    # versions are kept alongside and labelled as clock-confounded.
+    for r in (r_same, r_shift):
+        assert r.summary["knn_applicable"] is True and r.summary["n_features_nonclock"] == 4
+        assert r.summary["clock_confounded"] is True
+    assert r_same.summary["ood_frac"] < 0.10 and r_same.summary["ood_frac_all"] < 0.10
+    assert r_shift.summary["ood_frac"] > 0.99 and r_shift.summary["ood_frac_all"] > 0.99
     assert r_same.summary["max_frac_outside"] < 0.05 and r_shift.summary["mean_frac_outside"] > 0.99
     assert abs(r_same.summary["max_abs_std_shift"]) < 0.3 and r_shift.summary["max_abs_std_shift"] > 9.0
     assert r_same.summary["max_ks"] < 0.15 and r_shift.summary["max_ks"] > 0.99
+    assert 0.4 < r_same.summary["domain_auc"] < 0.6 and r_shift.summary["domain_auc"] > 0.99
     assert 0.4 < r_same.summary["domain_auc_all"] < 0.6 and r_shift.summary["domain_auc_all"] > 0.99
     assert 0.4 < r_same.summary["domain_auc_CLOCK"] < 0.6 and r_shift.summary["domain_auc_QUALITY"] > 0.99
     assert np.isnan(r_same.summary["domain_auc_HISTORY"])  # no HISTORY column in the list
@@ -327,6 +358,24 @@ def test_ood_fraction_is_zero_in_distribution_and_one_when_shifted():
     assert list(flags["policy"]) == ["q"] and (flags["threshold"] == 0.10).all()
 
 
+def test_clock_only_policy_gets_coverage_rows_but_no_knn_fraction():
+    """A clock-only feature list is the logging schedule itself: kNN is not applicable."""
+    rng = np.random.default_rng(5)
+    features = tuple(fg.CLOCK)
+    corpus = _gaussian_frame(rng, 2000, features)
+    on = _gaussian_frame(rng, 200, features, shift=10.0)
+    r = ood.ood_for_policy(on, corpus, "same_horizon", features, p_corpus=np.empty(0), seed=0)
+    assert r.summary["knn_applicable"] is False and r.summary["n_features_nonclock"] == 0
+    assert np.isnan(r.summary["ood_frac"]) and np.isnan(r.summary["domain_auc"])
+    # The clock-confounded all-feature numbers are still reported, labelled as such.
+    assert r.summary["ood_frac_all"] > 0.99 and r.summary["clock_confounded"] is True
+    assert len(r.features) == len(fg.CLOCK) and (r.features["group"] == "CLOCK").all()
+    assert r.features["frac_outside"].min() > 0.99
+    # ... and such a policy never flags, because the flag is the clock-free fraction.
+    flags = ood.flag_cells(pd.DataFrame([{"cell": "c", "policy": "phi_k16_clock", **r.summary}]))
+    assert flags.empty
+
+
 def test_constant_corpus_columns_do_not_break_standardization():
     rng = np.random.default_rng(2)
     features = ("f_T", "f_t", "f_K")
@@ -337,7 +386,10 @@ def test_constant_corpus_columns_do_not_break_standardization():
     st = ood.Standardizer.fit(corpus.loc[:, list(features)].to_numpy(), features)
     assert st.usable.tolist() == [False, True, True]
     r = ood.ood_for_policy(on, corpus, "same_horizon", features, p_corpus=np.empty(0), seed=0)
-    assert r.summary["n_features_standardizable"] == 2 and np.isfinite(r.summary["ood_frac"])
+    # Clock-only list: the primary kNN is not applicable; the all-feature (clock-confounded)
+    # kNN drops the constant column and still yields a finite fraction.
+    assert r.summary["knn_applicable"] is False and np.isnan(r.summary["ood_frac"])
+    assert r.summary["n_features_standardizable_all"] == 2 and np.isfinite(r.summary["ood_frac_all"])
     row = r.features.set_index("feature").loc["f_T"]
     assert np.isnan(row["std_mean_shift"]) and row["frac_outside"] == 0.0
 
@@ -526,6 +578,81 @@ def test_cli_refuses_main_tables_without_the_parity_gate(tmp_path, cells):
     assert dyn["t_frac"].between(0, 1).all()
 
 
+def test_cli_refuses_main_tables_when_a_parity_column_fails(tmp_path, cells, monkeypatch):
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    tables = out / "tables"
+    tables.mkdir()
+    argv = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--recommender", PRIMARY_RECOMMENDER]
+
+    # (a) --skip-snapshots reuses a parity table on disk: a failing column refuses.
+    pd.DataFrame({"column": ["f_t", "f_K"], "n_rows": [5000, 5000], "max_abs_diff": [0.0, 0.3],
+                  "n_fail": [0, 7], "n_items": [1, 1], "rtol": 1e-5, "atol": 1e-6,
+                  "passed": [True, False]}).to_csv(tables / "onpolicy_parity_smoke.csv", index=False)
+    result = ad.main(argv + ["--skip-snapshots"])
+    assert result["gate_ok"] is False
+    assert not (tables / "main_smoke_primary.csv").exists()
+
+    # (b) A fresh diagnostics pass whose scoring reports a failing column: refuses too,
+    # and writes the parity tables so the failure is on record.
+    (out / "snapshots").mkdir()
+    (out / "snapshots" / "x.pkl").write_bytes(pickle.dumps([]))
+    cell = cells[0]
+    (out / "manifest_smoke.jsonl").write_text(json.dumps({
+        "test": "smoke", "cell": cell.name, "policy": "phi_k16", "group": "learned",
+        "snapshots": str(out / "snapshots" / "x.pkl"), "parquet": str(out / "episodes" / "smoke" / cell.name / "phi_k16.parquet"),
+        "params": {"artifact": "unused.joblib", "tau": 0.6}, "counters": {},
+    }) + "\n")
+    item = ood.SnapshotItem("smoke", cell.name, "phi_k16", cell.env_id, cell.family, cell.horizon, 64, {},
+                            str(out / "snapshots" / "x.pkl"), "model", "unused.joblib", 0.6)
+    scalar = np.zeros((1200, len(fg.ALL_DEPLOYABLE)))
+    vec = scalar.copy()
+    vec[:, list(fg.ALL_DEPLOYABLE).index("f_K")] = 1.0  # one column off by 1.0 on every row
+    parity = ood.parity_table(scalar, vec, list(fg.ALL_DEPLOYABLE), item)
+    meta = {"test": "smoke", "cell": cell.name, "policy": "phi_k16", "env_id": cell.env_id,
+            "family": cell.family, "horizon": cell.horizon, "cap": 64}
+
+    def fake_diag(d):
+        return {"cell": d.item.cell, "policy": d.item.policy, "n_states": 1200, "seconds": 0.0,
+                "parity": parity, "ood_summary": {**meta, "ood_frac": 0.0}, "ood_features": pd.DataFrame(),
+                "score_hist": pd.DataFrame(), "reservoir_row": dict(meta), "reservoir_bins": pd.DataFrame()}
+
+    monkeypatch.setattr(ad, "run_diag_item", fake_diag)
+    monkeypatch.setattr(ad, "prebuild_tables", lambda cells: None)
+    (tables / "onpolicy_parity_smoke.csv").unlink()
+    result = ad.main(argv + ["--no-oof"])
+    assert result["gate_ok"] is False and result["n_states"] == 1200
+    assert not (tables / "main_smoke_primary.csv").exists()
+    written = pd.read_csv(tables / "onpolicy_parity_smoke.csv").set_index("column")
+    assert bool(written.loc["f_K", "passed"]) is False and written.loc["f_K", "n_fail"] == 1200
+    assert written.drop(index="f_K")["passed"].all()
+    # The same failing table on disk refuses again under --skip-snapshots, and
+    # --allow-unverified does not override a *failed* gate (only an absent one).
+    assert ad.main(argv + ["--skip-snapshots", "--allow-unverified"])["gate_ok"] is False
+    assert not (tables / "main_smoke_primary.csv").exists()
+
+
+def test_cli_single_recommender_keeps_cross_recommender_tables(tmp_path, cells):
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    tables = out / "tables"
+    base = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1", "--allow-unverified"]
+    ad.main(base)
+    kendall_all = pd.read_csv(tables / "recommender_kendall_smoke.csv")
+    ovd_all = pd.read_csv(tables / "offline_vs_deployed_smoke.csv")
+    assert len(kendall_all) > 0 and set(ovd_all["recommender"]) == set(RECOMMENDER_NAMES)
+    # A single-recommender re-run must rebuild the cross-recommender tables from every
+    # per-recommender table on disk, not shrink them to one recommender.
+    ad.main(base + ["--recommender", "lcb"])
+    kendall_one = pd.read_csv(tables / "recommender_kendall_smoke.csv")
+    ovd_one = pd.read_csv(tables / "offline_vs_deployed_smoke.csv")
+    ranks = pd.read_csv(tables / "recommender_sensitivity_smoke.csv")
+    assert len(kendall_one) == len(kendall_all) and set(ovd_one["recommender"]) == set(RECOMMENDER_NAMES)
+    assert set(ranks["recommender"]) == set(RECOMMENDER_NAMES)
+    pd.testing.assert_frame_equal(kendall_one, kendall_all)
+
+
 # ---- figures ---------------------------------------------------------------------------------------------
 
 
@@ -588,3 +715,37 @@ def test_figures_render_on_synthetic_tables(tmp_path, cells, per_cell):
     for stem in ("regret", "decomp", "ovd", "tau", "dyn", "ood", "cap", "res"):
         for ext in ("png", "pdf", "csv"):
             assert (out / f"{stem}.{ext}").exists(), (stem, ext)
+
+
+def test_figures_skip_when_no_requested_policy_is_present(tmp_path, cells, per_cell):
+    """No requested policy in the table: a warning and no file, never an empty legend crash."""
+    strata = ad.strata_of(cells)
+    full = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    dec = ad.decomposition_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    out = tmp_path / "figures"
+    absent = ["not_a_policy"]
+    dyn = pd.DataFrame({"test": "s", "cell": cells[0].name, "family": "A", "horizon": 100, "policy": "cp0",
+                        "group": "reference", "t": [0.0, 50.0], "t_frac": [0.0, 0.5], "metric": "K_t", "value": [2.0, 5.0]})
+    bins = pd.DataFrame({"cell": [cells[0].name], "family": ["A"], "policy": ["phi_k16"], "bin": [0], "I_lo": 0.0,
+                         "I_hi": 0.1, "I_mean": 0.05, "n": 10, "search_rate": 0.2, "model_p_mean": 0.5})
+    res = pd.DataFrame({"cell": [cells[0].name], "family": ["A"], "horizon": 100, "policy": ["phi_k16"],
+                        "auc_oracle_I_for_decision": [0.6], "search_rate": [0.2]})
+    cap = full[full["level"] == "cell"].assign(cap=32)
+    mf.fig_regret_vs_T(full, absent, out, "regret")
+    mf.fig_decomposition(dec, absent, out, "decomp")
+    mf.fig_dynamics(dyn, absent, "A", out, "dyn")
+    mf.fig_cap_sweep(cap, absent, out, "cap")
+    mf.fig_reservoir(bins, res, absent, out, "res")
+    assert not out.exists() or not any(out.iterdir())
+
+
+def test_decomposition_tolerates_a_degenerate_bootstrap(tmp_path, cells, per_cell):
+    """A CI bound a float epsilon on the wrong side of the mean must not be a negative error bar."""
+    strata = ad.strata_of(cells)
+    dec = ad.decomposition_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    dec = dec.copy()
+    dec["regret_lo"] = dec["regret"] + 1e-12
+    dec["regret_hi"] = dec["regret"] - 1e-12
+    out = tmp_path / "figures"
+    frame = mf.fig_decomposition(dec, list(POLICIES), out, "decomp")
+    assert len(frame) and (out / "decomp.png").exists()

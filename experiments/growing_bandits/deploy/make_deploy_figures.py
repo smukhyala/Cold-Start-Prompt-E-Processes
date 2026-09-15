@@ -181,9 +181,18 @@ def _direct_labels(ax: plt.Axes, items: list[tuple[float, float, str, str]]) -> 
         ax.plot([x], [y], marker="o", markersize=5, color=color, markeredgecolor=SURFACE, markeredgewidth=1.2)
 
 
+def _none_requested(stem: str, frame_columns) -> bool:
+    """Log and skip when none of the requested policies is in the table."""
+    log.warning("%s: none of the requested policies is in the table (policies present: %s); skipped",
+                stem, sorted(frame_columns))
+    return True
+
+
 def _legend(target, policies: Iterable[str], **kw) -> None:
     """A legend below the axes/figure; identity never rides on colour alone."""
     policies = list(policies)
+    if not policies:
+        return
     handles = [plt.Line2D([0], [0], color=color_of(p), lw=2) for p in policies]
     labels = [label_of(p) for p in policies]
     if isinstance(target, plt.Figure):
@@ -211,6 +220,9 @@ def fig_regret_vs_T(
     sub = main[(main["level"] == "family_horizon") & (main["policy"].isin(policies))].copy()
     if "recommender" in sub:
         sub = sub[sub["recommender"] == rec]
+    if not policies or sub.empty:
+        _none_requested(stem, set(main["policy"]))
+        return sub
     sub["horizon"] = sub["horizon"].astype(int)
     families = sorted(sub["family"].unique())
     with plt.rc_context(RC):
@@ -244,6 +256,9 @@ def fig_dynamics(dyn: pd.DataFrame, policies: Iterable[str], family: str, out_di
     """Trajectory statistics vs t/T: rows = metrics, columns = horizons, one family."""
     policies = [p for p in policies if p in set(dyn["policy"])]
     sub = dyn[(dyn["family"] == family) & (dyn["policy"].isin(policies))]
+    if not policies or sub.empty:
+        _none_requested(stem, set(dyn["policy"]))
+        return sub
     metrics = [m for m, _ in DYNAMICS_METRICS if m in set(sub["metric"])]
     # Cross-environment mean of the per-cell means at each grid slot (equal weight per cell).
     agg = (
@@ -282,10 +297,11 @@ def fig_decomposition(decomp: pd.DataFrame, policies: Iterable[str], out_dir: Pa
     """`R_T = R_disc + R_sel` as stacked bars per policy, one panel per family x horizon."""
     policies = [p for p in policies if p in set(decomp["policy"])]
     sub = decomp[(decomp["level"] == "family_horizon") & (decomp["policy"].isin(policies))].copy()
+    if not policies or sub.empty:
+        _none_requested(stem, set(decomp["policy"]))
+        return sub
     sub["horizon"] = sub["horizon"].astype(int)
     panels = sorted({(f, T) for f, T in zip(sub["family"], sub["horizon"], strict=False)})
-    if not panels:
-        return sub
     n = len(panels)
     ncol = min(n, 5)
     nrow = int(np.ceil(n / ncol))
@@ -301,8 +317,12 @@ def fig_decomposition(decomp: pd.DataFrame, policies: Iterable[str], out_dir: Pa
             # A 2px surface gap separates the two segments of every bar.
             ax.bar(x, disc, width=0.62, color=colors, alpha=0.95, edgecolor=SURFACE, linewidth=1.5)
             ax.bar(x, sel, width=0.62, bottom=disc, color=colors, alpha=0.45, edgecolor=SURFACE, linewidth=1.5)
-            ax.errorbar(x, disc + sel, yerr=[disc + sel - g["regret_lo"].to_numpy(), g["regret_hi"].to_numpy() - (disc + sel)],
-                        fmt="none", ecolor=INK_2, elinewidth=1.0, capsize=2)
+            # A degenerate bootstrap (identical episodes) puts the bound a float epsilon on the
+            # wrong side of the mean; matplotlib rejects a negative error bar length.
+            total = disc + sel
+            yerr = [np.clip(total - g["regret_lo"].to_numpy(dtype=np.float64), 0.0, None),
+                    np.clip(g["regret_hi"].to_numpy(dtype=np.float64) - total, 0.0, None)]
+            ax.errorbar(x, total, yerr=yerr, fmt="none", ecolor=INK_2, elinewidth=1.0, capsize=2)
             ax.set_xticks(x)
             ax.set_xticklabels([label_of(p) for p in policies], rotation=40, ha="right", fontsize=7.5)
             ax.set_title(f"family {fam}, T = {T}")
@@ -340,7 +360,8 @@ def fig_offline_vs_deployed(ovd: pd.DataFrame, validity: pd.DataFrame, out_dir: 
         ends: list[tuple[float, float, str, str]] = []
         for _, r in sub.iterrows():
             p = str(r["policy"])
-            ax.errorbar(r["oof_auc_env"], r["regret_pooled"], yerr=[[r["regret_pooled"] - r["regret_lo"]], [r["regret_hi"] - r["regret_pooled"]]],
+            yerr = [[max(r["regret_pooled"] - r["regret_lo"], 0.0)], [max(r["regret_hi"] - r["regret_pooled"], 0.0)]]
+            ax.errorbar(r["oof_auc_env"], r["regret_pooled"], yerr=yerr,
                         fmt="o", color=color_of(p), markersize=7, markeredgecolor=SURFACE, ecolor=color_of(p),
                         elinewidth=1, capsize=0, alpha=1.0 if p in POLICY_COLORS else 0.7)
             if p in labelled:
@@ -364,7 +385,9 @@ def fig_tau_curves(tau: pd.DataFrame, out_dir: Path, stem: str) -> pd.DataFrame:
     import analyze_deployment as ad
 
     sub = tau.copy()
-    val = sub[~sub["posthoc"].astype(bool)]
+    if "heldout_T" not in sub.columns:
+        sub["heldout_T"] = False
+    val = sub[~sub["posthoc"].astype(bool) & ~sub["heldout_T"].astype(bool)]
     post = sub[sub["posthoc"].astype(bool)]
     canonical = ad.canonical_policy_of_variant()
     hand = val[val["variant"] == "reservoir_rule"]
@@ -449,11 +472,12 @@ def fig_cap_sweep(cap: pd.DataFrame, policies: Iterable[str], out_dir: Path, ste
     """Regret vs live-arm cap per policy; one panel per (environment, horizon)."""
     policies = [p for p in policies if p in set(cap["policy"])]
     sub = cap[cap["policy"].isin(policies)].copy()
+    if not policies or sub.empty:
+        _none_requested(stem, set(cap["policy"]))
+        return sub
     sub["cap"] = sub["cap"].astype(int)
     sub["horizon"] = sub["horizon"].astype(int)
     panels = sorted({(e, T) for e, T in zip(sub["env_id"], sub["horizon"], strict=False)})
-    if not panels:
-        return sub
     ncol = min(len(panels), 4)
     nrow = int(np.ceil(len(panels) / ncol))
     with plt.rc_context(RC):
@@ -486,6 +510,9 @@ def fig_reservoir(bins: pd.DataFrame, reservoir: pd.DataFrame, policies: Iterabl
     Right: AUC of oracle `I_t` for each policy's own decisions, per cell."""
     policies = [p for p in policies if p in set(bins["policy"])]
     sub = bins[bins["policy"].isin(policies)]
+    if not policies or sub.empty:
+        _none_requested(stem, set(bins["policy"]))
+        return sub
     prof = sub.groupby(["family", "policy", "bin"], sort=True).agg(
         search_rate=("search_rate", "mean"), model_p_mean=("model_p_mean", "mean"), I_mean=("I_mean", "mean"), n=("n", "sum")
     ).reset_index()

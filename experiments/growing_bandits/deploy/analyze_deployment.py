@@ -295,7 +295,10 @@ def compute_cell_stats(cell: Cell, rec: str, n_boot: int) -> CellStats:
     quantities, arrays = cell_quantities(cell, rec)
     keys = list(arrays)
     X = np.stack([arrays[k] for k in keys], axis=1)
-    boot = CellBoot(cell.n, n_boot, _seed("cellboot", cell.name, rec)).means(X)
+    # Seeded on the cell alone: the resample is shared across recommenders, so the
+    # recommender-independent quantities (regret_disc, d_disc_vs_cp0) carry the same CI
+    # in every per-recommender table.
+    boot = CellBoot(cell.n, n_boot, _seed("cellboot", cell.name)).means(X)
     mean: dict[tuple[str, str], float] = {}
     se: dict[tuple[str, str], float] = {}
     win: dict[tuple[str, str], float] = {}
@@ -667,13 +670,16 @@ def tau_curves(
     phi_k16 (deployed tau and the fixed-0.5 twin), labelled ``posthoc=True``."""
     rows: list[dict] = []
     if threshold_selection is not None and len(threshold_selection):
-        ts = threshold_selection
+        ts = threshold_selection.copy()
         if "split" in ts.columns:
             ts = ts[ts["split"] == "val"]
-        for (variant, tau), grp in ts.groupby(["variant", "tau"], sort=True):
+        # A horizon-holdout variant (noT1000, noT200) was selected on its in-distribution
+        # cells; its held-out cells are a transfer measurement, pooled separately.
+        ts["heldout_T"] = ts["heldout_T"].astype(bool) if "heldout_T" in ts.columns else False
+        for (variant, tau, heldout), grp in ts.groupby(["variant", "tau", "heldout_T"], sort=True):
             rows.append({
                 "test": test, "source": "validation", "posthoc": False, "variant": str(variant),
-                "policy": "", "tau": float(tau), "n_cells": int(len(grp)),
+                "policy": "", "tau": float(tau), "heldout_T": bool(heldout), "n_cells": int(len(grp)),
                 "regret": float(grp["mean_regret"].mean()),
                 "regret_lo": np.nan, "regret_hi": np.nan,
                 "search_frac": float(grp["mean_search_frac"].mean()) if "mean_search_frac" in grp else np.nan,
@@ -689,7 +695,7 @@ def tau_curves(
         rows.append({
             "test": test, "source": f"test:{test}", "posthoc": True,
             "variant": pt.variant_of(policy) or "", "policy": policy,
-            "tau": float(next(iter(taus))) if len(taus) == 1 else np.nan,
+            "tau": float(next(iter(taus))) if len(taus) == 1 else np.nan, "heldout_T": False,
             "n_cells": int(p["n_cells"]), "regret": float(p["regret"]),
             "regret_lo": float(p["regret_lo"]), "regret_hi": float(p["regret_hi"]),
             "search_frac": float(p["search_frac"]),
@@ -873,7 +879,6 @@ def run_diag_item(d: DiagItem) -> dict:
     if not d.skip_ood:
         corpus = _corpus()
         corpus_rows, scope = ood.corpus_rows_for(corpus, item.horizon)
-        st, thr = _standardizer(item.horizon, res.policy_features, corpus_rows)
         p_corpus = None
         kind = "none"
         if item.kind == "model" and item.artifact_path:
@@ -892,7 +897,8 @@ def run_diag_item(d: DiagItem) -> dict:
                 p_corpus = ood.model_scores(load_model(item.artifact_path), corpus_rows)
                 kind = "insample_refit"
         r = ood.ood_for_policy(
-            feats, corpus_rows, scope, res.policy_features, standardizer=st, knn_threshold=thr,
+            feats, corpus_rows, scope, res.policy_features,
+            standardizer_for=lambda f: _standardizer(item.horizon, f, corpus_rows),
             p_corpus=p_corpus, seed=_seed("ood", item.cell, item.policy),
         )
         ood_summary.update(r.summary)
@@ -1158,8 +1164,7 @@ def main(argv: list[str] | None = None) -> dict:
         log.info("recommender %s: tables in %.1fs", rec, time.perf_counter() - t0)
         del per_cell
 
-    main_all = pd.concat(main_by_rec.values(), ignore_index=True)
-    cells_all = pd.concat(cells_by_rec.values(), ignore_index=True)
+    main_all, cells_all = cross_recommender_frames(tables_dir, test, recs_present, main_by_rec, cells_by_rec)
 
     # ---- 3. cross-cutting tables -------------------------------------------------------------------
     offline_path = out_dir / "offline_metrics.csv"
@@ -1193,6 +1198,40 @@ def main(argv: list[str] | None = None) -> dict:
 
     log.info("test %s: %d tables in %.1fs", test, len(written), time.time() - t_run)
     return {"test": test, "gate_ok": gate_ok, "n_states": n_states, "written": [str(p) for p in written]}
+
+
+def cross_recommender_frames(
+    tables_dir: Path,
+    test: str,
+    recs_present: list[str],
+    main_by_rec: dict[str, pd.DataFrame],
+    cells_by_rec: dict[str, pd.DataFrame],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The main / cells rows of *every* recommender the frames hold: the ones computed
+    in this run plus any written by an earlier run (`--recommender <one>` must not shrink
+    the cross-recommender tables to one recommender). Missing ones are logged."""
+    mains, cells_tabs, missing = [], [], []
+    for rec in recs_present:
+        if rec in main_by_rec:
+            mains.append(main_by_rec[rec])
+            cells_tabs.append(cells_by_rec[rec])
+            continue
+        m_path = tables_dir / table_name("main", test, rec)
+        c_path = tables_dir / table_name("cells", test, rec)
+        if m_path.exists() and c_path.exists():
+            m = pd.read_csv(m_path)
+            c = pd.read_csv(c_path)
+            for frame in (m, c):
+                for col in ("family", "horizon", "level", "cell", "policy"):
+                    frame[col] = frame[col].astype(str)
+            mains.append(m)
+            cells_tabs.append(c)
+        else:
+            missing.append(rec)
+    if missing:
+        log.warning("cross-recommender tables lack %s (no main/cells table on disk); run with "
+                    "--recommender all to include them", missing)
+    return pd.concat(mains, ignore_index=True), pd.concat(cells_tabs, ignore_index=True)
 
 
 def _per_cell_delta_vs(cells: list[Cell], ref: str, rec: str, n_boot: int) -> pd.DataFrame:

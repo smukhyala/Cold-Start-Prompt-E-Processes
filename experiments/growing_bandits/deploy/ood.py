@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 import pickle
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -521,30 +522,61 @@ class OODResult:
     score_hist: pd.DataFrame
 
 
+StandardizerFor = Callable[[tuple[str, ...]], tuple[Standardizer, float]]
+
+
+def default_standardizer_for(corpus_rows: pd.DataFrame) -> StandardizerFor:
+    """Fit a standardizer and the corpus self-kNN threshold for any feature tuple."""
+
+    def fit(features: tuple[str, ...]) -> tuple[Standardizer, float]:
+        st = Standardizer.fit(corpus_rows.loc[:, list(features)].to_numpy(), features)
+        thr = self_knn_threshold(st.transform(corpus_rows.loc[:, list(features)].to_numpy()))
+        return st, thr
+
+    return fit
+
+
+def _knn_block(
+    on: pd.DataFrame,
+    corpus_rows: pd.DataFrame,
+    features: tuple[str, ...],
+    standardizer_for: StandardizerFor,
+) -> tuple[dict, int]:
+    st, thr = standardizer_for(features)
+    corpus_Z = st.transform(corpus_rows.loc[:, list(features)].to_numpy())
+    on_Z = st.transform(on.loc[:, list(features)].to_numpy())
+    return knn_ood(on_Z, corpus_Z, thr), int(st.usable.sum())
+
+
 def ood_for_policy(
     on: pd.DataFrame,
     corpus_rows: pd.DataFrame,
     corpus_scope: str,
     policy_features: tuple[str, ...],
     *,
-    standardizer: Standardizer | None = None,
-    knn_threshold: float | None = None,
+    standardizer_for: StandardizerFor | None = None,
     p_corpus: np.ndarray | None = None,
     seed: int = 0,
 ) -> OODResult:
     """All shift statistics of one (cell, policy) against its corpus reference.
 
-    `standardizer` and `knn_threshold` may be passed in when the caller caches them
-    per (horizon, feature list) -- the corpus self-kNN is the expensive part.
+    The primary ``ood_frac`` / ``domain_auc`` are computed on the policy's feature list
+    **without the CLOCK group**: the runner logs states at 24 fixed normalized times,
+    which is itself a clock fingerprint -- a domain classifier reads it from
+    ``f_t_over_T`` alone, and for a clock-only feature list every replicate at a
+    logged time shares one ``(t, K)`` row, so the kNN fraction quantizes to k/24. The
+    all-feature versions are kept as ``ood_frac_all`` / ``domain_auc_all`` and labelled
+    ``clock_confounded=True``. A clock-only policy gets NaN for the kNN statistics
+    (``knn_applicable=False``) and only its per-feature coverage rows.
+
+    `standardizer_for` maps a feature tuple to a fitted `Standardizer` and the corpus
+    self-kNN threshold; the caller passes a cache when scoring many cells of one
+    horizon (the self-kNN is the expensive part).
     """
     feats = tuple(policy_features)
-    if standardizer is None:
-        standardizer = Standardizer.fit(corpus_rows.loc[:, list(feats)].to_numpy(), feats)
-    corpus_Z = standardizer.transform(corpus_rows.loc[:, list(feats)].to_numpy())
-    on_Z = standardizer.transform(on.loc[:, list(feats)].to_numpy())
-    if knn_threshold is None:
-        knn_threshold = self_knn_threshold(corpus_Z)
-    knn = knn_ood(on_Z, corpus_Z, knn_threshold)
+    nonclock = tuple(c for c in feats if c not in fg.CLOCK)
+    if standardizer_for is None:
+        standardizer_for = default_standardizer_for(corpus_rows)
     shift = feature_shift(on, corpus_rows, feats)
 
     summary = {
@@ -552,20 +584,30 @@ def ood_for_policy(
         "n_corpus": int(len(corpus_rows)),
         "corpus_scope": corpus_scope,
         "n_features": len(feats),
-        "n_features_standardizable": int(standardizer.usable.sum()),
-        **knn,
-        "max_frac_outside": float(shift["frac_outside"].max()) if len(shift) else float("nan"),
-        "mean_frac_outside": float(shift["frac_outside"].mean()) if len(shift) else float("nan"),
-        "mean_abs_std_shift": float(shift["std_mean_shift"].abs().mean()) if len(shift) else float("nan"),
-        "max_abs_std_shift": float(shift["std_mean_shift"].abs().max()) if len(shift) else float("nan"),
-        "max_ks": float(shift["ks"].max()) if len(shift) else float("nan"),
-        "worst_feature_by_ks": (
-            str(shift.loc[shift["ks"].idxmax(), "feature"]) if len(shift) and shift["ks"].notna().any() else ""
-        ),
+        "n_features_nonclock": len(nonclock),
+        "knn_applicable": bool(nonclock),
     }
-    on_all = on.loc[:, list(feats)].to_numpy()
-    corpus_all = corpus_rows.loc[:, list(feats)].to_numpy()
-    summary["domain_auc_all"] = domain_classifier_auc(on_all, corpus_all, seed=seed)
+    if nonclock:
+        knn, n_usable = _knn_block(on, corpus_rows, nonclock, standardizer_for)
+        summary.update(knn)
+        summary["n_features_standardizable"] = n_usable
+        summary["domain_auc"] = domain_classifier_auc(
+            on.loc[:, list(nonclock)].to_numpy(), corpus_rows.loc[:, list(nonclock)].to_numpy(), seed=seed
+        )
+    else:
+        summary.update({"ood_frac": float("nan"), "knn_dist_median": float("nan"),
+                        "knn_threshold": float("nan"), "n_features_standardizable": 0,
+                        "domain_auc": float("nan")})
+    knn_all, n_usable_all = _knn_block(on, corpus_rows, feats, standardizer_for)
+    summary.update({
+        "ood_frac_all": knn_all["ood_frac"],
+        "knn_threshold_all": knn_all["knn_threshold"],
+        "n_features_standardizable_all": n_usable_all,
+        "domain_auc_all": domain_classifier_auc(
+            on.loc[:, list(feats)].to_numpy(), corpus_rows.loc[:, list(feats)].to_numpy(), seed=seed
+        ),
+        "clock_confounded": True,  # ood_frac_all / domain_auc_all / domain_auc_CLOCK include the clock
+    })
     for name, cols in FEATURE_GROUPS.items():
         sub = [c for c in feats if c in cols]
         if not sub:
@@ -574,13 +616,24 @@ def ood_for_policy(
         summary[f"domain_auc_{name}"] = domain_classifier_auc(
             on.loc[:, sub].to_numpy(), corpus_rows.loc[:, sub].to_numpy(), seed=seed
         )
+    summary.update({
+        "max_frac_outside": float(shift["frac_outside"].max()) if len(shift) else float("nan"),
+        "mean_frac_outside": float(shift["frac_outside"].mean()) if len(shift) else float("nan"),
+        "mean_abs_std_shift": float(shift["std_mean_shift"].abs().mean()) if len(shift) else float("nan"),
+        "max_abs_std_shift": float(shift["std_mean_shift"].abs().max()) if len(shift) else float("nan"),
+        "max_ks": float(shift["ks"].max()) if len(shift) else float("nan"),
+        "worst_feature_by_ks": (
+            str(shift.loc[shift["ks"].idxmax(), "feature"]) if len(shift) and shift["ks"].notna().any() else ""
+        ),
+    })
     p_on = on["p_search_model"].to_numpy(dtype=np.float64) if "p_search_model" in on else np.empty(0)
     hist = score_histogram(p_on, p_corpus if p_corpus is not None else np.empty(0))
     return OODResult(summary=summary, features=shift, score_hist=hist)
 
 
 def flag_cells(ood_summary: pd.DataFrame, threshold: float = OOD_FLAG_THRESHOLD) -> pd.DataFrame:
-    """Rows whose kNN OOD fraction exceeds `threshold` (the plan's prominent flag)."""
+    """Rows whose clock-free kNN OOD fraction (``ood_frac``) exceeds `threshold` (the
+    plan's prominent flag); clock-only policies have no kNN fraction and never flag."""
     if ood_summary.empty or "ood_frac" not in ood_summary:
         return pd.DataFrame(columns=list(ood_summary.columns) + ["threshold"])
     out = ood_summary[ood_summary["ood_frac"] > threshold].copy()

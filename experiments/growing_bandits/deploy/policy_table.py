@@ -1,0 +1,493 @@
+"""The deployment study's policy table as data (DEPLOYMENT_PLAN.md "Policies").
+
+`rules.POLICY_SPECS` knows how to *build* every kind of SEARCH policy; this module says
+which concrete configurations the study deploys, under which name, and where each
+tuned constant comes from. Keeping that as one table means the runner, the summary
+tables and the M7 analysis all agree on what "phi_k16" is, and that no tuned value is
+typed twice.
+
+Every entry is ``{"kind", "params", "group", "requires"}``:
+
+* ``kind`` is a `rules.KINDS` member.
+* ``params`` are the constructor overrides. A value of ``None`` is a slot that is
+  filled *per horizon* at resolve time from the study's tuning outputs (M5):
+  ``baseline_params.json`` for the schedule constants (``c`` per ``(alpha, T)``,
+  ``K0`` per ``T``, the validation-selected ``p3_star`` per ``T``) and
+  ``thresholds.json`` for every learned threshold (``tau_val``). Because the smoke run
+  happens before tuning, both files may be absent: the slot then takes the registered
+  placeholder (`rules.POLICY_SPECS`) or the artifact's own offline ``tau``, and the
+  substitution is logged once per (policy, reason) -- never silently.
+* ``group`` is ``baseline`` (P0-P3), ``reference`` (``cp0``, ``p3_star``: the two
+  pre-registered comparison targets), ``learned`` (a saved model) or ``rule`` (the
+  P11 hand rule).
+* ``requires`` names the external inputs the entry depends on, so a runner can check
+  them up front and decide, for instance, whether a pairwise log-e table must be built
+  before workers are forked.
+
+`resolve_params` turns an entry into concrete constructor parameters for one horizon;
+`build_policy` constructs the `SearchPolicy`; `resolve_policy` does both and returns
+the study's per-policy seed component ``crc32(name)`` (the plan's convention, keyed on
+the *study* name so ``phi_k16`` and ``phi_k16_perstep`` never share a stream).
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import zlib
+from pathlib import Path
+from typing import Any
+
+from cold_start.growing.deploy import rules
+from cold_start.growing.deploy.artifacts import load_model
+from cold_start.growing.deploy.feature_groups import EVIDENCE_LOGE
+from cold_start.growing.search_policies import SearchPolicy
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[2]
+RESULTS_DIR = ROOT / "results" / "growing_bandits" / "deploy"
+DEFAULT_MODELS_DIR = RESULTS_DIR / "models"
+DEFAULT_BASELINE_PARAMS_PATH = RESULTS_DIR / "baseline_params.json"
+DEFAULT_THRESHOLDS_PATH = RESULTS_DIR / "thresholds.json"
+
+log = logging.getLogger("deploy.policy_table")
+
+GROUPS: tuple[str, ...] = ("baseline", "reference", "learned", "rule")
+
+# The four P3 exponents, keyed by the short label used in the policy name. The value
+# is the exact float the schedule is built with; `baseline_params.json` keys are
+# matched to it numerically (JSON stringifies floats).
+POWER_ALPHAS: dict[str, float] = {
+    "0.25": 0.25,
+    "0.33": 1.0 / 3.0,
+    "0.5": 0.5,
+    "0.67": 2.0 / 3.0,
+}
+
+# Registered placeholder for each exponent when `baseline_params.json` is absent.
+_PLACEHOLDER_POWER_SPEC: dict[str, str] = {
+    "0.25": "power_quarter",
+    "0.33": "power_cbrt",
+    "0.5": "power_sqrt",
+    "0.67": "power_t23",
+}
+_PLACEHOLDER_K0 = int(rules.POLICY_SPECS["refine_after_init_K4"]["K0"])
+_PLACEHOLDER_P3_STAR = {
+    "alpha": float(rules.POLICY_SPECS["power_sqrt"]["alpha"]),
+    "c": float(rules.POLICY_SPECS["power_sqrt"]["c"]),
+}
+_PLACEHOLDER_RULE_TAU = float(rules.POLICY_SPECS["reservoir_rule"]["tau"])
+
+# Which `rules.POLICY_SPECS` entry each kind is built through; `params` override the
+# rest, so only the kind of the registered entry matters here.
+_SPEC_FOR_KIND: dict[str, str] = {
+    "always_search": "always_search",
+    "refine_after_init": "refine_after_init_K2",
+    "uniform": "uniform",
+    "fixed_K": "fixed_K16",
+    "power": "power_sqrt",
+    "cp0": "cp0",
+    "reservoir_rule": "reservoir_rule",
+    "model": "model",
+}
+
+# The M4 variant behind every learned policy (`train_policies.VARIANTS` names).
+CQE = "clock_quality_evidence"
+
+
+def _learned(
+    variant: str,
+    *,
+    tau: float | None = None,
+    per_step: bool = False,
+    affordability_guard: bool = False,
+) -> dict[str, Any]:
+    requires = [f"artifact:{variant}"]
+    if tau is None:
+        requires.append("thresholds")
+    return {
+        "kind": "model",
+        "params": {
+            "artifact": variant,
+            "tau": tau,
+            "k": None,
+            "per_step": per_step,
+            "affordability_guard": affordability_guard,
+        },
+        "group": "learned",
+        "requires": requires,
+    }
+
+
+def _power(alpha_label: str) -> dict[str, Any]:
+    return {
+        "kind": "power",
+        "params": {"alpha": POWER_ALPHAS[alpha_label], "c": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    }
+
+
+POLICIES: dict[str, dict[str, Any]] = {
+    # ---- P0-P3: schedules ---------------------------------------------------------
+    "always_search": {"kind": "always_search", "params": {}, "group": "baseline", "requires": []},
+    "refine_after_init": {
+        "kind": "refine_after_init",
+        "params": {"K0": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
+    "uniform": {"kind": "uniform", "params": {}, "group": "baseline", "requires": []},
+    "fixed_K16": {"kind": "fixed_K", "params": {"K": 16}, "group": "baseline", "requires": []},
+    "power_a0.25": _power("0.25"),
+    "power_a0.33": _power("0.33"),
+    "power_a0.5": _power("0.5"),
+    "power_a0.67": _power("0.67"),
+    # ---- the two pre-registered references -------------------------------------
+    # P3*: the (alpha, c) pair selected per horizon on validation seeds (H1b).
+    "p3_star": {
+        "kind": "power",
+        "params": {"alpha": None, "c": None},
+        "group": "reference",
+        "requires": ["baseline_params"],
+    },
+    # The label continuation policy (H1a); its constants are the corpus's, untuned.
+    "cp0": {
+        "kind": "cp0",
+        "params": {"alpha": 0.5, "c": 1.0, "min_pulls_per_arm": 2},
+        "group": "reference",
+        "requires": [],
+    },
+    # ---- learned: commitment ladder (P4, P5, P6 = P9) ----------------------------
+    "phi_k1": _learned(f"{CQE}_k1"),
+    "phi_k4": _learned(f"{CQE}_k4"),
+    "phi_k16": _learned(f"{CQE}_k16"),
+    "phi_k16_tau05": _learned(f"{CQE}_k16", tau=0.5),
+    # P6' and P6g: same model, different deployment mechanics.
+    "phi_k16_perstep": _learned(f"{CQE}_k16", per_step=True),
+    "phi_k16_guard": _learned(f"{CQE}_k16", affordability_guard=True),
+    # ---- learned: feature-set ladder (P8, P7, P9a, P10) ---------------------------
+    "phi_k16_clock": _learned("clock_k16"),
+    "phi_k16_quality": _learned("clock_quality_k16"),
+    "phi_k16_cs": _learned("clock_quality_cs_k16"),
+    "phi_k16_all71": _learned("all71_k16"),
+    # ---- learned: estimator / weighting / row-filter sensitivities (P12, audit C) ---
+    "phi_k16_hgb": _learned(f"{CQE}_k16_hgb"),
+    "phi_k16_weighted": _learned(f"{CQE}_k16_weighted"),
+    "phi_k16_noambig": _learned(f"{CQE}_k16_noambig"),
+    "phi_k16_notrunc": _learned(f"{CQE}_k16_notrunc"),
+    "phi_k16_lucb": _learned(f"{CQE}_k16_lucb"),
+    # ---- P11: reservoir-aware rule, hand form and logistic form ---------------------
+    "rule_reservoir": {
+        "kind": "reservoir_rule",
+        "params": {"tau": None},
+        "group": "rule",
+        "requires": ["thresholds"],
+    },
+    "phi_reservoir_rule": _learned("reservoir_rule_k16"),
+    # ---- generalization (Tests B, C, D) ----------------------------------------------
+    "phi_k16_nopolicy": _learned(f"{CQE}_k16_nopolicy"),
+    "phi_k16_famA_only": _learned(f"{CQE}_k16_famA_only"),
+    "phi_k16_famB_only": _learned(f"{CQE}_k16_famB_only"),
+    "phi_k16_noT1000": _learned(f"{CQE}_k16_noT1000"),
+    "phi_k16_noT200": _learned(f"{CQE}_k16_noT200"),
+    "phi_sf_k16": _learned("clock_sf_quality_cs_k16"),
+    "phi_sf_k16_noT1000": _learned("clock_sf_quality_cs_k16_noT1000"),
+}
+
+ALL_POLICIES: tuple[str, ...] = tuple(POLICIES)
+
+_ROBUST: tuple[str, ...] = (
+    "always_search",
+    "refine_after_init",
+    "p3_star",
+    "cp0",
+    "phi_k16_quality",
+    "phi_k16",
+)
+
+#: Which policies each test deploys. A and C (in-distribution / held-out family) run
+#: the whole table; B and D run the models trained for them plus the references; the
+#: robustness and cap sweeps run the six the plan names.
+TEST_POLICIES: dict[str, tuple[str, ...]] = {
+    "A": ALL_POLICIES,
+    "C": ALL_POLICIES,
+    "B": ("phi_k16", "phi_k16_nopolicy", "phi_k16_all71", "cp0", "p3_star"),
+    "D": (
+        "phi_k16",
+        "phi_k16_clock",
+        "phi_k16_noT1000",
+        "phi_k16_noT200",
+        "phi_sf_k16",
+        "phi_sf_k16_noT1000",
+        "always_search",
+        "refine_after_init",
+        "cp0",
+        "p3_star",
+    ),
+    "robust": _ROBUST,
+    "cap": _ROBUST,
+    "smoke": ALL_POLICIES,
+}
+
+
+# ---- tuning outputs ----------------------------------------------------------------
+
+
+def load_json_or_none(path: str | Path, what: str) -> dict | None:
+    """Load a tuning output, or return ``None`` with a logged warning if it is absent.
+
+    The runner must not crash before tuning has happened (the smoke run precedes
+    M5), but it must also never *silently* deploy placeholders, hence the warning.
+    """
+    p = Path(path)
+    if not p.exists():
+        log.warning("%s not found at %s; placeholders will be used", what, p)
+        return None
+    with open(p) as fh:
+        return json.load(fh)
+
+
+def load_baseline_params(path: str | Path = DEFAULT_BASELINE_PARAMS_PATH) -> dict | None:
+    return load_json_or_none(path, "baseline_params.json")
+
+
+def load_thresholds(path: str | Path = DEFAULT_THRESHOLDS_PATH) -> dict | None:
+    return load_json_or_none(path, "thresholds.json")
+
+
+def _lookup_by_number(table: dict, key: float, tol: float = 1e-6):
+    """Fetch ``table[key]`` where the JSON keys are stringified numbers."""
+    for k, v in table.items():
+        try:
+            if abs(float(k) - float(key)) <= tol:
+                return v
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+_warned: set[tuple[str, str]] = set()
+
+
+def _warn_once(name: str, reason: str) -> None:
+    key = (name, reason)
+    if key in _warned:
+        return
+    _warned.add(key)
+    log.warning("policy %s: %s", name, reason)
+
+
+def _alpha_label(alpha: float) -> str:
+    for label, value in POWER_ALPHAS.items():
+        if abs(value - alpha) <= 1e-9:
+            return label
+    raise KeyError(f"alpha {alpha} is not one of the study's exponents {POWER_ALPHAS}")
+
+
+def _tuned_c(name: str, alpha: float, horizon: int, baseline_params: dict | None) -> float:
+    """``c`` for ``(alpha, T)`` from ``baseline_params["power"]``, else the placeholder."""
+    label = _alpha_label(alpha)
+    placeholder = float(rules.POLICY_SPECS[_PLACEHOLDER_POWER_SPEC[label]]["c"])
+    if baseline_params is None:
+        _warn_once(name, f"no baseline_params; using placeholder c={placeholder}")
+        return placeholder
+    by_t = _lookup_by_number(baseline_params.get("power", {}), alpha)
+    c = _lookup_by_number(by_t, horizon) if by_t else None
+    if c is None:
+        _warn_once(name, f"no tuned c for (alpha={alpha:.4f}, T={horizon}); placeholder {placeholder}")
+        return placeholder
+    return float(c)
+
+
+def _tuned_k0(name: str, horizon: int, baseline_params: dict | None) -> int:
+    if baseline_params is None:
+        _warn_once(name, f"no baseline_params; using placeholder K0={_PLACEHOLDER_K0}")
+        return _PLACEHOLDER_K0
+    k0 = _lookup_by_number(baseline_params.get("refine_after_init", {}), horizon)
+    if k0 is None:
+        _warn_once(name, f"no tuned K0 for T={horizon}; placeholder K0={_PLACEHOLDER_K0}")
+        return _PLACEHOLDER_K0
+    return int(k0)
+
+
+def _tuned_p3_star(name: str, horizon: int, baseline_params: dict | None) -> tuple[float, float]:
+    ph = _PLACEHOLDER_P3_STAR
+    if baseline_params is None:
+        _warn_once(name, f"no baseline_params; using placeholder P3*={ph}")
+        return ph["alpha"], ph["c"]
+    sel = _lookup_by_number(baseline_params.get("p3_star", {}), horizon)
+    if not sel or "alpha" not in sel or "c" not in sel:
+        _warn_once(name, f"no validation-selected P3* for T={horizon}; placeholder {ph}")
+        return ph["alpha"], ph["c"]
+    return float(sel["alpha"]), float(sel["c"])
+
+
+def _tuned_tau(name: str, variant: str, thresholds: dict | None, fallback: float | None) -> float | None:
+    """``tau_val`` for `variant`, else `fallback` (the artifact's offline tau, or the
+    registered hand-rule tau). ``None`` is returned only when there is no fallback at
+    all, in which case `ModelPolicy` applies its own default."""
+    entry = thresholds.get(variant) if thresholds else None
+    tau = entry.get("tau_val") if entry else None
+    if tau is None:
+        _warn_once(name, f"no validation tau for {variant}; falling back to {fallback}")
+        return fallback
+    return float(tau)
+
+
+# ---- resolution -----------------------------------------------------------------------
+
+
+def artifact_path(variant: str, models_dir: str | Path = DEFAULT_MODELS_DIR) -> Path:
+    return Path(models_dir) / f"{variant}.joblib"
+
+
+def resolve_params(
+    name: str,
+    horizon: int,
+    *,
+    baseline_params: dict | None = None,
+    thresholds: dict | None = None,
+    models_dir: str | Path = DEFAULT_MODELS_DIR,
+    artifact: dict | None = None,
+) -> dict[str, Any]:
+    """Concrete constructor parameters for `name` at horizon `horizon`.
+
+    Every ``None`` slot of the table entry is filled from the tuning outputs (or its
+    placeholder, with a warning). For a learned policy the artifact's own ``tau`` is
+    the fallback, so the artifact is loaded here unless `artifact` is passed; the
+    result carries ``artifact`` as the resolved *path* (a plain string, so the dict
+    is JSON-serialisable and can go into the manifest as provenance).
+    """
+    if name not in POLICIES:
+        raise KeyError(f"unknown policy {name!r}; known={sorted(POLICIES)}")
+    entry = POLICIES[name]
+    kind = entry["kind"]
+    params = dict(entry["params"])
+    horizon = int(horizon)
+
+    if kind == "power":
+        if params["alpha"] is None:  # p3_star
+            alpha, c = _tuned_p3_star(name, horizon, baseline_params)
+            params["alpha"], params["c"] = alpha, c
+        elif params["c"] is None:
+            params["c"] = _tuned_c(name, float(params["alpha"]), horizon, baseline_params)
+    elif kind == "refine_after_init":
+        if params["K0"] is None:
+            params["K0"] = _tuned_k0(name, horizon, baseline_params)
+    elif kind == "reservoir_rule":
+        if params["tau"] is None:
+            params["tau"] = _tuned_tau(name, "reservoir_rule", thresholds, _PLACEHOLDER_RULE_TAU)
+    elif kind == "model":
+        variant = params["artifact"]
+        path = artifact_path(variant, models_dir)
+        if params["tau"] is None:
+            if artifact is None:
+                artifact = load_model(path)
+            params["tau"] = _tuned_tau(name, variant, thresholds, artifact.get("tau"))
+        params["artifact"] = str(path)
+    return params
+
+
+def policy_seed(name: str) -> int:
+    """The plan's per-policy seed component: ``crc32`` of the *study* name."""
+    return int(zlib.crc32(name.encode("utf-8")))
+
+
+def build_policy(
+    name: str,
+    params: dict[str, Any],
+    *,
+    horizon: int,
+    n_replicates: int,
+    table,
+    pairwise=None,
+    artifact: dict | None = None,
+) -> SearchPolicy:
+    """Construct the policy from resolved `params` (see `resolve_params`).
+
+    Always a fresh object: the harness isolates and resets a policy per cell, but a
+    fresh instance per (cell, policy) costs nothing and leaves no way for state to
+    leak between work items. `artifact` may supply the already-loaded model dict so a
+    worker can cache the joblib load across items; the instance's ``name`` is set to
+    the study name so snapshots and the harness's default seed carry it.
+    """
+    entry = POLICIES[name]
+    kind = entry["kind"]
+    build_params = dict(params)
+    if kind == "model" and artifact is not None:
+        build_params["artifact"] = artifact
+    policy = rules.make_policy(
+        _SPEC_FOR_KIND[kind],
+        horizon=int(horizon),
+        n_replicates=int(n_replicates),
+        table=table,
+        params=build_params,
+        pairwise=pairwise,
+    )
+    policy.name = name
+    return policy
+
+
+def resolve_policy(
+    name: str,
+    horizon: int,
+    *,
+    n_replicates: int,
+    table,
+    baseline_params: dict | None = None,
+    thresholds: dict | None = None,
+    models_dir: str | Path = DEFAULT_MODELS_DIR,
+    pairwise=None,
+) -> tuple[SearchPolicy, int]:
+    """`resolve_params` + `build_policy`; returns ``(policy, policy_seed)``."""
+    artifact = None
+    if POLICIES[name]["kind"] == "model":
+        artifact = load_model(artifact_path(POLICIES[name]["params"]["artifact"], models_dir))
+    params = resolve_params(
+        name,
+        horizon,
+        baseline_params=baseline_params,
+        thresholds=thresholds,
+        models_dir=models_dir,
+        artifact=artifact,
+    )
+    policy = build_policy(
+        name,
+        params,
+        horizon=horizon,
+        n_replicates=n_replicates,
+        table=table,
+        pairwise=pairwise,
+        artifact=artifact,
+    )
+    return policy, policy_seed(name)
+
+
+# ---- queries the runner needs up front -------------------------------------------------
+
+
+def variant_of(name: str) -> str | None:
+    """The M4 variant a learned policy deploys, or ``None`` for non-model kinds."""
+    entry = POLICIES[name]
+    return entry["params"]["artifact"] if entry["kind"] == "model" else None
+
+
+def needs_pairwise_table(name: str, models_dir: str | Path = DEFAULT_MODELS_DIR) -> bool:
+    """Whether the policy's model reads ``f_log_e_pair`` (explicit column membership).
+
+    Read from the artifact itself rather than from `variants.json`, so the answer is
+    true of the model that will actually be deployed.
+    """
+    variant = variant_of(name)
+    if variant is None:
+        return False
+    features = load_model(artifact_path(variant, models_dir))["features"]
+    return any(c in EVIDENCE_LOGE for c in features)
+
+
+def check_policies(names: list[str] | tuple[str, ...]) -> None:
+    """Raise on an unknown policy name, listing the known ones."""
+    unknown = [n for n in names if n not in POLICIES]
+    if unknown:
+        raise KeyError(f"unknown policies {unknown}; known={sorted(POLICIES)}")

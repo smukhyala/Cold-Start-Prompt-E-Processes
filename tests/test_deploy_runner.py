@@ -1,0 +1,363 @@
+"""Tests for the deployment runner (`run_deployment.py`) and the policy table.
+
+Structural tests walk `policy_table.POLICIES` against the trainer's `VARIANTS` and the
+rules registry. Behavioural tests run the real runner end to end on `tmp_path`: the
+baseline smoke path through a two-worker spawn pool (parquet + manifest + summary,
+resume does no new work, a reference's paired difference against itself is exactly
+zero) and the learned-policy path with a tiny artifact built here (search fraction
+strictly inside (0, 1), snapshots logged, counters recorded). No simulator mocks.
+"""
+
+from __future__ import annotations
+
+import json
+import pickle
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+DEPLOY = ROOT / "experiments" / "growing_bandits" / "deploy"
+for _p in (ROOT / "experiments" / "growing_bandits", DEPLOY):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+import policy_table as pt  # noqa: E402
+import run_deployment as rd  # noqa: E402
+import train_policies as tp  # noqa: E402
+
+from cold_start.growing.deploy import feature_groups as fg  # noqa: E402
+from cold_start.growing.deploy import rules  # noqa: E402
+from cold_start.growing.deploy.artifacts import load_model, save_model  # noqa: E402
+from cold_start.growing.deploy.harness import CellSpec  # noqa: E402
+from cold_start.growing.deploy.recommenders import RECOMMENDER_NAMES  # noqa: E402
+from cold_start.growing.tables import CSTable  # noqa: E402
+
+CELLS_MOD = rd.import_cells_module()
+HAVE_MODELS = all(
+    pt.artifact_path(v).exists() for v in {pt.variant_of(p) for p in pt.POLICIES} - {None}
+)
+
+ENV_SPECS = {
+    "beta_good_common": {"type": "beta", "params": {"a": 5.0, "b": 2.0}},
+    "tail_b2.0_mu1.0_c1.0": {"type": "tail", "params": {"beta": 2.0, "mu_star": 1.0, "c": 1.0}},
+}
+#: Seeds for the explicit test cells: far above the corpus band and every split base.
+TEST_SEED_BASE = 777_000_001
+
+CLOCK = list(fg.FEATURE_SETS["clock"])
+
+
+def _cells(horizon: int, n_replicates: int) -> list[CellSpec]:
+    """An explicit two-cell list, independent of `cells.py`."""
+    return [
+        CellSpec(
+            env_id=env_id,
+            env_spec=spec,
+            horizon=horizon,
+            cap=64,
+            base_seed=TEST_SEED_BASE + i,
+            n_replicates=n_replicates,
+        )
+        for i, (env_id, spec) in enumerate(ENV_SPECS.items())
+    ]
+
+
+# ---- policy table -------------------------------------------------------------------------
+
+
+def test_policy_table_is_well_formed_and_matches_the_trainer():
+    names = list(pt.POLICIES)
+    assert len(names) == len(set(names))
+    for name, entry in pt.POLICIES.items():
+        assert set(entry) == {"kind", "params", "group", "requires"}, name
+        assert entry["kind"] in rules.KINDS, name
+        assert entry["group"] in pt.GROUPS, name
+        if entry["kind"] == "model":
+            assert entry["params"]["artifact"] in tp.VARIANTS, (name, entry["params"]["artifact"])
+            assert entry["group"] == "learned"
+    for test, subset in pt.TEST_POLICIES.items():
+        assert test in rd.TESTS
+        assert set(subset) <= set(pt.POLICIES), test
+        assert len(subset) == len(set(subset)), test
+    assert set(pt.TEST_POLICIES) == set(rd.TESTS)
+    # The plan's table, by the names the brief fixes.
+    for required in (
+        "always_search", "refine_after_init", "uniform", "fixed_K16",
+        "power_a0.25", "power_a0.33", "power_a0.5", "power_a0.67", "p3_star", "cp0",
+        "phi_k1", "phi_k4", "phi_k16", "phi_k16_tau05", "phi_k16_perstep", "phi_k16_guard",
+        "phi_k16_quality", "phi_k16_clock", "phi_k16_cs", "phi_k16_all71", "phi_k16_hgb",
+        "phi_k16_weighted", "phi_k16_noambig", "phi_k16_notrunc", "phi_k16_lucb",
+        "rule_reservoir", "phi_reservoir_rule", "phi_k16_nopolicy", "phi_k16_famA_only",
+        "phi_k16_famB_only", "phi_k16_noT1000", "phi_k16_noT200", "phi_sf_k16",
+        "phi_sf_k16_noT1000",
+    ):
+        assert required in pt.POLICIES, required
+    assert pt.POLICIES["phi_k16"]["params"]["artifact"] == "clock_quality_evidence_k16"
+    assert pt.POLICIES["phi_k16_cs"]["params"]["artifact"] == "clock_quality_cs_k16"
+    assert pt.POLICIES["phi_k16_perstep"]["params"]["per_step"] is True
+    assert pt.POLICIES["phi_k16_guard"]["params"]["affordability_guard"] is True
+    assert pt.POLICIES["phi_k16_tau05"]["params"]["tau"] == 0.5
+    for ref in rd.REFERENCES:
+        assert pt.POLICIES[ref]["group"] == "reference"
+    assert set(pt.TEST_POLICIES["robust"]) == set(pt.TEST_POLICIES["cap"])
+
+
+def test_policy_seed_is_keyed_on_the_study_name():
+    assert pt.policy_seed("phi_k16") != pt.policy_seed("phi_k16_perstep")
+    assert pt.policy_seed("uniform") == pt.policy_seed("uniform")
+
+
+def test_resolve_params_uses_tuning_outputs_and_falls_back_to_placeholders(caplog):
+    # Placeholders (no tuning outputs), logged once per policy and reason.
+    pt._warned.clear()
+    with caplog.at_level("WARNING", logger="deploy.policy_table"):
+        p = pt.resolve_params("power_a0.5", 100)
+        assert p == {"alpha": 0.5, "c": rules.POLICY_SPECS["power_sqrt"]["c"]}
+        assert pt.resolve_params("refine_after_init", 100) == {"K0": pt._PLACEHOLDER_K0}
+        assert pt.resolve_params("p3_star", 100) == pt._PLACEHOLDER_P3_STAR
+        assert pt.resolve_params("rule_reservoir", 100) == {"tau": pt._PLACEHOLDER_RULE_TAU}
+        pt.resolve_params("power_a0.5", 200)
+    assert sum("power_a0.5" in r.message for r in caplog.records) == 1
+
+    # Tuned values, keyed exactly the way `tune_baselines.py` writes them.
+    tuned = {
+        "power": {str(float(1.0 / 3.0)): {"100": 2.25}, "0.5": {"100": 0.7, "200": 0.9}},
+        "refine_after_init": {"100": 8},
+        "p3_star": {"100": {"alpha": 2.0 / 3.0, "c": 0.4, "pooled_regret": 0.1}},
+    }
+    assert pt.resolve_params("power_a0.5", 100, baseline_params=tuned) == {"alpha": 0.5, "c": 0.7}
+    assert pt.resolve_params("power_a0.5", 200, baseline_params=tuned) == {"alpha": 0.5, "c": 0.9}
+    p = pt.resolve_params("power_a0.33", 100, baseline_params=tuned)
+    assert p["c"] == 2.25 and abs(p["alpha"] - 1.0 / 3.0) < 1e-12
+    assert pt.resolve_params("refine_after_init", 100, baseline_params=tuned) == {"K0": 8}
+    assert pt.resolve_params("p3_star", 100, baseline_params=tuned) == {"alpha": 2.0 / 3.0, "c": 0.4}
+    # A horizon the tuning did not cover falls back, per horizon, to the placeholder.
+    assert pt.resolve_params("refine_after_init", 500, baseline_params=tuned)["K0"] == pt._PLACEHOLDER_K0
+
+    thresholds = {"reservoir_rule": {"tau_val": 2.5, "tau_off": None, "curve": {}}}
+    assert pt.resolve_params("rule_reservoir", 100, thresholds=thresholds) == {"tau": 2.5}
+
+
+def test_build_cells_refuses_a_real_test_without_cells_module():
+    with pytest.raises(RuntimeError, match="cells.py"):
+        rd.build_cells("A", n_replicates=None, cells_mod=None)
+
+
+@pytest.mark.skipif(CELLS_MOD is None, reason="cells.py (M5) not present")
+def test_cell_grids_against_the_real_cells_module():
+    expected = {"A": 40, "B": 40, "C": 15, "D": 19, "robust": 150, "cap": 24, "smoke": 2}
+    for test, n_cells in expected.items():
+        cells = rd.build_cells(test, n_replicates=None, cells_mod=CELLS_MOD)
+        assert len(cells) == n_cells, test
+        seeds = [c.base_seed for c in cells]
+        assert len(set(seeds)) == len(seeds), test
+        CELLS_MOD.assert_seed_disjointness(seeds)
+        m_default = rd.DEFAULT_REPLICATES[test]
+        for c in cells:
+            assert c.n_replicates == (rd.T2000_REPLICATES if c.horizon == 2000 else m_default)
+    caps = {(c.horizon, c.cap) for c in rd.build_cells("cap", n_replicates=None, cells_mod=CELLS_MOD)}
+    assert caps == {(200, 32), (200, 64), (200, 200), (1000, 32), (1000, 64), (1000, 1000)}
+    # A manual cell list and a replicate override are honoured.
+    cells = rd.build_cells(
+        "A", n_replicates=7, cells_mod=CELLS_MOD,
+        overrides=rd.parse_cell_overrides("beta_good_common:100:64"),
+    )
+    assert [(c.env_id, c.horizon, c.cap, c.n_replicates) for c in cells] == [
+        ("beta_good_common", 100, 64, 7)
+    ]
+
+
+@pytest.mark.parametrize("horizon", [50, 100, 1000])
+def test_log_spec_times_are_visited_states(horizon):
+    spec = CellSpec("e", ENV_SPECS["beta_good_common"], horizon, 64, 1, 200)
+    ls = rd.log_spec_for(spec)
+    assert ls.replicates == min(rd.LOG_REPLICATES, 200)
+    assert list(ls.times) == sorted(set(ls.times))
+    assert 1 <= len(ls.times) <= rd.LOG_TIMES
+    assert ls.times[-1] == horizon
+    assert all(spec.n_initial_arms <= t <= horizon for t in ls.times)
+
+
+@pytest.mark.skipif(not HAVE_MODELS, reason="M4 model artifacts not present")
+def test_every_learned_policy_builds_against_the_real_artifacts():
+    table = CSTable.load_or_build(50, alpha=0.05)
+    for name in pt.POLICIES:
+        policy, seed = pt.resolve_policy(name, 50, n_replicates=4, table=table)
+        assert policy.name == name
+        assert seed == pt.policy_seed(name)
+        if pt.POLICIES[name]["kind"] == "model":
+            uses_log_e = pt.needs_pairwise_table(name)
+            assert uses_log_e == any(c in fg.EVIDENCE_LOGE for c in policy.features)
+            assert policy.counters()["n_nonfinite_rows"] == 0
+    assert pt.needs_pairwise_table("phi_k16") is True
+    assert pt.needs_pairwise_table("phi_k16_cs") is False
+    assert pt.needs_pairwise_table("cp0") is False
+
+
+# ---- runner: baselines through the spawn pool ----------------------------------------------
+
+
+def _read_manifest(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def test_smoke_baselines_resume_and_summary(tmp_path):
+    out = tmp_path / "out"
+    policies = ["always_search", "cp0", "power_a0.5"]
+    cells = _cells(horizon=60, n_replicates=16)
+    argv = [
+        "--test", "smoke", "--n-replicates", "16", "--workers", "2",
+        "--policies", ",".join(policies), "--out-dir", str(out), "--n-boot", "200",
+        "--models-dir", str(tmp_path / "no-models"),
+    ]
+    result = rd.main(argv, cells=cells)
+    assert result["n_items"] == 6 and result["n_run"] == 6
+    assert result["n_skipped"] == 0 and result["n_failed"] == 0
+
+    manifest = out / "manifest_smoke.jsonl"
+    records = _read_manifest(manifest)
+    assert len(records) == 6
+    assert {(r["cell"], r["policy"]) for r in records} == {
+        (rd.cell_name(c), p) for c in cells for p in policies
+    }
+    for rec in records:
+        assert rec["n"] == 16 and rec["seconds"] > 0 and rec["sha"]
+        assert Path(rec["parquet"]).exists() and Path(rec["dynamics"]).exists()
+        assert rec["snapshots"] is None  # no --log-states, and baselines never log
+        assert rec["counters"] is None  # baselines expose no counters
+
+    # Parquet schema: the harness frame plus the runner's columns, one row per episode.
+    frame = pd.read_parquet(out / "episodes" / "smoke" / rd.cell_name(cells[0]) / "cp0.parquet")
+    assert len(frame) == 16
+    for col in ("test", "cell", "family", "group", "policy", "env_id", "horizon", "cap",
+                "base_seed", "replicate", "episode", "mu_star", "regret_disc", "search_frac"):
+        assert col in frame.columns, col
+    assert frame["family"].iloc[0] == "A" and frame["group"].iloc[0] == "reference"
+    assert np.array_equal(frame["replicate"], frame["episode"])
+    assert np.all(frame["regret_disc"] >= 0.0)
+    for rec in RECOMMENDER_NAMES:
+        assert f"regret_{rec}" in frame.columns
+    dyn = np.load(out / "dynamics" / "smoke" / rd.cell_name(cells[0]) / "cp0.npz")
+    assert dyn["t"].shape == (51,) and dyn["t"][-1] == 60
+
+    # Summary: one row per (cell, policy, recommender); a reference vs itself is 0.
+    summary = pd.read_csv(out / "summary_smoke.csv")
+    assert len(summary) == 2 * 3 * len(RECOMMENDER_NAMES)
+    own = summary[summary["policy"] == "cp0"]
+    for col in ("d_regret_vs_cp0", "d_regret_vs_cp0_lo", "d_regret_vs_cp0_hi"):
+        assert np.all(own[col] == 0.0), col
+    assert np.all(own["d_regret_vs_cp0_win"] == 0.5)
+    assert summary["d_regret_vs_p3_star"].isna().all()  # p3_star was not run
+    a = summary[(summary["policy"] == "always_search") & (summary["recommender"] == "lcb")]
+    assert np.all(a["k_final"] == 60.0) and np.all(a["search_frac"] == 1.0)  # T=60 < cap
+    # Paired difference equals the difference of means, and the CI brackets it.
+    row = a.iloc[0]
+    ref = summary[(summary["policy"] == "cp0") & (summary["recommender"] == "lcb")
+                  & (summary["cell"] == row["cell"])].iloc[0]
+    assert abs(row["d_regret_vs_cp0"] - (row["regret"] - ref["regret"])) < 1e-12
+    assert row["d_regret_vs_cp0_lo"] <= row["d_regret_vs_cp0"] <= row["d_regret_vs_cp0_hi"]
+
+    # Resume: nothing left to do, the manifest is unchanged, the summary is rewritten.
+    mtimes = {p: p.stat().st_mtime_ns for p in (out / "episodes").rglob("*.parquet")}
+    again = rd.main(argv + ["--resume"], cells=cells)
+    assert again["n_run"] == 0 and again["n_skipped"] == 6 and again["n_failed"] == 0
+    assert len(_read_manifest(manifest)) == 6
+    assert {p: p.stat().st_mtime_ns for p in (out / "episodes").rglob("*.parquet")} == mtimes
+    assert (out / "summary_smoke.csv").exists()
+
+    # Resume after one item's parquet vanished re-runs exactly that item.
+    victim = out / "episodes" / "smoke" / rd.cell_name(cells[1]) / "power_a0.5.parquet"
+    victim.unlink()
+    third = rd.main(argv + ["--resume"], cells=cells)
+    assert third["n_run"] == 1 and third["n_skipped"] == 5
+    assert victim.exists()
+    assert len(_read_manifest(manifest)) == 7  # appended, not rewritten
+
+
+# ---- runner: learned policy with a tiny artifact ---------------------------------------------
+
+
+def _clock_row(t: int, horizon: int, k: int) -> list[float]:
+    """The 11 CLOCK columns exactly as `features.extract_features` defines them."""
+    remaining = horizon - t
+    return [
+        float(t), float(horizon), float(remaining), remaining / horizon, t / horizon, float(k),
+        k / t if t else float(k), k / horizon, float(np.log(max(t, 1))), float(np.log(k)),
+        k / np.sqrt(max(t, 1)),
+    ]
+
+
+def _fit_clock_pipeline(seed: int = 0, n_rows: int = 3000):
+    """A logistic rule that wants to SEARCH early and stops as arms accumulate."""
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    rng = np.random.default_rng(seed)
+    rows, labels = [], []
+    for _ in range(n_rows):
+        horizon = int(rng.choice([40, 100, 200]))
+        t = int(rng.integers(2, horizon))
+        k = int(rng.integers(1, min(t, 64) + 1))
+        row = _clock_row(t, horizon, k)
+        score = row[3] - 0.15 * row[10] + 0.3 * rng.normal()
+        rows.append(row)
+        labels.append(score > 0.35)
+    X = np.asarray(rows, dtype=np.float64)
+    y = np.asarray(labels, dtype=np.int64)
+    return make_pipeline(StandardScaler(), LogisticRegression(C=1.0, max_iter=2000)).fit(X, y)
+
+
+def test_learned_policy_smoke_logs_states_and_counters(tmp_path):
+    models = tmp_path / "models"
+    # `phi_k16_clock` deploys the `clock_k16` variant; give it a tiny CLOCK model with
+    # k=4 so the commitment mechanism is exercised several times in T=60.
+    save_model(
+        models / "clock_k16.joblib",
+        {"pipeline": _fit_clock_pipeline(), "features": CLOCK, "k": 4, "tau": 0.45,
+         "meta": {"variant": "clock_k16"}},
+    )
+    artifact = load_model(models / "clock_k16.joblib")
+    out = tmp_path / "out"
+    cells = _cells(horizon=60, n_replicates=16)
+    argv = [
+        "--test", "smoke", "--n-replicates", "16", "--workers", "1", "--policies",
+        "phi_k16_clock,cp0", "--models-dir", str(models), "--out-dir", str(out),
+        "--log-states", "--n-boot", "100",
+    ]
+    result = rd.main(argv, cells=cells)
+    assert result["n_run"] == 4 and result["n_failed"] == 0
+
+    records = {(r["cell"], r["policy"]): r for r in _read_manifest(out / "manifest_smoke.jsonl")}
+    for cell in cells:
+        rec = records[(rd.cell_name(cell), "phi_k16_clock")]
+        # No thresholds.json: the artifact's own tau is deployed, and recorded.
+        assert rec["params"]["tau"] == artifact["tau"] == 0.45
+        assert rec["params"]["artifact"] == str(models / "clock_k16.joblib")
+        assert rec["counters"]["n_nonfinite_rows"] == 0
+        assert rec["counters"]["n_decisions"] > 0 and rec["counters"]["n_committed_steps"] > 0
+        assert rec["policy_seed"] == pt.policy_seed("phi_k16_clock")
+        frame = pd.read_parquet(rec["parquet"])
+        assert frame["group"].iloc[0] == "learned"
+        assert 0.0 < float(frame["search_frac"].mean()) < 1.0
+        assert np.all(frame["policy_seed"] == pt.policy_seed("phi_k16_clock"))
+        # Snapshots: every logged time x every logged replicate, carrying the study name.
+        ls = rd.log_spec_for(cell)
+        with open(rec["snapshots"], "rb") as fh:
+            snaps = pickle.load(fh)
+        assert rec["n_snapshots"] == len(snaps) == len(ls.times) * ls.replicates
+        assert {s.t for s in snaps} == set(ls.times)
+        assert all(s.meta["policy"] == "phi_k16_clock" for s in snaps)
+        assert all(s.meta["env_id"] == cell.env_id for s in snaps)
+        # References never log states, even under --log-states.
+        assert records[(rd.cell_name(cell), "cp0")]["snapshots"] is None
+
+    summary = pd.read_csv(out / "summary_smoke.csv")
+    learned = summary[(summary["policy"] == "phi_k16_clock")]
+    assert len(learned) == 2 * len(RECOMMENDER_NAMES)
+    assert learned["d_regret_vs_cp0"].notna().all()
+    assert learned["d_regret_vs_p3_star"].isna().all()

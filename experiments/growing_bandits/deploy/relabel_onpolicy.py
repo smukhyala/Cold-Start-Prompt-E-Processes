@@ -23,12 +23,21 @@ register #1). This script asks the question directly, in three resumable steps:
   `train_policies.train_variant`, and write the coefficient / decision-agreement
   comparison between Phi and Phi'.
 
-Two details of the labelling are load-bearing. `label_state` runs the SEARCH branch to
-the horizon and then the REFINE branch on one simulator; a `ModelPolicy` carries
-commitment counters across steps, so it must be reset when the branch changes or the
-REFINE branch would inherit the SEARCH branch's standing commitment
-(`_BranchResetPolicy`). And `Simulator.step` never calls ``after_step``, so HISTORY
+Three details of the labelling deserve stating. `label_state` runs the SEARCH branch to
+the horizon and then the REFINE branch on one simulator, and materializes each batch at
+its own replicate count; `_BranchResetPolicy` gives every branch a freshly reset
+`ModelPolicy` sized for that batch (a `ModelPolicy` refuses a state whose ``M`` is not
+its own, and its per-episode counters are cleared at every branch change as a matter of
+isolation -- a standing commitment cannot in fact survive the horizon, since
+``commit_left = min(k, T - t)``). `Simulator.step` never calls ``after_step``, so HISTORY
 features would go stale inside a rollout; ``phi_k16`` reads none, which is asserted.
+And the continuation's commitment cycle is phase-shifted relative to deployment: after
+the 16 forced rounds the continuation makes a fresh decision at ``t + 16`` and commits
+from there, whereas the deployed ``phi_k16`` decides at ``t = 2, 18, 34, ...`` and would
+be at phase ``(t - 2) mod 16`` of a standing commitment when the label's window ends.
+The corpus labels had no such effect because ``cp0`` is stateless; on-policy labels
+are therefore "SEARCH/REFINE for 16 rounds, then phi_k16 restarted", not "then phi_k16
+as it would have been". This is a property of the label, stated in the write-up.
 
 Seeds: the on-policy block ``15_000_000 + cell_id * 1000`` sits above the test band and
 below the corpus minimum; every seed the harvest and the labelling batches consume
@@ -67,7 +76,7 @@ from generate_states import snapshot_times_for  # noqa: E402
 from label_states import _family_of, _write_chunk  # noqa: E402
 
 from cold_start.growing.allocation import LUCB  # noqa: E402
-from cold_start.growing.deploy.artifacts import load_model, save_model  # noqa: E402
+from cold_start.growing.deploy.artifacts import load_model  # noqa: E402
 from cold_start.growing.deploy.feature_groups import EVIDENCE_LOGE, HISTORY  # noqa: E402
 from cold_start.growing.deploy.harness import CellSpec, LogSpec, run_cell  # noqa: E402
 from cold_start.growing.deploy.pairwise_table import get_pairwise_table  # noqa: E402
@@ -98,6 +107,10 @@ SPLIT = "onpolicy"
 PHI_POLICY = "phi_k16"
 PHI_VARIANT = pt.variant_of(PHI_POLICY)
 #: ``meta_policy`` of every on-policy row (the corpus has the eight behavioural names).
+#: `train_policies.ONPOLICY_META_POLICY` is the same string: the trainer's `subset_mask`
+#: selects on-policy rows by it. Spelled out here because the labelling workers must not
+#: import the trainer (pandas and the corpus loader) just for one constant; `train`
+#: asserts the two agree.
 META_POLICY = "phi_k16_onpolicy"
 META_ALLOCATION = "lucb"
 
@@ -115,51 +128,16 @@ DEFAULT_CHUNK_STATES = 64
 DEFAULT_WORKERS = 12
 MAX_TASKS_PER_CHILD = 4
 
-#: The two retrained models (trainer-format variant specs; `train_policies._v` shape).
-CQE = "clock_quality_evidence"
+#: The two retrained models: `train_policies.VARIANTS` entries whose ``subset`` carries the
+#: ``onpolicy`` marker (``"union"`` / ``"only"``); the corpus-only trainer skips them and
+#: `train` below reads their specs from that table rather than redefining them. Their
+#: `policy_table.POLICIES` twins (`policy_table.ONPOLICY_POLICIES`) deploy on Test A.
 VARIANT_UNION = "phi_k16_onpolicy_union"
 VARIANT_ONLY = "phi_k16_onpolicy_only"
-ONPOLICY_VARIANTS: dict[str, dict] = {
-    VARIANT_UNION: {
-        "feature_set": CQE,
-        "k": COMMIT_STEPS,
-        "estimator": "logit",
-        "row_filter": "decided",
-        "subset": {"onpolicy": "union"},
-    },
-    VARIANT_ONLY: {
-        "feature_set": CQE,
-        "k": COMMIT_STEPS,
-        "estimator": "logit",
-        "row_filter": "decided",
-        "subset": {"onpolicy": "only"},
-    },
-}
+ONPOLICY_VARIANT_NAMES: tuple[str, ...] = (VARIANT_UNION, VARIANT_ONLY)
 DEFAULT_SPLITS_UNION = 5
 #: Eight on-policy environments -> four environment folds.
 DEFAULT_SPLITS_ONLY = 4
-
-#: `policy_table.POLICIES` entries that deploy the retrained models on Test A, in the
-#: exact shape of ``phi_k16``'s (k from the artifact, tau from ``thresholds.json`` with
-#: the artifact's ``tau_off`` as fallback, no per-step / guard mechanics). They are
-#: data here, not registered: `tests/test_deploy_runner.py` requires every learned
-#: entry's variant to be a `train_policies.VARIANTS` key, and these are trained by this
-#: script instead; see the M9 report for the one-line registration.
-POLICY_TABLE_ENTRIES: dict[str, dict] = {
-    name: {
-        "kind": "model",
-        "params": {
-            "artifact": name,
-            "tau": None,
-            "k": None,
-            "per_step": False,
-            "affordability_guard": False,
-        },
-        "group": "learned",
-        "requires": [f"artifact:{name}", "thresholds"],
-    }
-    for name in ONPOLICY_VARIANTS
-}
 
 #: Corpus rows generated by a deterministic growth schedule (`label_states.policy_by_name`):
 #: the behavioural policies most like a deployed rule, the natural corpus comparison for
@@ -292,15 +270,18 @@ class _BranchResetPolicy(SearchPolicy):
     """A `ModelPolicy` continuation that starts afresh whenever the branch changes.
 
     `label_state` drives one simulator through the SEARCH branch to the horizon and
-    then through the REFINE branch, and `ModelPolicy` holds per-replicate commitment
-    counters between steps. Without a reset the REFINE branch would begin inside
-    whatever commitment the SEARCH branch ended in, and the two branches would no
-    longer share the continuation the label is defined by. The branch is identified by
-    the `GrowingState` object itself: the wrapper keeps a reference to the last state
-    it was asked about (holding it alive, so its identity cannot be recycled) and
-    resets the inner policy when a different object arrives. Batches materialize at
-    different replicate counts, and `ModelPolicy` is sized at construction, so the
-    inner policy is rebuilt through `make_inner` when ``M`` changes and reset otherwise.
+    then through the REFINE branch, and materializes each batch at its own replicate
+    count. Two things follow. `ModelPolicy` is sized at construction and refuses a
+    state of another ``M``, so the inner policy is rebuilt through `make_inner` when
+    the replicate count changes. And `ModelPolicy` keeps per-episode state between
+    steps (commitment counters, decision diagnostics, ``last_decision``); a standing
+    commitment cannot actually outlive the SEARCH branch -- ``commit_left`` is
+    ``min(k, T - t)`` and is zero at the horizon -- so resetting on every branch change
+    is isolation rather than a fix for a known leak: each branch sees exactly the
+    policy a fresh deployment would, and the diagnostics of one branch never mix
+    into the other. The branch is identified by the `GrowingState` object itself; the
+    wrapper keeps a reference to the last state it was asked about (holding it alive,
+    so its identity cannot be recycled) and resets when a different object arrives.
     """
 
     name = "phi_k16_continuation"
@@ -521,6 +502,7 @@ def harvest(
             "n_snapshots": len(kept),
             "n_at_cap": int(n_at_cap),
             "pickle": str(pkl),
+            "pickle_sha": file_sha256(pkl),
             "seconds": round(time.perf_counter() - t0, 3),
             "finished_at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         }
@@ -551,6 +533,8 @@ class LabelItem:
     cap: int
     alpha: float
     pickle_path: str
+    #: sha256 of the pickle bytes: the identity of the harvest these labels belong to.
+    harvest_sha: str
     start: int
     stop: int
     n_at_cap: int
@@ -758,6 +742,7 @@ def label_item(item: LabelItem) -> dict:
         "mean_M": float(np.mean([r["label_M"] for r in rows])) if rows else float("nan"),
         "params": item.params,
         "artifact_sha": item.artifact_sha,
+        "harvest_sha": item.harvest_sha,
         "target_se": float(item.target_se),
         "max_replicates": int(item.max_replicates),
         "commit_steps": int(item.commit_steps),
@@ -793,6 +778,12 @@ def build_label_items(
     """Chunk every harvested cell into `chunk_states`-state items, longest horizon first."""
     items: list[LabelItem] = []
     for rec in harvest_records:
+        harvest_sha = file_sha256(rec["pickle"])
+        if rec.get("pickle_sha") not in (None, harvest_sha):
+            raise RuntimeError(
+                f"snapshot pickle for {rec['cell']} changed since it was harvested "
+                f"({rec['pickle_sha'][:12]} -> {harvest_sha[:12]}); re-harvest the cell"
+            )
         n = int(rec["n_snapshots"])
         if limit_states is not None:
             n = min(n, int(limit_states))
@@ -808,6 +799,7 @@ def build_label_items(
                     cap=int(rec["cap"]),
                     alpha=float(alpha),
                     pickle_path=rec["pickle"],
+                    harvest_sha=harvest_sha,
                     start=start,
                     stop=stop,
                     n_at_cap=int(rec["n_at_cap"]),
@@ -825,8 +817,17 @@ def build_label_items(
 
 
 def _label_stale_reason(rec: dict, item: LabelItem, labels_dir: Path) -> str | None:
+    """Why a manifest `rec` no longer describes `item`, or ``None`` if it still does.
+
+    The harvest identity is checked by content: a re-harvest (different snapshot
+    times, replicate count or policy) rewrites the cell's pickle, and a chunk of the old
+    pickle must not stand in for the same slice of the new one even when the slice
+    boundaries did not move.
+    """
     if rec.get("n_rows", 0) > 0 and not (labels_dir / f"part-{item.part}.parquet").exists():
         return "parquet missing"
+    if rec.get("harvest_sha") != item.harvest_sha:
+        return "harvest changed (snapshot pickle differs)"
     if rec.get("params") != item.params or rec.get("artifact_sha") != item.artifact_sha:
         return "policy changed"
     for field in ("target_se", "max_replicates", "commit_steps", "start", "stop"):
@@ -1054,9 +1055,12 @@ def write_label_diagnostics(
 ):
     """``onpolicy_label_diagnostics.csv``: on-policy label statistics next to the corpus's.
 
-    One row per ``(scope, horizon)``: the on-policy rows, the corpus's k=16 labels under
-    the schedule policies (`CORPUS_SCHEDULE_POLICIES`) and under every policy, each per
-    horizon and pooled. ``phi_*`` columns score the deployed ``phi_k16`` at the
+    One row per ``(scope, horizon)``: the on-policy rows (``onpolicy``), the corpus's
+    k=16 labels under the schedule policies (``corpus_schedule``: ``meta_policy`` in
+    `CORPUS_SCHEDULE_POLICIES` = ``sqrt``, ``cbrt``, ``t23``, ``bracket`` -- the
+    deterministic growth schedules; ``epsilon``, the randomised schedule, is excluded
+    along with the Bernoulli and uniform policies) and under every policy
+    (``corpus_all``), each per horizon and pooled. ``phi_*`` columns score the deployed ``phi_k16`` at the
     threshold it was harvested with (``tau``) against the label sign of the same rows:
     on the on-policy scope that is the fraction of its own states at which its
     decision agrees with the label its own continuation defines. The corpus's
@@ -1133,30 +1137,14 @@ def _metric_base(name: str, variant: dict) -> dict:
     }
 
 
-def _stamp_subset(out_dir: Path, name: str, rows: list[dict], subset: dict) -> dict:
-    """Record the on-policy provenance the trainer's `subset_mask` cannot express.
-
-    `train_variant` selects a training universe by metadata *values* through
-    `subset_mask`, which has no notion of "the rows of a second corpus"; the frames
-    here are already the universes, so the variant is trained with an empty subset
-    and the artifact and its metric rows are stamped with the real one afterwards.
-    """
-    path = Path(out_dir) / "models" / f"{name}.joblib"
-    artifact = load_model(path)
-    artifact["meta"]["subset"] = dict(subset)
-    save_model(path, artifact)
-    for r in rows:
-        r["subset"] = json.dumps(subset, sort_keys=True)
-    return artifact
-
-
-def _oof_scores_by_env(tp, frame, variant: dict, n_splits: int, n_jobs: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _oof_scores_by_env(
+    tp, frame, variant: dict, n_splits: int, n_jobs: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """``(score, fold, y, eligible)``: the trainer's environment-fold OOF pass on `frame`."""
     features = tp.feature_list(variant)
     X = tp.design_matrix(frame, features)
     y = frame["label_A_k16"].to_numpy(dtype=np.float64) > 0
-    universe = np.ones(len(frame), dtype=bool)
-    eligible = tp.row_filter_mask(frame, variant["row_filter"], variant["k"])
+    eligible, universe = tp.eligible_masks(frame, variant)
     fold = tp.fold_ids_by_group(frame["meta_env"].to_numpy().astype(str), universe, n_splits)
     score = tp.oof_scores(variant["estimator"], variant["feature_set"], X, y, None, fold, eligible, n_jobs)
     return score, fold, y, eligible
@@ -1250,16 +1238,30 @@ def train(
 ) -> dict:
     """Phi' on the union and on the on-policy rows only; metrics merged into the trainer's tables.
 
-    Both variants go through `train_policies.train_variant` (environment folds, tau
-    selection, refit, artifact) on the frame that *is* their universe. Two extra
-    metric groupings are added: for the union model, its environment-fold OOF scores
-    restricted to the on-policy rows and to the corpus rows (``onpolicy_rows_oof``,
-    ``corpus_rows_oof``); for the on-policy-only model, the transfer to the corpus
-    rows it never saw (``excluded_rows``, as the trainer reports for its subsets).
+    The two variants are the registered `train_policies.VARIANTS` entries carrying the
+    ``onpolicy`` subset marker; both go through `train_policies.train_variant` on the
+    SAME frame (corpus rows plus on-policy rows), whose `subset_mask` keeps every row
+    for ``"union"`` and the on-policy rows for ``"only"`` -- so the trainer's own
+    machinery does the environment folds, the tau selection, the refit, the artifact,
+    and (for ``"only"``) the ``excluded_rows`` transfer to the corpus rows it never
+    saw. One extra grouping is added for the union model: its environment-fold OOF
+    scores restricted to the on-policy rows and to the corpus rows
+    (``onpolicy_rows_oof``, ``corpus_rows_oof``), which is where a policy-iteration
+    step should show first.
     """
     import pandas as pd
     import train_policies as tp
     from corpus import load_corpus
+
+    if tp.ONPOLICY_META_POLICY != META_POLICY:
+        raise RuntimeError(
+            f"train_policies.ONPOLICY_META_POLICY={tp.ONPOLICY_META_POLICY!r} disagrees with "
+            f"META_POLICY={META_POLICY!r}"
+        )
+    specs = {name: tp.VARIANTS[name] for name in ONPOLICY_VARIANT_NAMES}
+    for name, spec in specs.items():
+        if not tp.requires_onpolicy_rows(spec) or spec["k"] != COMMIT_STEPS:
+            raise RuntimeError(f"{name} is not registered as an on-policy k={COMMIT_STEPS} variant: {spec}")
 
     out_dir = Path(out_dir)
     labels_dir = Path(labels_dir) if labels_dir is not None else harvest_paths(out_dir)[0]
@@ -1294,16 +1296,10 @@ def train(
 
     metric_rows: list[dict] = []
     artifacts: dict[str, dict] = {}
-    for name, frame, n_splits in (
-        (VARIANT_UNION, union, n_splits_union),
-        (VARIANT_ONLY, onpol, n_splits_only),
-    ):
+    for name, n_splits in ((VARIANT_UNION, n_splits_union), (VARIANT_ONLY, n_splits_only)):
         t1 = time.perf_counter()
-        spec = ONPOLICY_VARIANTS[name]
-        rows, meta = tp.train_variant(
-            name, {**spec, "subset": {}}, frame, out_dir, n_splits, n_jobs, provenance
-        )
-        artifacts[name] = _stamp_subset(out_dir, name, rows, spec["subset"])
+        rows, meta = tp.train_variant(name, specs[name], union, out_dir, n_splits, n_jobs, provenance)
+        artifacts[name] = load_model(out_dir / "models" / f"{name}.joblib")
         metric_rows.extend(rows)
         env = meta["metrics"]["meta_env"]
         log.info(
@@ -1311,9 +1307,13 @@ def train(
             name, meta["n_rows"], env["auc"], env["bal_acc_05"], meta["tau_off"],
             env["bal_acc_tau_off"], time.perf_counter() - t1,
         )
+        if "excluded_rows" in meta["metrics"]:
+            ex = meta["metrics"]["excluded_rows"]
+            log.info("%s: transfer to the corpus rows: AUC %.4f  bal@tau %.4f  n=%d",
+                     name, ex["auc"], ex["bal_acc_tau_off"], ex["n_rows"])
 
     # Union model: where do its out-of-fold scores land on the two row populations?
-    spec = ONPOLICY_VARIANTS[VARIANT_UNION]
+    spec = specs[VARIANT_UNION]
     score, fold, y, _ = _oof_scores_by_env(tp, union, spec, n_splits_union, n_jobs)
     base = _metric_base(VARIANT_UNION, spec)
     n_groups = int(union["meta_env"].nunique())
@@ -1322,41 +1322,20 @@ def train(
         metrics = tp.pooled_and_fold_metrics(y[m], score[m], fold[m], None)
         metric_rows.append({**base, "grouping": grouping, **metrics,
                             "n_groups": n_groups, "n_splits": n_folds, "n_cells": np.nan})
-    # On-policy-only model: transfer to the corpus rows it never saw, at its tau_off.
-    only = artifacts[VARIANT_ONLY]
-    spec_only = ONPOLICY_VARIANTS[VARIANT_ONLY]
-    corpus_eligible = tp.row_filter_mask(corpus, spec_only["row_filter"], spec_only["k"])
-    y_ex = corpus["label_A_k16"].to_numpy(dtype=np.float64)[corpus_eligible] > 0
-    s_ex = _phi_scores(only, corpus[corpus_eligible])
-    tau_only = float(only["tau"])
-    metric_rows.append({
-        **_metric_base(VARIANT_ONLY, spec_only),
-        "grouping": "excluded_rows",
-        "n_rows": int(corpus_eligible.sum()),
-        "n_pos": int(y_ex.sum()),
-        "class_balance": float(y_ex.mean()) if y_ex.size else float("nan"),
-        "auc": tp.auc(y_ex, s_ex) if y_ex.size else float("nan"),
-        "bal_acc_05": tp.balanced_accuracy(y_ex, s_ex > 0.5) if y_ex.size else float("nan"),
-        "tau_off": tau_only,
-        "bal_acc_tau_off": tp.balanced_accuracy(y_ex, s_ex > tau_only) if y_ex.size else float("nan"),
-        "n_groups": 0,
-        "n_splits": 0,
-        "n_cells": np.nan,
-    })
 
     metrics_path = out_dir / "offline_metrics.csv"
     fresh = pd.DataFrame(metric_rows)
     if metrics_path.exists():
         existing = list(pd.read_csv(metrics_path, nrows=0).columns)
         fresh = fresh.reindex(columns=existing + [c for c in fresh.columns if c not in existing])
-    merged = tp.merge_metrics(metrics_path, fresh, list(ONPOLICY_VARIANTS))
+    merged = tp.merge_metrics(metrics_path, fresh, list(ONPOLICY_VARIANT_NAMES))
     tmp = metrics_path.with_suffix(".csv.tmp")
     merged.to_csv(tmp, index=False)
     os.replace(tmp, metrics_path)
 
     variants_path = out_dir / "variants.json"
     variants_json = json.loads(variants_path.read_text()) if variants_path.exists() else {}
-    for name, spec in ONPOLICY_VARIANTS.items():
+    for name, spec in specs.items():
         variants_json[name] = {**spec, "features": list(tp.feature_list(spec))}
     _write_json_atomic(variants_path, variants_json)
 

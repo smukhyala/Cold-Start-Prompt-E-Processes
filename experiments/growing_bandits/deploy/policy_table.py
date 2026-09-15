@@ -193,9 +193,18 @@ POLICIES: dict[str, dict[str, Any]] = {
     "phi_k16_noT200": _learned(f"{CQE}_k16_noT200"),
     "phi_sf_k16": _learned("clock_sf_quality_cs_k16"),
     "phi_sf_k16_noT1000": _learned("clock_sf_quality_cs_k16_noT1000"),
+    # ---- M9: one policy-iteration step (relabel_onpolicy.py) -------------------------
+    # phi_k16 refitted on the corpus plus its own on-policy labels, and on those alone;
+    # same commitment (k from the artifact, 16) and mechanics as phi_k16.
+    "phi_k16_onpolicy_union": _learned("phi_k16_onpolicy_union"),
+    "phi_k16_onpolicy_only": _learned("phi_k16_onpolicy_only"),
 }
 
 ALL_POLICIES: tuple[str, ...] = tuple(POLICIES)
+#: The M9 models exist only after `relabel_onpolicy.py train`; they deploy on Test A alone.
+ONPOLICY_POLICIES: tuple[str, ...] = ("phi_k16_onpolicy_union", "phi_k16_onpolicy_only")
+#: The table every other test deploys from: everything trained on the corpus alone.
+CORPUS_POLICIES: tuple[str, ...] = tuple(p for p in ALL_POLICIES if p not in ONPOLICY_POLICIES)
 
 _ROBUST: tuple[str, ...] = (
     "always_search",
@@ -206,12 +215,13 @@ _ROBUST: tuple[str, ...] = (
     "phi_k16",
 )
 
-#: Which policies each test deploys. A and C (in-distribution / held-out family) run
-#: the whole table; B and D run the models trained for them plus the references; the
-#: robustness and cap sweeps run the six the plan names.
+#: Which policies each test deploys. A runs the whole table (M9's on-policy models
+#: included); C (held-out family) runs the corpus-trained table; B and D run the models
+#: trained for them plus the references; the robustness and cap sweeps run the six the
+#: plan names.
 TEST_POLICIES: dict[str, tuple[str, ...]] = {
     "A": ALL_POLICIES,
-    "C": ALL_POLICIES,
+    "C": CORPUS_POLICIES,
     "B": ("phi_k16", "phi_k16_nopolicy", "phi_k16_all71", "cp0", "p3_star"),
     "D": (
         "phi_k16",
@@ -227,7 +237,7 @@ TEST_POLICIES: dict[str, tuple[str, ...]] = {
     ),
     "robust": _ROBUST,
     "cap": _ROBUST,
-    "smoke": ALL_POLICIES,
+    "smoke": CORPUS_POLICIES,
 }
 
 

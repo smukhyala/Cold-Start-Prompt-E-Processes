@@ -157,25 +157,54 @@ def test_onpolicy_seed_band_sits_between_test_and_corpus():
         cells.assert_seed_disjointness([cells.CORPUS_SEED + 31 * 50])
 
 
-def test_policy_table_entries_mirror_phi_k16():
+def test_onpolicy_policies_and_variants_are_registered():
     import policy_table as pt
+    import train_policies as tp
 
     phi = pt.POLICIES["phi_k16"]
-    assert set(ro.POLICY_TABLE_ENTRIES) == {ro.VARIANT_UNION, ro.VARIANT_ONLY}
-    for name, entry in ro.POLICY_TABLE_ENTRIES.items():
+    assert set(pt.ONPOLICY_POLICIES) == set(ro.ONPOLICY_VARIANT_NAMES) == {ro.VARIANT_UNION, ro.VARIANT_ONLY}
+    for name in ro.ONPOLICY_VARIANT_NAMES:
+        # The policy-table twin: phi_k16's entry with the artifact swapped.
+        entry = pt.POLICIES[name]
         assert set(entry) == set(phi)
-        assert entry["kind"] == phi["kind"] and entry["group"] == phi["group"]
-        assert set(entry["params"]) == set(phi["params"])
+        assert entry["kind"] == "model" and entry["group"] == "learned"
         assert {k: v for k, v in entry["params"].items() if k != "artifact"} == {
             k: v for k, v in phi["params"].items() if k != "artifact"
         }
         assert entry["params"]["artifact"] == name
         assert entry["requires"] == [f"artifact:{name}", "thresholds"]
-        assert name not in pt.POLICIES  # staged, not registered (see the module docstring)
-    for name, spec in ro.ONPOLICY_VARIANTS.items():
+        assert pt.variant_of(name) == name and name in tp.VARIANTS
+        assert name in pt.TEST_POLICIES["A"]
+        for test in ("B", "C", "D", "robust", "cap", "smoke"):
+            assert name not in pt.TEST_POLICIES[test], test
+        # The trainer's registration: the primary configuration plus the on-policy marker.
+        spec = tp.VARIANTS[name]
         assert spec["feature_set"] == "clock_quality_evidence" and spec["k"] == 16
         assert spec["estimator"] == "logit" and spec["row_filter"] == "decided"
         assert spec["subset"] == {"onpolicy": name.rsplit("_", 1)[-1]}
+        assert tp.requires_onpolicy_rows(spec)
+    assert ro.META_POLICY == tp.ONPOLICY_META_POLICY
+    assert set(pt.CORPUS_POLICIES) == set(pt.ALL_POLICIES) - set(pt.ONPOLICY_POLICIES)
+    assert not any(tp.requires_onpolicy_rows(tp.VARIANTS[pt.variant_of(p)])
+                   for p in pt.CORPUS_POLICIES if pt.variant_of(p) is not None)
+
+
+def test_corpus_trainer_skips_the_onpolicy_variants():
+    import train_policies as tp
+
+    trainable, skipped = tp.corpus_trainable(list(tp.VARIANTS))
+    assert skipped == [ro.VARIANT_UNION, ro.VARIANT_ONLY]
+    assert trainable + skipped == list(tp.VARIANTS)
+    assert tp.corpus_trainable(list(tp.QUICK_VARIANTS)) == (list(tp.QUICK_VARIANTS), [])
+    # The subset itself: undefined on a corpus-only frame, and the on-policy rows for "only".
+    corpus_like = pd.DataFrame({"meta_policy": ["sqrt", "bracket", "cbrt"], "meta_env": ["a", "b", "c"]})
+    with pytest.raises(ValueError, match="requires on-policy rows"):
+        tp.subset_mask(corpus_like, {"onpolicy": "union"})
+    mixed = pd.DataFrame({"meta_policy": ["sqrt", ro.META_POLICY, "cbrt", ro.META_POLICY]})
+    assert tp.subset_mask(mixed, {"onpolicy": "union"}).tolist() == [True, True, True, True]
+    assert tp.subset_mask(mixed, {"onpolicy": "only"}).tolist() == [False, True, False, True]
+    with pytest.raises(ValueError, match="unknown onpolicy subset"):
+        tp.subset_mask(mixed, {"onpolicy": "all"})
 
 
 def test_snapshot_times_follow_the_corpus_schedule_and_can_add_pre_cap_times():
@@ -356,6 +385,47 @@ def test_label_refuses_states_harvested_under_a_different_policy(labelled, works
             pairwise_cache_dir=workspace["pairwise"],
             write_diagnostics=False,
         )
+
+
+def test_label_resume_is_keyed_to_the_harvest(workspace, tmp_path):
+    """A re-harvest that changes the snapshot set must invalidate the chunks labelled
+    from the old pickle, even when the chunk boundaries did not move."""
+    out = tmp_path / "out"
+    env = TINY_ENVS[0]
+    common = dict(
+        models_dir=workspace["models"],
+        thresholds_path=workspace["thresholds"],
+        pairwise_cache_dir=workspace["pairwise"],
+    )
+    first = ro.harvest(out, envs=(env,), horizons=[TINY_T], n_replicates=TINY_M, n_times=TINY_TIMES, **common)
+    res = ro.label(out, workers=1, max_replicates=TINY_MAX_REPLICATES, limit_states=2,
+                   write_diagnostics=False, **common)
+    assert res["n_run"] == 1 and res["n_failed"] == 0
+    labels_dir = res["labels_dir"]
+    part = f"onpolicy_{env}_T{TINY_T}_c00"
+    before = ro.latest_by(ro.read_manifest(labels_dir / ro.LABEL_MANIFEST), "part")[part]
+    assert before["harvest_sha"] == first[0]["pickle_sha"]
+    old_t = sorted(ro.load_onpolicy_rows(labels_dir)["f_t"].tolist())
+
+    # Re-harvest with an extra pre-cap time: the resume check sees new times and reruns
+    # the cell; the pickle now holds a different (larger) snapshot set at the same path.
+    second = ro.harvest(out, envs=(env,), horizons=[TINY_T], n_replicates=TINY_M, n_times=TINY_TIMES,
+                        early_times=1, **common)
+    assert second[0]["times"] != first[0]["times"] and 3 in second[0]["times"]
+    assert second[0]["pickle"] == first[0]["pickle"]
+    assert second[0]["pickle_sha"] != first[0]["pickle_sha"]
+
+    again = ro.label(out, workers=1, max_replicates=TINY_MAX_REPLICATES, limit_states=2,
+                     write_diagnostics=False, **common)
+    assert again["n_run"] == 1 and again["n_failed"] == 0  # the same chunk, re-labelled
+    after = ro.latest_by(ro.read_manifest(labels_dir / ro.LABEL_MANIFEST), "part")[part]
+    assert after["harvest_sha"] == second[0]["pickle_sha"] != before["harvest_sha"]
+    new_t = sorted(ro.load_onpolicy_rows(labels_dir)["f_t"].tolist())
+    assert new_t != old_t and new_t[0] == 3.0  # rows now come from the new snapshot set
+    # And with nothing changed, nothing runs.
+    third = ro.label(out, workers=1, max_replicates=TINY_MAX_REPLICATES, limit_states=2,
+                     write_diagnostics=False, **common)
+    assert third["n_run"] == 0
 
 
 # ---- train ----------------------------------------------------------------------------

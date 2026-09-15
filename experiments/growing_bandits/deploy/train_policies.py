@@ -135,9 +135,32 @@ VARIANTS: dict[str, dict] = {
     "reservoir_rule_k16": _v("reservoir_rule"),
     # the exact configuration behind RESULTS.md's 0.647 / 0.7405 (reproduction gate)
     "legacy_E_k16_weighted": _v("all71", estimator="logit_w"),
+    # M9, one policy-iteration step (register #1): the primary model refitted on the corpus
+    # plus states of the deployed phi_k16 labelled with phi_k16 as the continuation, and on
+    # those on-policy rows alone. The `onpolicy` subset selects rows the corpus does not
+    # have, so `main` skips these two; `relabel_onpolicy.py train` supplies the rows.
+    "phi_k16_onpolicy_union": _v(CQE, subset={"onpolicy": "union"}),
+    "phi_k16_onpolicy_only": _v(CQE, subset={"onpolicy": "only"}),
 }
 
 QUICK_VARIANTS = ("clock_k16", "clock_quality_evidence_k16", "reservoir_rule_k16")
+
+#: ``meta_policy`` of every on-policy row (`relabel_onpolicy.META_POLICY` must agree).
+ONPOLICY_META_POLICY = "phi_k16_onpolicy"
+ONPOLICY_SUBSETS: tuple[str, ...] = ("union", "only")
+
+
+def requires_onpolicy_rows(variant: dict) -> bool:
+    """Whether the variant's universe needs on-policy rows the corpus alone cannot provide."""
+    return "onpolicy" in variant["subset"]
+
+
+def corpus_trainable(names: list[str]) -> tuple[list[str], list[str]]:
+    """``(trainable, skipped)``: the corpus-only trainer must neither train an on-policy
+    variant on corpus rows (a silently wrong model under the M9 name) nor erase its rows
+    from the metrics table by listing it as trained."""
+    skipped = [n for n in names if requires_onpolicy_rows(VARIANTS[n])]
+    return [n for n in names if n not in skipped], skipped
 
 # Published E_all_observable row of fit_results_label_A_k16.json (mean over env folds).
 GATE_VARIANT = "legacy_E_k16_weighted"
@@ -205,6 +228,19 @@ def subset_mask(df: pd.DataFrame, subset: dict) -> np.ndarray:
         elif key == "exclude_horizons":
             horizons = df["meta_horizon"].to_numpy(dtype=np.float64)
             keep &= ~np.isin(horizons, np.asarray(values, dtype=np.float64))
+        elif key == "onpolicy":
+            # "union": every row of a frame that holds on-policy rows; "only": those rows.
+            # A frame without them is the corpus alone, on which neither is defined.
+            if values not in ONPOLICY_SUBSETS:
+                raise ValueError(f"unknown onpolicy subset {values!r}; expected one of {ONPOLICY_SUBSETS}")
+            onpolicy = df["meta_policy"].astype(str).to_numpy() == ONPOLICY_META_POLICY
+            if not onpolicy.any():
+                raise ValueError(
+                    f"subset {{'onpolicy': {values!r}}} requires on-policy rows "
+                    f"(meta_policy={ONPOLICY_META_POLICY!r}); trained by relabel_onpolicy.py train"
+                )
+            if values == "only":
+                keep &= onpolicy
         else:
             raise ValueError(f"unknown subset key {key!r}")
     return keep
@@ -869,7 +905,9 @@ def main(argv: list[str] | None = None) -> dict:
     quick = bool(args.quick)
     n_splits = 2 if quick else int(args.n_splits)
     n_jobs = args.n_jobs if args.n_jobs is not None else (1 if quick else min(n_splits, os.cpu_count() or 1))
-    names = parse_variants(args.variants, quick)
+    names, skipped = corpus_trainable(parse_variants(args.variants, quick))
+    for name in skipped:
+        print(f"  {name:44s} skipped: requires on-policy rows; trained by relabel_onpolicy.py train")
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "models").mkdir(exist_ok=True)

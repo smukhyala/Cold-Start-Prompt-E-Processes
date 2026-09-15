@@ -23,6 +23,10 @@ hosts (`harness.run_cell` takes both), because for a baseline the prefix costs m
 than the rollout. Work is parallelized over `(env, T, chunk of configs)` items with a
 spawn-context `multiprocessing.Pool`; each worker memory-maps its own CS tables. Rows
 already in the CSV are skipped, so an interrupted run resumes where it stopped.
+
+The test split is refused (`TestSplitRefused`) unless `--allow-test-split` is given, and
+then every output file is suffixed `_TESTSPLIT`, so a constant chosen on test episodes
+can never be the one the deployment runner reads by default.
 """
 
 from __future__ import annotations
@@ -73,6 +77,35 @@ DEFAULT_CAP = 64
 TUNE_SPLIT, SELECT_SPLIT = "tune", "val"
 
 POWER, REFINE = "power", "refine_after_init"
+
+#: Appended to every output name when a run was allowed to touch the test split.
+TESTSPLIT_SUFFIX = "_TESTSPLIT"
+
+
+class TestSplitRefused(ValueError):
+    """Raised when a tuning/selection run names the test split without opting in."""
+
+
+def check_splits(splits: Iterable[str], allow_test_split: bool) -> str:
+    """Refuse the test split unless opted in; return the output-name suffix to use.
+
+    Selecting a schedule constant or a threshold on the test episodes and then reporting
+    those episodes would be the asymmetric tuning the register (#7) forbids. The opt-in
+    exists for diagnostics only, and its outputs carry `TESTSPLIT_SUFFIX` so
+    `run_deployment.py` (which reads the unsuffixed names) can never pick them up.
+    """
+    uses_test = any(split == "test" for split in splits)
+    if uses_test and not allow_test_split:
+        raise TestSplitRefused(
+            "the test split is reserved for deployment runs; tuning or selecting on it "
+            "requires --allow-test-split, and the outputs are then suffixed "
+            f"{TESTSPLIT_SUFFIX!r}"
+        )
+    return TESTSPLIT_SUFFIX if uses_test else ""
+
+
+def output_path(out_dir: Path, stem: str, ext: str, suffix: str) -> Path:
+    return Path(out_dir) / f"{stem}{suffix}{ext}"
 
 # Rounding used to key rows for resume and selection; the grid values are irrational
 # (geomspace) and alpha = 1/3, so exact float equality after a CSV round trip is not
@@ -430,11 +463,22 @@ def build_selection_items(
     return items
 
 
-def select_p3_star(selection: pd.DataFrame, env_ids: Iterable[str]) -> dict[str, dict[str, float]]:
-    """``{T: {"alpha": a, "c": c, "pooled_regret": r}}``: the best tuned power schedule per `T`."""
+def select_p3_star(
+    selection: pd.DataFrame, env_ids: Iterable[str], params: dict | None = None
+) -> dict[str, dict[str, float]]:
+    """``{T: {"alpha": a, "c": c, "pooled_regret": r}}``: the best tuned power schedule per `T`.
+
+    With `params`, only rows at the tuned ``c*(alpha, T)`` of their own horizon are
+    candidates (the same guard `restrict` applies, kept here so the function is safe
+    on any frame it is handed).
+    """
     env_ids = list(env_ids)
     df = selection[(selection["env"].isin(env_ids)) & (selection["policy"] == POWER)]
     df = df.assign(alpha_r=df["alpha"].round(ALPHA_DECIMALS), c_r=df["c"].round(C_DECIMALS))
+    if params is not None:
+        tuned = {key[:1] + key[2:] for key in selected_keys(params) if key[1] == POWER}
+        keep = [(int(row["T"]), *row_key(row)[6:]) in tuned for _, row in df.iterrows()]
+        df = df[np.asarray(keep, dtype=bool)]
     pooled = _pooled(df, ["T", "alpha_r", "c_r"], len(env_ids))
     out: dict[str, dict[str, float]] = {}
     for horizon, grp in pooled.groupby("T", sort=True):
@@ -455,30 +499,46 @@ def read_csv(path: Path) -> pd.DataFrame | None:
     """Existing rows, floats parsed exactly so `alpha` and `c` keys survive the round trip."""
     if not path.exists():
         return None
-    df = pd.read_csv(path, float_precision="round_trip")
+    try:
+        df = pd.read_csv(path, float_precision="round_trip")
+    except pd.errors.EmptyDataError:
+        return None
     return df if len(df) else None
+
+
+def grid_keys(horizons: Iterable[int], configs: Iterable[ScheduleConfig]) -> set[tuple]:
+    """``(T, policy, alpha, c)`` for every configuration at every horizon: the tuning grid."""
+    configs = list(configs)
+    return {(int(h), *cfg.key()) for h in horizons for cfg in configs}
+
+
+def selected_keys(params: dict) -> set[tuple]:
+    """``(T, policy, alpha, c)`` for the tuned configurations, each at its own horizon only."""
+    return {(int(h), *cfg.key()) for h, cfg in selected_configs(params)}
 
 
 def restrict(
     df: pd.DataFrame,
     split: str,
     env_ids: Iterable[str],
-    horizons: Iterable[int],
     cap: int,
     n_replicates: int,
-    configs: Iterable[ScheduleConfig],
+    allowed: set[tuple],
 ) -> pd.DataFrame:
-    """The rows of this run's configuration only: the CSV may also hold earlier runs' grids."""
-    keys = {cfg.key() for cfg in configs}
-    horizons = set(int(h) for h in horizons)
+    """The rows of this run's configuration only: the CSV may also hold earlier runs' grids.
+
+    `allowed` is a set of ``(T, policy, alpha, c)`` keys (`grid_keys` / `selected_keys`),
+    so the horizon is part of the match: a validation row for ``c*(alpha, T')`` left by
+    an earlier run must not compete at horizon ``T`` just because the same ``c`` was
+    tuned there.
+    """
     env_ids = set(env_ids)
     keep = [
         str(row["split"]) == split
         and str(row["env"]) in env_ids
-        and int(row["T"]) in horizons
         and int(row["cap"]) == int(cap)
         and int(row["n_replicates"]) == int(n_replicates)
-        and row_key(row)[5:] in keys
+        and (int(row["T"]), *row_key(row)[5:]) in allowed
         for _, row in df.iterrows()
     ]
     out = df[np.asarray(keep, dtype=bool)].reset_index(drop=True)
@@ -557,16 +617,19 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--cap", type=int, default=DEFAULT_CAP)
     ap.add_argument("--chunk", type=int, default=16, help="configurations per work item")
     ap.add_argument("--out", type=str, default=str(DEFAULT_OUT_DIR))
+    ap.add_argument("--allow-test-split", action="store_true",
+                    help="permit --split/--select-split test (outputs suffixed _TESTSPLIT)")
     args = ap.parse_args(argv)
+    suffix = check_splits((args.split, args.select_split), args.allow_test_split)
 
     out_dir = Path(args.out)
     if not out_dir.is_absolute():
         out_dir = ROOT / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    tuning_path = out_dir / "schedule_tuning.csv"
-    selection_path = out_dir / "schedule_selection.csv"
-    oracle_path = out_dir / "schedule_oracle_tuned.csv"
-    params_path = out_dir / "baseline_params.json"
+    tuning_path = output_path(out_dir, "schedule_tuning", ".csv", suffix)
+    selection_path = output_path(out_dir, "schedule_selection", ".csv", suffix)
+    oracle_path = output_path(out_dir, "schedule_oracle_tuned", ".csv", suffix)
+    params_path = output_path(out_dir, "baseline_params", ".json", suffix)
 
     env_ids = env_ids_for(args.envs)
     horizons = [int(h) for h in args.horizons]
@@ -592,7 +655,9 @@ def main(argv: list[str] | None = None) -> None:
     items = build_items(args.split, env_ids, horizons, args.cap, args.n_replicates, configs,
                         done_keys(existing), chunk=args.chunk)
     tuning = collect(items, existing, tuning_path, args.workers, "tune")
-    tuning = restrict(tuning, args.split, env_ids, horizons, args.cap, args.n_replicates, configs)
+    tuning = restrict(
+        tuning, args.split, env_ids, args.cap, args.n_replicates, grid_keys(horizons, configs)
+    )
 
     # 2. select c per (alpha, T) and K0 per T; record the oracle-tuned bound
     params = select_schedule_params(tuning, env_ids)
@@ -622,10 +687,9 @@ def main(argv: list[str] | None = None) -> None:
                                   split=args.select_split)
     selection = collect(items, existing, selection_path, args.workers, "select")
     selection = restrict(
-        selection, args.select_split, env_ids, horizons, args.cap, args.n_replicates,
-        [cfg for _, cfg in selected_configs(params)],
+        selection, args.select_split, env_ids, args.cap, args.n_replicates, selected_keys(params)
     )
-    params["p3_star"] = select_p3_star(selection, env_ids)
+    params["p3_star"] = select_p3_star(selection, env_ids, params)
     write_json_atomic(params, params_path)
     for horizon, best in params["p3_star"].items():
         print(f"  P3* T={horizon}: alpha={best['alpha']:.4f} c={best['c']:.3f} "

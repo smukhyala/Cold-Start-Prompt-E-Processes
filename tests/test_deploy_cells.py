@@ -255,7 +255,7 @@ def test_selection_and_resume(tiny_tuning, tiny_configs, tmp_path):
         rows += item_rows
     selection = pd.DataFrame(rows)
     assert (selection["base_seed"] != df["base_seed"].iloc[0]).all()
-    p3 = tb.select_p3_star(selection, TINY_ENVS)
+    p3 = tb.select_p3_star(selection, TINY_ENVS, params)
     assert set(p3) == {str(TINY_T)}
     assert p3[str(TINY_T)]["alpha"] in (0.5, 1.0 / 3.0)
     assert p3[str(TINY_T)]["c"] == params[tb.POWER][str(p3[str(TINY_T)]["alpha"])][str(TINY_T)]
@@ -269,11 +269,78 @@ def test_selection_and_resume(tiny_tuning, tiny_configs, tmp_path):
     assert tb.build_items("tune", TINY_ENVS, [TINY_T], TINY_CAP, TINY_M, tiny_configs, done) == []
     fresh = tb.build_items("tune", TINY_ENVS, [TINY_T], TINY_CAP, 2 * TINY_M, tiny_configs, done)
     assert len(fresh) == 2
-    restricted = tb.restrict(back, "tune", TINY_ENVS, [TINY_T], TINY_CAP, TINY_M, tiny_configs[:2])
+    allowed = tb.grid_keys([TINY_T], tiny_configs[:2])
+    restricted = tb.restrict(back, "tune", TINY_ENVS, TINY_CAP, TINY_M, allowed)
     assert len(restricted) == 2 * len(TINY_ENVS)
     tb.write_json_atomic(params, tmp_path / "baseline_params.json")
     written = json.loads((tmp_path / "baseline_params.json").read_text())
     assert written[tb.REFINE] == params[tb.REFINE]
+
+
+def _selection_row(T: int, alpha: float, c: float, env: str, regret: float) -> dict:
+    return {
+        "split": "val", "env": env, "T": T, "cap": TINY_CAP, "n_replicates": TINY_M,
+        "policy": tb.POWER, "alpha": alpha, "c": c, "K0": -1,
+        "mean_regret": regret, "mean_q": 1.0 - regret, "se": 0.01,
+    }
+
+
+def test_stale_validation_rows_cannot_win_p3_star():
+    """A c tuned for T' must not compete at T just because an earlier run left rows there.
+
+    c*(0.5, 50) = 1.0 and c*(0.5, 100) = 2.0; planted (T=50, c=2.0) rows with zero regret
+    would win T=50 if the restriction forgot the horizon.
+    """
+    params = {
+        tb.POWER: {"0.5": {"50": 1.0, "100": 2.0}},
+        tb.REFINE: {"50": 4, "100": 4},
+    }
+    envs = ["e1", "e2"]
+    rows = []
+    for env in envs:
+        rows.append(_selection_row(50, 0.5, 1.0, env, 0.10))
+        rows.append(_selection_row(100, 0.5, 2.0, env, 0.05))
+        rows.append(_selection_row(50, 0.5, 2.0, env, 0.0))  # stale: c*(0.5, 100) at T=50
+    df = pd.DataFrame(rows)
+
+    allowed = tb.selected_keys(params)
+    assert (50, tb.POWER, 0.5, 1.0) in allowed and (100, tb.POWER, 0.5, 2.0) in allowed
+    assert (50, tb.POWER, 0.5, 2.0) not in allowed
+    restricted = tb.restrict(df, "val", envs, TINY_CAP, TINY_M, allowed)
+    survivors = sorted(set(zip(restricted["T"], restricted["c"], strict=True)))
+    assert survivors == [(50, 1.0), (100, 2.0)]
+    expected = {"50": 1.0, "100": 2.0}
+    assert {t: v["c"] for t, v in tb.select_p3_star(restricted, envs).items()} == expected
+    # The guard inside select_p3_star holds on the unrestricted frame too.
+    assert {t: v["c"] for t, v in tb.select_p3_star(df, envs, params).items()} == expected
+    assert tb.select_p3_star(df, envs, params)["50"]["pooled_regret"] == pytest.approx(0.10)
+
+
+def test_test_split_is_refused_by_default(tmp_path):
+    common = ["--n-replicates", "4", "--workers", "1", "--envs", TINY_ENVS[0],
+              "--horizons", str(TINY_T), "--out", str(tmp_path)]
+    with pytest.raises(tb.TestSplitRefused):
+        tb.main(["--split", "test", *common])
+    with pytest.raises(tb.TestSplitRefused):
+        tb.main(["--select-split", "test", *common])
+    with pytest.raises(tb.TestSplitRefused):
+        st.main(["--split", "test", "--models", str(tmp_path), *common])
+    assert list(tmp_path.iterdir()) == []  # refused before anything was written
+    assert tb.check_splits(("tune", "val"), False) == ""
+    assert tb.check_splits(("tune", "test"), True) == tb.TESTSPLIT_SUFFIX
+    assert tb.output_path(tmp_path, "thresholds", ".json", tb.TESTSPLIT_SUFFIX).name == (
+        "thresholds_TESTSPLIT.json"
+    )
+    # Opted in: the tuning script runs, and every output carries the suffix.
+    tb.main(["--split", "test", "--allow-test-split", "--n-c", "2", "--alphas", "0.5",
+             "--k0s", "2", *common])
+    names = sorted(p.name for p in tmp_path.iterdir())
+    assert names == [
+        "baseline_params_TESTSPLIT.json",
+        "schedule_oracle_tuned_TESTSPLIT.csv",
+        "schedule_selection_TESTSPLIT.csv",
+        "schedule_tuning_TESTSPLIT.csv",
+    ]
 
 
 # ---- select_thresholds ----------------------------------------------------------------------
@@ -316,6 +383,12 @@ def clock_models(tmp_path_factory) -> dict[str, Path]:
     return paths
 
 
+def _retrain(path: Path, k: int = 2) -> None:
+    """Overwrite the artifact at `path` with a different model under the same name."""
+    artifact = st.load_model(path)
+    save_model(path, {**artifact, "k": k, "tau": 0.45, "meta": {**artifact["meta"], "k": k}})
+
+
 def test_threshold_selection_end_to_end(clock_models, tmp_path):
     variants = st.list_variants(next(iter(clock_models.values())).parent)
     assert set(variants) == set(clock_models)
@@ -324,9 +397,13 @@ def test_threshold_selection_end_to_end(clock_models, tmp_path):
     assert not st.uses_log_e(artifacts["tiny_clock"])
 
     taus = [0.3, 0.7]
+    grids = st.tau_grids(variants, taus)
+    assert grids == {name: (0.3, 0.7) for name in variants}
     horizons = [TINY_T, 100]
-    items = st.build_items(variants, TINY_ENVS[:1], horizons, taus, TINY_CAP, 16)
+    items = st.build_items(variants, TINY_ENVS[:1], horizons, grids, TINY_CAP, 16)
     assert len(items) == 2 * 2 and items[0].horizon == 100
+    fingerprints = {name: st.artifact_fingerprint(path) for name, path in variants.items()}
+    assert all(it.fingerprint == fingerprints[it.variant] for it in items)
     rows: list[dict] = []
     for item_rows in st.run_items(items, workers=1):
         rows += item_rows
@@ -339,6 +416,7 @@ def test_threshold_selection_end_to_end(clock_models, tmp_path):
     assert (df["n_nonfinite_rows"] == 0).all() and (df["n_decisions"] > 0).all()
     assert (df["k"] == 4).all() and (df["tau_off"] == 0.55).all()
     assert (df["split"] == "val").all()
+    assert all(row["fingerprint"] == fingerprints[row["variant"]] for _, row in df.iterrows())
     marked = df[df["variant"] == "tiny_clock_noT100"]
     assert marked["heldout_T"].eq(marked["T"] == 100).all()
     assert not df.loc[df["variant"] == "tiny_clock", "heldout_T"].any()
@@ -348,10 +426,13 @@ def test_threshold_selection_end_to_end(clock_models, tmp_path):
         g = grp.sort_values("tau")
         assert g["mean_search_frac"].iloc[0] >= g["mean_search_frac"].iloc[-1]
 
-    thresholds = st.build_thresholds(df, artifacts, TINY_ENVS[:1], horizons, taus, "val", 16)
+    thresholds = st.build_thresholds(
+        df, artifacts, TINY_ENVS[:1], horizons, grids, "val", 16, fingerprints
+    )
     assert set(thresholds) == set(variants)
     plain, holdout = thresholds["tiny_clock"], thresholds["tiny_clock_noT100"]
-    assert plain["tau_off"] == 0.55 and plain["tau_val"] in taus
+    assert plain["tau_off"] == 0.55 and plain["k"] == 4 and plain["kind"] == "model"
+    assert plain["tau_val"] in taus and plain["fingerprint"] == fingerprints["tiny_clock"]
     assert set(plain["curve"]) == {"0.3", "0.7"} and "heldout_horizons" not in plain
     expected = df[df["variant"] == "tiny_clock"].groupby("tau")["mean_regret"].mean()
     assert plain["curve"]["0.3"] == pytest.approx(float(expected[0.3]))
@@ -367,11 +448,102 @@ def test_threshold_selection_end_to_end(clock_models, tmp_path):
     tb.write_csv_atomic(df, path)
     back = tb.read_csv(path)
     env1 = TINY_ENVS[:1]
-    assert st.build_items(variants, env1, horizons, taus, TINY_CAP, 16, st.done_keys(back)) == []
+    assert st.build_items(variants, env1, horizons, grids, TINY_CAP, 16, st.done_keys(back)) == []
     partial = st.build_items(
-        variants, env1, horizons, taus, TINY_CAP, 16, st.done_keys(back.iloc[1:])
+        variants, env1, horizons, grids, TINY_CAP, 16, st.done_keys(back.iloc[1:])
     )
     assert len(partial) == 1 and len(partial[0].taus) == 1
     # An incomplete curve yields no threshold rather than one chosen on a subset of cells.
-    incomplete = st.build_thresholds(back.iloc[1:], artifacts, env1, horizons, taus, "val", 16)
+    incomplete = st.build_thresholds(back.iloc[1:], artifacts, env1, horizons, grids, "val", 16)
     assert set(incomplete) == {"tiny_clock_noT100"}
+
+
+def test_retrained_artifact_is_new_work(clock_models, tmp_path):
+    """Same name, different model: the old rows must neither count as done nor be selected on."""
+    name = "tiny_clock"
+    path = clock_models[name]
+    variants = {name: path}
+    grids = st.tau_grids(variants, [0.3, 0.7])
+    old_fp = st.artifact_fingerprint(path)
+    items = st.build_items(variants, TINY_ENVS[:1], [TINY_T], grids, TINY_CAP, 8)
+    rows: list[dict] = []
+    for item_rows in st.run_items(items, workers=1):
+        rows += item_rows
+    old = pd.DataFrame(rows)
+    assert (old["fingerprint"] == old_fp).all() and (old["k"] == 4).all()
+    done = st.done_keys(old)
+    assert st.build_items(variants, TINY_ENVS[:1], [TINY_T], grids, TINY_CAP, 8, done) == []
+
+    _retrain(path, k=2)
+    new_fp = st.artifact_fingerprint(path)
+    assert new_fp != old_fp
+    fingerprints = {name: new_fp}
+    # Resume sees the whole grid as undone ...
+    redo = st.build_items(
+        variants, TINY_ENVS[:1], [TINY_T], grids, TINY_CAP, 8, done, fingerprints=fingerprints
+    )
+    assert len(redo) == 1 and redo[0].taus == (0.3, 0.7) and redo[0].fingerprint == new_fp
+    # ... the old rows are dropped from the CSV ...
+    kept, n_stale = st.drop_stale_rows(old, fingerprints)
+    assert kept is None and n_stale == len(old)
+    # ... and never reach the JSON, even if they were still on disk.
+    artifacts = {name: st.load_model(path)}
+    assert artifacts[name]["k"] == 2
+    stale_only = st.build_thresholds(
+        old, artifacts, TINY_ENVS[:1], [TINY_T], grids, "val", 8, fingerprints
+    )
+    assert stale_only == {}
+    rows = []
+    for item_rows in st.run_items(redo, workers=1):
+        rows += item_rows
+    new = pd.DataFrame(rows)
+    assert (new["k"] == 2).all() and (new["fingerprint"] == new_fp).all()
+    both = pd.concat([old, new], ignore_index=True)
+    fresh = st.build_thresholds(
+        both, artifacts, TINY_ENVS[:1], [TINY_T], grids, "val", 8, fingerprints
+    )
+    assert fresh[name]["fingerprint"] == new_fp and fresh[name]["k"] == 2
+    assert fresh[name]["curve"] == pytest.approx(
+        {"0.3": float(new[new["tau"] == 0.3]["mean_regret"].mean()),
+         "0.7": float(new[new["tau"] == 0.7]["mean_regret"].mean())}
+    )
+    # A run planned against one file must not silently continue on another.
+    _retrain(path, k=3)
+    with pytest.raises(RuntimeError, match="changed under the run"):
+        st.run_item(redo[0])
+    # A CSV from before fingerprints existed is entirely unverifiable.
+    kept, n_stale = st.drop_stale_rows(old.drop(columns="fingerprint"), fingerprints)
+    assert kept is None and n_stale == len(old)
+
+
+def test_reservoir_rule_threshold_selection():
+    """The hand rule is selected on its own grid and written without tau_off / k."""
+    variants: dict[str, Path | None] = {st.RULE_VARIANT: None}
+    grids = st.tau_grids(variants, [0.3, 0.7], [0.25, 4.0])
+    assert grids == {st.RULE_VARIANT: (0.25, 4.0)}
+    fp = st.artifact_fingerprint(None)
+    assert fp.startswith("rule:") and fp == st.artifact_fingerprint(None)
+    items = st.build_items(variants, TINY_ENVS, [TINY_T], grids, TINY_CAP, 16)
+    assert len(items) == len(TINY_ENVS) and items[0].artifact_path is None
+    rows: list[dict] = []
+    for item_rows in st.run_items(items, workers=1):
+        rows += item_rows
+    df = pd.DataFrame(rows)
+    assert len(df) == len(TINY_ENVS) * 2
+    assert (df["variant"] == st.RULE_VARIANT).all() and (df["fingerprint"] == fp).all()
+    assert (df["k"] == -1).all() and df["tau_off"].isna().all()
+    assert (df[list(st.COUNTER_NAMES)] == -1).all().all()
+    assert (df["mean_n_demoted"] >= 0).all()  # the rule exposes last_decision
+    # A larger width multiplier searches less.
+    for _, grp in df.groupby("env"):
+        g = grp.sort_values("tau")
+        assert g["mean_search_frac"].iloc[0] >= g["mean_search_frac"].iloc[-1]
+    thresholds = st.build_thresholds(
+        df, {st.RULE_VARIANT: None}, TINY_ENVS, [TINY_T], grids, "val", 16, {st.RULE_VARIANT: fp}
+    )
+    entry = thresholds[st.RULE_VARIANT]
+    assert entry["kind"] == "rule" and "tau_off" not in entry and "k" not in entry
+    assert set(entry["curve"]) == {"0.25", "4"} and entry["tau_val"] in (0.25, 4.0)
+    expected = df.groupby("tau")["mean_regret"].mean()
+    assert entry["tau_val"] == pytest.approx(float(expected.idxmin()))
+    assert entry["taus"] == [0.25, 4.0]

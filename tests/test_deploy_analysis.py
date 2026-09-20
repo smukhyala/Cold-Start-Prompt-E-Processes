@@ -203,12 +203,18 @@ def test_main_table_rows_and_columns(cells, per_cell):
     assert pooled["n_cells"] == 3 and pooled["n_envs"] == 3
     # R_T = R_disc + R_sel holds for the table means.
     assert pooled["regret"] == pytest.approx(pooled["regret_disc"] + pooled["regret_sel"], abs=1e-9)
-    # The cluster-over-environments CI exists for the pooled block (3 environments) and
-    # brackets the planted effect; it is absent at the cell level (one environment).
-    assert pooled["d_regret_vs_cp0_cluster_lo"] <= PLANTED["phi_k16"] <= pooled["d_regret_vs_cp0_cluster_hi"]
+    # Three environments is below `CLUSTER_MIN_ENVS`, so no interval is emitted at all:
+    # the range ships under its own names and brackets the planted effect (ruling 21).
+    assert np.isnan(pooled["d_regret_vs_cp0_cluster_lo"])
+    assert np.isnan(pooled["d_regret_vs_cp0_cluster_hi"])
+    assert pooled["d_regret_vs_cp0_cluster_degenerate"]
+    assert (pooled["d_regret_vs_cp0_cluster_min_env"] <= PLANTED["phi_k16"]
+            <= pooled["d_regret_vs_cp0_cluster_max_env"])
     cell_rows = full[full["level"] == "cell"]
     assert set(cell_rows["cell"]) == {c.name for c in cells}
-    assert cell_rows["d_regret_vs_cp0_cluster_lo"].isna().all()
+    for col in ("cluster_lo", "cluster_hi", "cluster_min_env", "cluster_max_env"):
+        assert cell_rows[f"d_regret_vs_cp0_{col}"].isna().all(), col
+    assert not full["stratum_empty_common_support"].any()
 
 
 def test_primary_contrasts_has_exactly_three_rows_per_stratum(cells):
@@ -225,7 +231,10 @@ def test_primary_contrasts_has_exactly_three_rows_per_stratum(cells):
     assert pooled.loc["H1a", "lo"] <= PLANTED["phi_k16"] <= pooled.loc["H1a", "hi"]
     assert pooled.loc["H1b", "lo"] <= PLANTED["phi_k16"] - PLANTED["p3_star"] <= pooled.loc["H1b", "hi"]
     assert pooled.loc["H2", "lo"] <= PLANTED["phi_k16"] - PLANTED["phi_k16_quality"] <= pooled.loc["H2", "hi"]
-    assert np.isfinite(pooled.loc["H1a", "cluster_lo"]) and pooled.loc["H1a", "n_envs"] == 3
+    # 3 environments: degenerate, so the range -- not an interval -- is what ships.
+    assert pooled.loc["H1a", "n_envs"] == 3 and pooled.loc["H1a", "cluster_degenerate"]
+    assert np.isnan(pooled.loc["H1a", "cluster_lo"])
+    assert np.isfinite(pooled.loc["H1a", "cluster_min_env"])
 
 
 def _ragged_cells() -> list[ad.Cell]:
@@ -239,6 +248,84 @@ def _ragged_cells() -> list[ad.Cell]:
     del dropped.frames["phi_k16"]
     del dropped.groups["phi_k16"]
     return cells
+
+
+def _disjoint_cells() -> list[ad.Cell]:
+    """Two cells of one stratum whose policy sets do not overlap at all.
+
+    `common_cells` keeps only the cells carrying every policy deployed anywhere in the
+    stratum, so disjoint coverage empties the intersection -- the landmine ruling 23
+    stress-tested, and exactly what adding `cap` as a stratum dimension creates.
+    """
+    cells = [c for c in synthetic_cells(policies=("cp0", "p3_star", "phi_k16")) if c.family == "A"]
+    first, second = cells[0], cells[1]
+    for policy in ("p3_star", "phi_k16"):
+        del first.frames[policy]
+        del first.groups[policy]
+    del second.frames["cp0"]
+    del second.groups["cp0"]
+    return cells
+
+
+def test_an_empty_stratum_is_a_visible_row_and_a_non_zero_exit(tmp_path, caplog):
+    """Ruling 23: the stratum used to vanish from the CSV with only a log warning."""
+    cells = _disjoint_cells()
+    strata = ad.strata_of(cells)
+    empty = [s for s in strata if ad.stratum_is_empty(s)]
+    assert empty, "the fixture must actually empty a stratum"
+    assert all(s.level != "cell" for s in empty)
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    with caplog.at_level("ERROR", logger="deploy.analyze"):
+        main = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    assert any("EMPTY common support" in r.message for r in caplog.records)
+    dec = ad.decomposition_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+
+    for frame in (main, dec):
+        flagged = frame[frame["stratum_empty_common_support"]]
+        assert len(flagged) > 0
+        # Every stratum that emptied is present in the table, not missing from it.
+        assert {(r.level, r.family, r.horizon) for r in flagged.itertuples()} == {
+            (s.level, s.family, s.horizon) for s in empty
+        }
+        # ... and carries no number a reader could quote: only the zero support counts.
+        numeric = flagged.select_dtypes(include="number")
+        counts = [c for c in numeric.columns
+                  if c in ad.EMPTY_ROW_COUNTS or c.endswith(("_n_cells", "_n_excluded_untuned"))]
+        # The level's own support is zero -- that is what "empty" means. The counts that
+        # survive say where the policy DID run (n_cells_policy) and how many cells the
+        # paired contrast had; neither is a quotable result.
+        level_support = [c for c in ("n_cells", "n_envs", "n_episodes") if c in numeric.columns]
+        assert (numeric[level_support] == 0).all().all()
+        assert (numeric[counts] >= 0).all().all()
+        rest = numeric.drop(columns=counts)
+        assert rest.isna().all().all(), rest.columns[~rest.isna().all()].tolist()
+        # The populated strata are untouched.
+        assert not frame[~frame["stratum_empty_common_support"]]["regret"].isna().all()
+
+
+def test_strata_coverage_reports_the_dropped_cells_and_active_exclusions():
+    cells = _ragged_cells()
+    strata = ad.strata_of(cells)
+    exclusions = {
+        ("synthetic", cells[0].name, "phi_k16_quality"): rd.exclusion_record(
+            "synthetic", cells[0].name, "phi_k16_quality", "hours through the exact evaluator", "s"
+        )
+    }
+    cov = ad.strata_coverage("synthetic", cells, strata, exclusions)
+    assert len(cov) == len(strata)
+    assert set(cov["level"]) == {s.level for s in strata}
+    pooled = cov[cov["level"] == "pooled"].iloc[0]
+    # phi_k16 is missing from the (A, 200) cell, so the pooled common support drops it.
+    assert pooled["n_cells"] == 3 and pooled["n_common"] == 2
+    assert pooled["n_cells_dropped"] == 1
+    assert pooled["policies_ragged"] == "phi_k16"
+    assert not pooled["stratum_empty_common_support"]
+    # The deliberate exclusion is visible beside the stratum it touches, with its reason.
+    assert pooled["n_active_exclusions"] == 1
+    assert "phi_k16_quality" in pooled["active_exclusions"]
+    assert "hours through the exact evaluator" in pooled["active_exclusions"]
+    other = cov[(cov["level"] == "cell") & (cov["cell"] != cells[0].name)]
+    assert (other["n_active_exclusions"] == 0).all()
 
 
 def test_primary_contrasts_keep_three_rows_when_a_policy_is_missing():
@@ -364,8 +451,14 @@ def _cells_across_envs(n_envs: int, policies=("cp0", "p3_star", "phi_k16")) -> l
     return out
 
 
-def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
-    """F1: below `CLUSTER_MIN_ENVS` the percentile cluster CI IS [min env, max env]."""
+def test_a_degenerate_cluster_range_ships_under_its_own_column_names():
+    """Ruling 21: below `CLUSTER_MIN_ENVS` no interval is emitted, only a named range.
+
+    Disclosure was not enough -- a careful reader still quoted one of these as a 95% CI
+    (ledger correction C7). `cluster_lo`/`cluster_hi` are now NaN there and the range
+    ships as `cluster_min_env`/`cluster_max_env`, so the wrong reading is unavailable
+    rather than flagged.
+    """
     assert ad.CLUSTER_MIN_ENVS == 4
     for n_envs in (2, 3):
         cells = _cells_across_envs(n_envs)
@@ -374,9 +467,10 @@ def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
         a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
         env_means = [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells]
         assert a["n_envs"] == n_envs and a["cluster_degenerate"] is True
-        # The arithmetic the flag is about: the interval is the range of the env means.
-        assert a["cluster_lo"] == pytest.approx(min(env_means), abs=1e-12)
-        assert a["cluster_hi"] == pytest.approx(max(env_means), abs=1e-12)
+        assert np.isnan(a["cluster_lo"]) and np.isnan(a["cluster_hi"])
+        # The range is the range of the environment means, and says so in its name.
+        assert a["cluster_min_env"] == pytest.approx(min(env_means), abs=1e-12)
+        assert a["cluster_max_env"] == pytest.approx(max(env_means), abs=1e-12)
 
     cells = _cells_across_envs(5)
     per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, N_BOOT) for c in cells}
@@ -386,11 +480,14 @@ def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
     env_means = [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells]
     assert a["n_envs"] == 5 and a["cluster_degenerate"] is False
     assert a["cluster_lo"] > min(env_means) and a["cluster_hi"] < max(env_means)
+    assert np.isnan(a["cluster_min_env"]) and np.isnan(a["cluster_max_env"])
     # A row with no cluster interval at all is not "degenerate", it is empty.
     cell_level = next(s for s in strata if s.level == "cell")
-    assert not ad.aggregate(per_cell, cell_level, "phi_k16", "d_regret_vs_cp0")["cluster_degenerate"]
+    empty = ad.aggregate(per_cell, cell_level, "phi_k16", "d_regret_vs_cp0")
+    assert not empty["cluster_degenerate"]
+    assert np.isnan(empty["cluster_min_env"]) and np.isnan(empty["cluster_max_env"])
 
-    # Every table that carries cluster bounds carries the flag beside them.
+    # Every table that carries cluster bounds carries the flag and the range beside them.
     cells3 = _cells_across_envs(3)
     per3 = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 400) for c in cells3}
     strata3 = ad.strata_of(cells3)
@@ -398,14 +495,22 @@ def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
     pc = ad.primary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells3, strata3, 400)
     sc = ad.secondary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells3, per3, strata3)
     for ref in ("cp0", "p3_star"):
-        assert f"d_regret_vs_{ref}_cluster_degenerate" in main.columns
+        for key in ad.CLUSTER_KEYS:
+            assert f"d_regret_vs_{ref}_{key}" in main.columns, key
     pooled_row = main[(main["level"] == "pooled") & (main["policy"] == "phi_k16")].iloc[0]
     assert pooled_row["d_regret_vs_cp0_cluster_degenerate"]
+    assert np.isnan(pooled_row["d_regret_vs_cp0_cluster_lo"])
+    assert np.isfinite(pooled_row["d_regret_vs_cp0_cluster_min_env"])
     pooled_pc = pc[(pc["level"] == "pooled") & pc["evaluated"]]
     assert len(pooled_pc) == 2 and pooled_pc["cluster_degenerate"].all()  # H1a, H1b (H2 absent)
+    assert pooled_pc["cluster_lo"].isna().all()
+    assert np.isfinite(pooled_pc["cluster_min_env"]).all()
     assert sc[sc["level"] == "pooled"]["cluster_degenerate"].all()
     # A row with no contrast at all (H2 here) has no interval, so it is not "degenerate".
     assert not pc[~pc["evaluated"]]["cluster_degenerate"].any()
+    # No shipped table may carry a bound without the degeneracy flag beside it.
+    for frame in (pc, sc):
+        assert set(ad.CLUSTER_KEYS) <= set(frame.columns)
 
 
 def test_mark_untuned_baselines_reads_the_json_and_the_manifest(caplog):
@@ -999,7 +1104,7 @@ def test_cli_refuses_main_tables_without_the_parity_gate(tmp_path, cells):
                  "secondary_contrasts_smoke_primary.csv", "decomposition_smoke_primary.csv",
                  "offline_vs_deployed_smoke.csv", "surrogate_validity_smoke.csv", "tau_curves_smoke.csv",
                  "recommender_sensitivity_smoke.csv", "recommender_kendall_smoke.csv",
-                 "dynamics_smoke.csv", "cap_demotion_smoke.csv"):
+                 "dynamics_smoke.csv", "cap_demotion_smoke.csv", "strata_coverage_smoke.csv"):
         assert (tables / name).exists(), name
     main = pd.read_csv(tables / "main_smoke_primary.csv")
     assert set(main["level"]) == {"family_horizon", "family", "horizon", "pooled"}
@@ -1066,6 +1171,33 @@ def test_cli_refuses_main_tables_when_a_parity_column_fails(tmp_path, cells, mon
     # --allow-unverified does not override a *failed* gate (only an absent one).
     assert ad.main(argv + ["--skip-snapshots", "--allow-unverified"])["gate_ok"] is False
     assert not (tables / "main_smoke_primary.csv").exists()
+
+
+def test_cli_exits_non_zero_on_an_empty_stratum_but_writes_it_first(tmp_path):
+    """Ruling 23 through the CLI: the tables are written, then the run fails.
+
+    Written first on purpose -- a reader has to be able to see WHICH stratum emptied,
+    which is what `strata_coverage_<test>.csv` is for.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, _disjoint_cells())
+    argv = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--allow-unverified", "--recommender", PRIMARY_RECOMMENDER]
+    with pytest.raises(SystemExit, match="EMPTY common support"):
+        ad.main(argv)
+    tables = out / "tables"
+    cov = pd.read_csv(tables / "strata_coverage_smoke.csv")
+    assert cov["stratum_empty_common_support"].any()
+    voided = cov[cov["stratum_empty_common_support"]]
+    assert (voided["n_common"] == 0).all() and (voided["level"] != "cell").all()
+    assert voided["policies_ragged"].str.len().gt(0).all()
+    main = pd.read_csv(tables / "main_smoke_primary.csv")
+    assert main["stratum_empty_common_support"].any()
+    assert main[main["stratum_empty_common_support"]]["regret"].isna().all()
+
+    result = ad.main(argv + ["--allow-empty-strata"])
+    assert result["empty_strata"], result
+    assert all("cell" not in name for name in result["empty_strata"])
 
 
 def test_cli_single_recommender_keeps_cross_recommender_tables(tmp_path, cells):

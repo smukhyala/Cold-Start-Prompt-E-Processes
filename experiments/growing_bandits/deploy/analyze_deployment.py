@@ -615,15 +615,55 @@ LEVEL_QUANTITIES: frozenset[str] = frozenset({"regret", "regret_disc", "regret_s
 #: ``n`` times has probability ``n**-n``: 25% at n=2, 3.7% at n=3, 0.39% at n=4. While
 #: that exceeds 2.5%, the 2.5th percentile IS the smallest environment mean and the
 #: 97.5th IS the largest, so the "95% interval" is exactly [min env mean, max env mean]
-#: and "cluster-significant" degrades to "every environment agrees in sign". The bounds
-#: are still emitted -- shipped text already cites them -- but every table that carries
-#: them also carries ``cluster_degenerate`` so a reader can tell the two apart.
+#: and "cluster-significant" degrades to "every environment agrees in sign". Below this
+#: many environments `cluster_bounds` therefore emits the range under its own names,
+#: ``cluster_min_env`` / ``cluster_max_env``, leaving ``cluster_lo`` / ``cluster_hi`` NaN
+#: so the range cannot be quoted as an interval; ``cluster_degenerate`` still flags it.
 CLUSTER_MIN_ENVS = 4
 
 
 def cluster_is_degenerate(n_envs: int, lo: float) -> bool:
     """Whether an emitted cluster interval is the [min, max] range (`CLUSTER_MIN_ENVS`)."""
     return bool(np.isfinite(lo)) and int(n_envs) < CLUSTER_MIN_ENVS
+
+
+#: Every cluster column a table carries, so a caller can NaN them all out in one place.
+CLUSTER_KEYS: tuple[str, ...] = (
+    "cluster_lo", "cluster_hi", "cluster_min_env", "cluster_max_env", "cluster_degenerate",
+)
+
+
+def cluster_bounds(cm: pd.DataFrame, *, n_boot: int, seed: int) -> dict:
+    """The environment-level interval for `cm` (columns ``env_id``, ``value``).
+
+    Below `CLUSTER_MIN_ENVS` the percentile bootstrap does not produce an interval: the
+    2.5th percentile IS the smallest environment mean and the 97.5th IS the largest, so
+    the "95% CI" is exactly [min env mean, max env mean]. Flagging that was not enough --
+    a careful reader still quoted one as a 95% interval (ledger correction C7: "C's
+    reported cluster CI [-0.003446, -0.000079] IS [min env mean, max env mean] to full
+    float precision"). So the range now ships under DIFFERENTLY NAMED columns,
+    ``cluster_min_env`` / ``cluster_max_env``, and ``cluster_lo`` / ``cluster_hi`` are
+    NaN: the wrong reading is unavailable rather than merely disclosed, and a downstream
+    script that quotes ``cluster_lo`` gets NaN instead of a number that means something
+    else. ``cluster_degenerate`` stays, so the old flag still reads True on those rows.
+
+    The range is taken from the environment means directly, not from the bootstrap's
+    percentiles, so it says what it is named regardless of resample count.
+    """
+    n_envs = int(cm["env_id"].nunique())
+    out = {"n_envs": n_envs, "cluster_lo": np.nan, "cluster_hi": np.nan,
+           "cluster_min_env": np.nan, "cluster_max_env": np.nan, "cluster_degenerate": False}
+    if n_envs < 2:
+        return out
+    cb = stats.cluster_bootstrap_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed)
+    if cluster_is_degenerate(n_envs, cb["lo"]):
+        env_means = cm.groupby("env_id")["value"].mean()
+        out["cluster_min_env"] = float(env_means.min())
+        out["cluster_max_env"] = float(env_means.max())
+        out["cluster_degenerate"] = True
+        return out
+    out["cluster_lo"], out["cluster_hi"] = cb["lo"], cb["hi"]
+    return out
 
 
 def contrast_reference(quantity: str) -> str | None:
@@ -683,8 +723,9 @@ def aggregate(
     have = [per_cell[c] for c in present]
     if not have:
         return {"mean": np.nan, "lo": np.nan, "hi": np.nan, "se": np.nan, "win": np.nan,
-                "n_cells": 0, "n_episodes": 0, "n_envs": 0, "cluster_lo": np.nan,
-                "cluster_hi": np.nan, "cluster_degenerate": False, **flags}
+                "n_cells": 0, "n_episodes": 0, "n_envs": 0,
+                **{k: (False if k == "cluster_degenerate" else np.nan) for k in CLUSTER_KEYS},
+                **flags}
     means = np.array([cs.mean[key] for cs in have])
     ses = np.array([cs.se[key] for cs in have])
     boot = np.mean([cs.boot[key].astype(np.float64) for cs in have], axis=0)
@@ -698,20 +739,37 @@ def aggregate(
         "n_cells": len(have),
         "n_episodes": int(sum(cs.cell.n for cs in have)),
         "n_envs": len({cs.cell.env_id for cs in have}),
-        "cluster_lo": np.nan,
-        "cluster_hi": np.nan,
+        **{k: (False if k == "cluster_degenerate" else np.nan) for k in CLUSTER_KEYS},
         **flags,
     }
     envs = [cs.cell.env_id for cs in have]
-    if len(set(envs)) >= 2 and stratum.level != "cell":
+    if stratum.level != "cell":
         cm = pd.DataFrame({"env_id": envs, "value": means})
-        cb = stats.cluster_bootstrap_over_envs(
-            cm, "env_id", "value", n_boot=min(have[0].boot[key].shape[0], 10_000),
+        bounds = cluster_bounds(
+            cm, n_boot=min(have[0].boot[key].shape[0], 10_000),
             seed=_seed("cluster", stratum.level, stratum.family, stratum.horizon, policy, quantity),
         )
-        out["cluster_lo"], out["cluster_hi"] = cb["lo"], cb["hi"]
-    out["cluster_degenerate"] = cluster_is_degenerate(out["n_envs"], out["cluster_lo"])
+        out.update({k: bounds[k] for k in CLUSTER_KEYS})
     return out
+
+
+#: Every key `descriptive_means` produces, so an empty stratum can be written as a row of
+#: NaNs with the same columns as a populated one.
+DESCRIPTIVE_KEYS: tuple[str, ...] = (
+    *DESCRIPTIVE_MEANS, "q", "n_rec", "n_demoted", "t_cap_hit_given_hit",
+)
+
+
+def stratum_is_empty(stratum: Stratum) -> bool:
+    """Whether the stratum's common support is empty, so no row of it is comparable.
+
+    `common_cells` keeps only the cells that carry *every* policy deployed anywhere in
+    the stratum; disjoint coverage empties that intersection. Before this the stratum
+    then vanished from the CSV with nothing visible in it and only a log warning (ledger
+    ruling 23) -- a table silently missing a stratum, which is the failure that is
+    impossible to notice downstream.
+    """
+    return stratum.common is not None and len(stratum.common) == 0
 
 
 def descriptive_for(per_cell: dict[str, CellStats], stratum: Stratum, policy: str) -> dict:
@@ -724,7 +782,7 @@ def descriptive_for(per_cell: dict[str, CellStats], stratum: Stratum, policy: st
     names = _level_cells(stratum)
     have = [per_cell[c] for c in names if c in per_cell and policy in per_cell[c].descriptive]
     if not have:
-        return {}
+        return dict.fromkeys(DESCRIPTIVE_KEYS, float("nan")) if stratum_is_empty(stratum) else {}
     keys = list(have[0].descriptive[policy])
     out: dict[str, float] = {}
     for k in keys:
@@ -751,6 +809,84 @@ def policy_group(policy: str, cells: list[Cell]) -> str:
     return pt.POLICIES.get(policy, {}).get("group", "?")
 
 
+#: The only numbers an empty-stratum row keeps: they are the evidence that it is empty
+#: (all zero), not a result anyone could quote. Everything else in such a row is NaN.
+EMPTY_ROW_COUNTS: frozenset[str] = frozenset({"n_cells", "n_envs", "n_episodes", "n_cells_policy"})
+
+
+def _void_empty_strata(frame: pd.DataFrame) -> pd.DataFrame:
+    """NaN every result number of a row whose stratum has an empty common support.
+
+    A contrast is paired within a cell, so `aggregate` can still put a number on such a
+    row (cp0 against itself, say) although the stratum has no comparable support at all.
+    Leaving it there is how a void stratum gets quoted. The row stays -- that is the
+    whole point of ruling 23 -- and carries `stratum_empty_common_support` plus its zero
+    support counts, but nothing that looks like a result.
+    """
+    if "stratum_empty_common_support" not in frame.columns:
+        return frame
+    mask = frame["stratum_empty_common_support"].to_numpy(dtype=bool)
+    if not mask.any():
+        return frame
+    voided = [
+        c for c in frame.select_dtypes(include="number").columns
+        if c not in EMPTY_ROW_COUNTS and not c.endswith(("_n_cells", "_n_excluded_untuned"))
+    ]
+    frame = frame.copy()
+    frame[voided] = frame[voided].astype(float)
+    frame.loc[mask, voided] = np.nan
+    return frame
+
+
+def _ran_in(policy: str, stratum: Stratum, cells_by_name: dict[str, Cell]) -> bool:
+    """Whether `policy` produced episodes anywhere in the stratum's cells."""
+    return any(
+        policy in cells_by_name[name].frames for name in stratum.cells if name in cells_by_name
+    )
+
+
+def strata_coverage(
+    test: str, cells: list[Cell], strata: list[Stratum], exclusions: dict | None = None
+) -> pd.DataFrame:
+    """One row per stratum: what it pools, what the common support dropped, what is excluded.
+
+    The table a reader consults before quoting a level. It makes three things visible
+    that were previously only in a log line or nowhere at all: how many of a stratum's
+    cells survive the common-support intersection, which policies' ragged coverage
+    caused the drop, and every *deliberate* exclusion recorded in the manifest
+    (`run_deployment.exclusion_record`) that touches the stratum -- so an exclusion
+    cannot be used to make a number look better without leaving a trace beside it.
+    """
+    cells_by_name = {c.name: c for c in cells}
+    active: dict[str, list[str]] = {}
+    for (rec_test, cell, policy), record in (exclusions or {}).items():
+        if rec_test == test:
+            active.setdefault(cell, []).append(f"{policy} ({record.get('reason')})")
+    rows: list[dict] = []
+    for s in strata:
+        names = [n for n in s.cells if n in cells_by_name]
+        common = set(_level_cells(s))
+        everywhere = set.intersection(*(set(cells_by_name[n].frames) for n in names)) if names else set()
+        anywhere = set().union(*(set(cells_by_name[n].frames) for n in names)) if names else set()
+        rows.append({
+            "test": test, "level": s.level, "family": s.family, "horizon": s.horizon,
+            "cell": s.cell,
+            "n_cells": len(s.cells),
+            "n_common": len(common),
+            "n_cells_dropped": len(s.cells) - len(common),
+            "cells_dropped": ";".join(sorted(set(s.cells) - common)),
+            "n_policies_anywhere": len(anywhere),
+            "n_policies_everywhere": len(everywhere),
+            "policies_ragged": ";".join(sorted(anywhere - everywhere)),
+            "stratum_empty_common_support": stratum_is_empty(s),
+            "n_active_exclusions": sum(len(active.get(n, ())) for n in names),
+            "active_exclusions": ";".join(
+                f"{n}/{item}" for n in sorted(names) for item in sorted(active.get(n, ()))
+            ),
+        })
+    return pd.DataFrame(rows)
+
+
 def main_table(
     test: str, rec: str, cells: list[Cell], per_cell: dict[str, CellStats], strata: list[Stratum]
 ) -> pd.DataFrame:
@@ -769,7 +905,16 @@ def main_table(
     policies = sorted({p for c in cells for p in c.policies})
     rows: list[dict] = []
     for s in strata:
+        empty = stratum_is_empty(s)
+        if empty:
+            log.error(
+                "%s %s/%s: EMPTY common support over %d cells; its rows are written with "
+                "every number NaN and stratum_empty_common_support = True",
+                s.level, s.family, s.horizon, len(s.cells),
+            )
         for policy in policies:
+            if empty and not _ran_in(policy, s, cells_by_name):
+                continue
             desc = descriptive_for(per_cell, s, policy)
             if not desc:
                 if any(policy in cells_by_name[c].frames for c in s.cells if c in cells_by_name):
@@ -780,7 +925,8 @@ def main_table(
                     )
                 continue
             row = _stratum_meta(test, rec, s, cells_by_name)
-            row.update({"policy": policy, "group": policy_group(policy, cells)})
+            row.update({"policy": policy, "group": policy_group(policy, cells),
+                        "stratum_empty_common_support": empty})
             reg = aggregate(per_cell, s, policy, "regret")
             row.update({
                 "n_cells": reg["n_cells"], "n_envs": reg["n_envs"], "n_episodes": reg["n_episodes"],
@@ -803,12 +949,14 @@ def main_table(
                     p: d["mean"], f"{p}_lo": d["lo"], f"{p}_hi": d["hi"], f"{p}_se": d["se"],
                     f"{p}_win": d["win"], f"{p}_cluster_lo": d["cluster_lo"],
                     f"{p}_cluster_hi": d["cluster_hi"], f"{p}_n_cells": d["n_cells"],
+                    f"{p}_cluster_min_env": d["cluster_min_env"],
+                    f"{p}_cluster_max_env": d["cluster_max_env"],
                     f"{p}_cluster_degenerate": d["cluster_degenerate"],
                     f"{p}_ref_tuned": d["ref_tuned"],
                     f"{p}_n_excluded_untuned": d["n_cells_excluded_untuned"],
                 })
             rows.append(row)
-    return pd.DataFrame(rows)
+    return _void_empty_strata(pd.DataFrame(rows))
 
 
 def decomposition_table(
@@ -820,12 +968,14 @@ def decomposition_table(
     policies = sorted({p for c in cells for p in c.policies})
     rows: list[dict] = []
     for s in strata:
+        empty = stratum_is_empty(s)
         for policy in policies:
             reg = aggregate(per_cell, s, policy, "regret")
-            if reg["n_cells"] == 0:
+            if reg["n_cells"] == 0 and not (empty and _ran_in(policy, s, cells_by_name)):
                 continue
             row = _stratum_meta(test, rec, s, cells_by_name)
-            row.update({"policy": policy, "group": policy_group(policy, cells),
+            row.update({"stratum_empty_common_support": empty,
+                        "policy": policy, "group": policy_group(policy, cells),
                         "n_cells": reg["n_cells"], "n_episodes": reg["n_episodes"],
                         "n_cells_policy": reg["n_cells_policy"],
                         "common_support": reg["common_support"], "params_tuned": reg["params_tuned"],
@@ -839,7 +989,7 @@ def decomposition_table(
                     row.update({"cp0_ref_tuned": a["ref_tuned"],
                                 "cp0_n_excluded_untuned": a["n_cells_excluded_untuned"]})
             rows.append(row)
-    return pd.DataFrame(rows)
+    return _void_empty_strata(pd.DataFrame(rows))
 
 
 # ---- contrasts ------------------------------------------------------------------------------
@@ -903,8 +1053,9 @@ def contrast_via_stats(
     if not diffs:
         return {"status": missing_status(cells, s, policy, ref),
                 "delta": np.nan, "lo": np.nan, "hi": np.nan, "se": np.nan, "win": np.nan,
-                "n_cells": 0, "n_episodes": 0, "n_envs": 0, "cluster_lo": np.nan,
-                "cluster_hi": np.nan, "cluster_degenerate": False, **flags}
+                "n_cells": 0, "n_episodes": 0, "n_envs": 0,
+                **{k: (False if k == "cluster_degenerate" else np.nan) for k in CLUSTER_KEYS},
+                **flags}
     seed = _seed("primary", s.level, s.family, s.horizon, s.cell, policy, ref, rec)
     if len(diffs) == 1:
         d = next(iter(diffs.values()))
@@ -919,16 +1070,11 @@ def contrast_via_stats(
         cell_means = b["cell_means"]
     env_of = {c.name: c.env_id for c in cells}
     cm = pd.DataFrame({"env_id": [env_of[n] for n in cell_means], "value": list(cell_means.values())})
-    cluster_lo = cluster_hi = np.nan
-    if cm["env_id"].nunique() >= 2:
-        cb = stats.cluster_bootstrap_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed + 1)
-        cluster_lo, cluster_hi = cb["lo"], cb["hi"]
+    bounds = cluster_bounds(cm, n_boot=n_boot, seed=seed + 1)
     status = "ok" if ref_tuned else "untuned_reference"
-    n_envs = int(cm["env_id"].nunique())
     return {"status": status, "delta": mean, "lo": lo, "hi": hi, "se": se, "win": win,
             "n_cells": len(diffs), "n_episodes": int(sum(d.size for d in diffs.values())),
-            "n_envs": n_envs, "cluster_lo": cluster_lo, "cluster_hi": cluster_hi,
-            "cluster_degenerate": cluster_is_degenerate(n_envs, cluster_lo), **flags}
+            "n_envs": bounds["n_envs"], **{k: bounds[k] for k in CLUSTER_KEYS}, **flags}
 
 
 def primary_contrasts(
@@ -973,9 +1119,8 @@ def secondary_contrasts(
                             "status": "ok" if a["ref_tuned"] else "untuned_reference",
                             "delta": a["mean"], "lo": a["lo"], "hi": a["hi"], "se": a["se"],
                             "win": a["win"], "n_cells": a["n_cells"], "n_episodes": a["n_episodes"],
-                            "n_envs": a["n_envs"], "cluster_lo": a["cluster_lo"],
-                            "cluster_hi": a["cluster_hi"],
-                            "cluster_degenerate": a["cluster_degenerate"], "evaluated": True,
+                            "n_envs": a["n_envs"],
+                            **{k: a[k] for k in CLUSTER_KEYS}, "evaluated": True,
                             "ref_tuned": a["ref_tuned"], "params_tuned": a["params_tuned"],
                             "n_cells_excluded_untuned": a["n_cells_excluded_untuned"]})
                 rows.append(row)
@@ -1439,6 +1584,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
                         "onpolicy_parity table (the same policies and feature layer) as the gate")
     p.add_argument("--allow-unverified", action="store_true",
                    help="write main tables even when no on-policy snapshots exist to verify parity")
+    p.add_argument("--allow-empty-strata", action="store_true",
+                   help="do not exit non-zero when a stratum above cell level has an empty "
+                        "common support (its rows are written as NaN either way)")
     p.add_argument("--allow-mixed-sim", action="store_true",
                    help="analyse a test whose episodes were produced by more than one "
                         "simulation-surface fingerprint (run_deployment.sim_surface_sha)")
@@ -1557,6 +1705,10 @@ def main(argv: list[str] | None = None) -> dict:
 
     # ---- 2. main tables per recommender ------------------------------------------------------
     strata = strata_of(cells)
+    exclusions = rd.active_exclusions(rd.read_manifest(rd.manifest_path(out_dir, test)))
+    written.append(write_csv(strata_coverage(test, cells, strata, exclusions),
+                             tables_dir / f"strata_coverage_{test}.csv"))
+    empty_strata = [s for s in strata if stratum_is_empty(s)]
     main_by_rec: dict[str, pd.DataFrame] = {}
     cells_by_rec: dict[str, pd.DataFrame] = {}
     for rec in recs:
@@ -1611,7 +1763,29 @@ def main(argv: list[str] | None = None) -> dict:
         written.append(write_csv(extra, tables_dir / f"{PER_TEST_TABLE_NAMES[test]}.csv"))
 
     log.info("test %s: %d tables in %.1fs", test, len(written), time.time() - t_run)
-    return {"test": test, "gate_ok": gate_ok, "n_states": n_states, "written": [str(p) for p in written]}
+    result = {"test": test, "gate_ok": gate_ok, "n_states": n_states,
+              "empty_strata": [f"{s.level} {s.family}/{s.horizon}" for s in empty_strata],
+              "written": [str(p) for p in written]}
+    # Ruling 23: a stratum whose common support emptied used to vanish from the CSV with
+    # nothing visible in it. Its rows are now written, every number NaN and
+    # `stratum_empty_common_support` True -- and the run fails, so the hole cannot be
+    # shipped unnoticed. The refusal is scoped above the cell level, where an empty
+    # stratum moves a headline; at cell level it is a warning, because a default that
+    # everyone passes --allow-empty-strata to get past is worth nothing.
+    hard = [s for s in empty_strata if s.level != "cell"]
+    soft = [s for s in empty_strata if s.level == "cell"]
+    for s in soft:
+        log.warning("cell stratum %s has an empty common support", s.cell)
+    if hard and not args.allow_empty_strata:
+        raise SystemExit(
+            f"test {test}: {len(hard)} stratum/strata above cell level have an EMPTY common "
+            f"support ({', '.join(result['empty_strata'])}). Their rows are in the tables with "
+            f"every number NaN; see strata_coverage_{test}.csv. Pass --allow-empty-strata to "
+            "accept them."
+        )
+    if hard:
+        log.error("--allow-empty-strata: %d empty stratum/strata accepted", len(hard))
+    return result
 
 
 def cross_recommender_frames(

@@ -1102,10 +1102,13 @@ def test_cli_refuses_main_tables_without_the_parity_gate(tmp_path, cells):
     tables = out / "tables"
     for name in ("main_smoke_primary.csv", "cells_smoke_primary.csv", "primary_contrasts_smoke_primary.csv",
                  "secondary_contrasts_smoke_primary.csv", "decomposition_smoke_primary.csv",
-                 "offline_vs_deployed_smoke.csv", "surrogate_validity_smoke.csv", "tau_curves_smoke.csv",
-                 "recommender_sensitivity_smoke.csv", "recommender_kendall_smoke.csv",
                  "dynamics_smoke.csv", "cap_demotion_smoke.csv", "strata_coverage_smoke.csv"):
         assert (tables / name).exists(), name
+    # The five cross-recommender tables need --recommender all and nothing backfills
+    # them from disk, so a single-recommender run does not produce them (4.4).
+    for base_name in ad.CROSS_RECOMMENDER_TABLES:
+        assert not (tables / ad.table_name(base_name, "smoke")).exists(), base_name
+    assert result["cross_recommender"] is False
     main = pd.read_csv(tables / "main_smoke_primary.csv")
     assert set(main["level"]) == {"family_horizon", "family", "horizon", "pooled"}
     pc = pd.read_csv(tables / "primary_contrasts_smoke_primary.csv")
@@ -1200,24 +1203,40 @@ def test_cli_exits_non_zero_on_an_empty_stratum_but_writes_it_first(tmp_path):
     assert all("cell" not in name for name in result["empty_strata"])
 
 
-def test_cli_single_recommender_keeps_cross_recommender_tables(tmp_path, cells):
+def test_a_single_recommender_run_does_not_touch_the_cross_recommender_tables(tmp_path, cells):
+    """4.4: the disk backfill is gone; these five tables need --recommender all.
+
+    `cross_recommender_frames` used to complete any recommender not computed in the run
+    by reading its main/cells table off disk with no freshness check at all. Immediately
+    after the ruling-22 quarantine, `--test D --recommender primary` would have
+    recomputed the primary recommender on the corrected 16-policy episode set while
+    silently backfilling four recommenders computed on the contaminated 19-policy one.
+    A single-recommender run must now leave the five tables exactly as it found them.
+    """
     out = tmp_path / "deploy"
     _write_synthetic_run(out, cells)
     tables = out / "tables"
-    base = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1", "--allow-unverified"]
-    ad.main(base)
+    base = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--allow-unverified"]
+    full = ad.main(base)
+    assert full["cross_recommender"] is True
+    names = [ad.table_name(base_name, "smoke") for base_name in ad.CROSS_RECOMMENDER_TABLES]
+    before = {name: (tables / name).read_bytes() for name in names}
     kendall_all = pd.read_csv(tables / "recommender_kendall_smoke.csv")
     ovd_all = pd.read_csv(tables / "offline_vs_deployed_smoke.csv")
     assert len(kendall_all) > 0 and set(ovd_all["recommender"]) == set(RECOMMENDER_NAMES)
-    # A single-recommender re-run must rebuild the cross-recommender tables from every
-    # per-recommender table on disk, not shrink them to one recommender.
-    ad.main(base + ["--recommender", "lcb"])
-    kendall_one = pd.read_csv(tables / "recommender_kendall_smoke.csv")
-    ovd_one = pd.read_csv(tables / "offline_vs_deployed_smoke.csv")
-    ranks = pd.read_csv(tables / "recommender_sensitivity_smoke.csv")
-    assert len(kendall_one) == len(kendall_all) and set(ovd_one["recommender"]) == set(RECOMMENDER_NAMES)
-    assert set(ranks["recommender"]) == set(RECOMMENDER_NAMES)
-    pd.testing.assert_frame_equal(kendall_one, kendall_all)
+
+    one = ad.main(base + ["--recommender", "lcb"])
+    assert one["cross_recommender"] is False
+    assert not any(Path(w).name in set(names) for w in one["written"])
+    assert {name: (tables / name).read_bytes() for name in names} == before
+
+    # ... and a later --recommender all run rebuilds them from that run alone.
+    again = ad.main(base)
+    assert again["cross_recommender"] is True
+    pd.testing.assert_frame_equal(
+        pd.read_csv(tables / "recommender_kendall_smoke.csv"), kendall_all
+    )
 
 
 # ---- figures ---------------------------------------------------------------------------------------------

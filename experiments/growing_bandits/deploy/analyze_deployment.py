@@ -97,6 +97,14 @@ A_NAMED_TABLES: frozenset[str] = frozenset(
     {"offline_vs_deployed", "surrogate_validity", "tau_curves", "recommender_sensitivity",
      "recommender_kendall", "onpolicy_parity", "onpolicy_parity_detail", "ood_flags"}
 )
+#: The tables built from EVERY recommender's rows at once. They are written only by a
+#: `--recommender all` run; nothing backfills a missing recommender from disk (finding
+#: 4.4 -- the backfill had no freshness check and would have mixed a corrected episode
+#: set with a contaminated one).
+CROSS_RECOMMENDER_TABLES: tuple[str, ...] = (
+    "offline_vs_deployed", "surrogate_validity", "tau_curves",
+    "recommender_sensitivity", "recommender_kendall",
+)
 PER_TEST_TABLE_NAMES: dict[str, str] = {
     "D": "transfer_D", "C": "heldout_C", "B": "regime_B", "cap": "cap_sweep",
 }
@@ -1566,7 +1574,10 @@ def prebuild_tables(cells: list[Cell]) -> None:
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--test", required=True, choices=rd.TESTS)
-    p.add_argument("--recommender", default="all", help="all | one of " + ", ".join(RECOMMENDER_NAMES))
+    p.add_argument("--recommender", default="all",
+                   help="all | one of " + ", ".join(RECOMMENDER_NAMES)
+                        + " (a single recommender does NOT write the cross-recommender tables: "
+                        + ", ".join(CROSS_RECOMMENDER_TABLES) + ")")
     p.add_argument("--n-boot", type=int, default=10_000)
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     p.add_argument("--tables-dir", type=Path, default=None, help="default: <out-dir>/tables")
@@ -1730,24 +1741,45 @@ def main(argv: list[str] | None = None) -> dict:
         log.info("recommender %s: tables in %.1fs", rec, time.perf_counter() - t0)
         del per_cell
 
-    main_all, cells_all = cross_recommender_frames(tables_dir, test, recs_present, main_by_rec, cells_by_rec)
+    # ---- 3. cross-recommender tables (only from a complete run) ----------------------------
+    # These five read EVERY recommender's rows. They used to be completed from whatever
+    # per-recommender tables happened to be on disk, with no freshness check of any kind
+    # (`cross_recommender_frames`, deleted). The near-miss is concrete: immediately after
+    # the ruling-22 quarantine, `--test D --recommender primary` would have recomputed
+    # the primary recommender on the corrected 16-policy episode set while silently
+    # backfilling four recommenders computed on the contaminated 19-policy set -- the
+    # same corruption as rulings 17 and 22, one layer up, and invisible to the episode
+    # reconciler because it happens at the table layer. An mtime fingerprint would fire
+    # spuriously on `git checkout` or rsync and acquire a --force that stays on, so the
+    # backfill is simply gone: these tables need --recommender all, which is what the
+    # RUNBOOK already runs for every test.
+    if set(recs) != set(recs_present):
+        log.warning(
+            "--recommender %s: the five cross-recommender tables (%s) are NOT written; "
+            "they need every recommender in one run -- re-run with --recommender all. "
+            "Any copies on disk are left untouched and are now older than these tables.",
+            args.recommender,
+            ", ".join(CROSS_RECOMMENDER_TABLES),
+        )
+    else:
+        main_all = pd.concat([main_by_rec[r] for r in recs], ignore_index=True)
+        cells_all = pd.concat([cells_by_rec[r] for r in recs], ignore_index=True)
+        offline_path = out_dir / "offline_metrics.csv"
+        offline_metrics = pd.read_csv(offline_path) if offline_path.exists() else None
+        ovd, validity = offline_vs_deployed(test, main_all, offline_metrics)
+        written.append(write_csv(ovd, tables_dir / table_name("offline_vs_deployed", test)))
+        written.append(write_csv(validity, tables_dir / table_name("surrogate_validity", test)))
 
-    # ---- 3. cross-cutting tables -------------------------------------------------------------------
-    offline_path = out_dir / "offline_metrics.csv"
-    offline_metrics = pd.read_csv(offline_path) if offline_path.exists() else None
-    ovd, validity = offline_vs_deployed(test, main_all, offline_metrics)
-    written.append(write_csv(ovd, tables_dir / table_name("offline_vs_deployed", test)))
-    written.append(write_csv(validity, tables_dir / table_name("surrogate_validity", test)))
+        ts_path = out_dir / "threshold_selection.csv"
+        ts = pd.read_csv(ts_path) if ts_path.exists() else None
+        if ts is None:
+            log.warning("%s absent: tau_curves holds only the post-hoc test points", ts_path.name)
+        written.append(write_csv(tau_curves(test, main_all, ts, manifest),
+                                 tables_dir / table_name("tau_curves", test)))
 
-    ts_path = out_dir / "threshold_selection.csv"
-    ts = pd.read_csv(ts_path) if ts_path.exists() else None
-    if ts is None:
-        log.warning("%s absent: tau_curves holds only the post-hoc test points", ts_path.name)
-    written.append(write_csv(tau_curves(test, main_all, ts, manifest), tables_dir / table_name("tau_curves", test)))
-
-    ranks, kendall = recommender_sensitivity(test, cells_all)
-    written.append(write_csv(ranks, tables_dir / table_name("recommender_sensitivity", test)))
-    written.append(write_csv(kendall, tables_dir / table_name("recommender_kendall", test)))
+        ranks, kendall = recommender_sensitivity(test, cells_all)
+        written.append(write_csv(ranks, tables_dir / table_name("recommender_sensitivity", test)))
+        written.append(write_csv(kendall, tables_dir / table_name("recommender_kendall", test)))
 
     written.append(write_csv(dynamics_table(out_dir, test, cells), tables_dir / f"dynamics_{test}.csv"))
     written.append(write_csv(cap_demotion_table(test, cells, manifest), tables_dir / f"cap_demotion_{test}.csv"))
@@ -1764,6 +1796,7 @@ def main(argv: list[str] | None = None) -> dict:
 
     log.info("test %s: %d tables in %.1fs", test, len(written), time.time() - t_run)
     result = {"test": test, "gate_ok": gate_ok, "n_states": n_states,
+              "cross_recommender": set(recs) == set(recs_present),
               "empty_strata": [f"{s.level} {s.family}/{s.horizon}" for s in empty_strata],
               "written": [str(p) for p in written]}
     # Ruling 23: a stratum whose common support emptied used to vanish from the CSV with
@@ -1786,40 +1819,6 @@ def main(argv: list[str] | None = None) -> dict:
     if hard:
         log.error("--allow-empty-strata: %d empty stratum/strata accepted", len(hard))
     return result
-
-
-def cross_recommender_frames(
-    tables_dir: Path,
-    test: str,
-    recs_present: list[str],
-    main_by_rec: dict[str, pd.DataFrame],
-    cells_by_rec: dict[str, pd.DataFrame],
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """The main / cells rows of *every* recommender the frames hold: the ones computed
-    in this run plus any written by an earlier run (`--recommender <one>` must not shrink
-    the cross-recommender tables to one recommender). Missing ones are logged."""
-    mains, cells_tabs, missing = [], [], []
-    for rec in recs_present:
-        if rec in main_by_rec:
-            mains.append(main_by_rec[rec])
-            cells_tabs.append(cells_by_rec[rec])
-            continue
-        m_path = tables_dir / table_name("main", test, rec)
-        c_path = tables_dir / table_name("cells", test, rec)
-        if m_path.exists() and c_path.exists():
-            m = pd.read_csv(m_path)
-            c = pd.read_csv(c_path)
-            for frame in (m, c):
-                for col in ("family", "horizon", "level", "cell", "policy"):
-                    frame[col] = frame[col].astype(str)
-            mains.append(m)
-            cells_tabs.append(c)
-        else:
-            missing.append(rec)
-    if missing:
-        log.warning("cross-recommender tables lack %s (no main/cells table on disk); run with "
-                    "--recommender all to include them", missing)
-    return pd.concat(mains, ignore_index=True), pd.concat(cells_tabs, ignore_index=True)
 
 
 def _per_cell_delta_vs(cells: list[Cell], ref: str, rec: str, n_boot: int) -> pd.DataFrame:

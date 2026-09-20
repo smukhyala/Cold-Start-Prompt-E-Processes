@@ -64,6 +64,13 @@ defined against, and does **not** lower it against a validation-tuned growth sch
   [−0.527026, +0.523659], n_variants = 22 (`surrogate_validity.csv`, test=A,
   recommender=posterior_mean_shrunk, offline=oof_auc, deployed=pooled).
 
+**Three follow-up experiments (§12, 2026-09-20) sharpen this.** The optimal arm count is interior and the
+64-arm cap threw away 0.0217 of regret at T = 1000 — 16× the H1b effect (§12.1). Given the *same* final
+arm count, no learned policy beats front-loaded search; the pre-registered Φ and the tuned schedule are both
+*worse* than it (§12.2). And the one contrast registered after the fact — the k = 4 model vs the schedule on
+30 environments at T ≤ 200 — is **supported**, Δ = −0.005050, t [−0.006603, −0.003497], p = 3e−7, though
+§12.2 says why that is a better arm count reached earlier, not a state-dependent rule (§12.3).
+
 The mechanism is the 64-arm cap: P3\* is already a cap-filling policy at T ≥ 200 (k_final = 64.0 at
 T = 200/500/1000), and Φ joins it only at T = 1000 (k_final 44.2 at T=200, 57.7 at T=500, 64.0 at T=1000;
 `main_A_primary.csv`, level=horizon). So H1b at T = 200 and T = 500 is "Φ against fill-the-cap", and at
@@ -352,7 +359,10 @@ register row 13 is confirmed exactly: at cap = T the recommendation is a one-pul
 
 **A stopping notion exists at short horizons and vanishes at long ones.** At T=200 with cap 128, `phi_k16`
 stops at K = 82.4 (cap_hit 0.389) for regret 0.132055, against `always_search` 0.140941 and P3\* 0.142790
-(both at K = 128) — Φ is genuinely not `always_search` relabelled there. At T=1000 with cap 128, by contrast,
+(both at K = 128) — so Φ is not `always_search` *at K = 128* relabelled. It is, however, `always_search`
+at K ≈ 82 relabelled, or worse: the K-matched control of §12.2 shows that at its own arm count Φ never
+beats front-loaded search and at T ≤ 200 on Test A is worse than it in 7 of 8 environments. "Stops early"
+is established; "stops *well*" is not. At T=1000 with cap 128, by contrast,
 `phi_k16` is **bit-identical to `always_search`** (both 0.095835 at K = 128, cap_hit 1.0), so the −0.010749
 against P3\* there says nothing about a learned stopping rule. That comparison is plateau-decided and must be
 read as such. P3\*'s `c` is selected on a tuning objective that at T ≥ 200 is structurally blind to it: at
@@ -755,7 +765,9 @@ live at long horizons.
 
 - **DP validation.** Register row 14: a dynamic-programming ceiling was declared out of scope in the plan and
   **was not computed**. Nothing in this study is validated against an exact optimum. `dp.py` remains a
-  label sanity check only.
+  label sanity check only. The achievable reference that now stands in for it is the fixed-K envelope of
+  §12.1 (`k_star_envelope.csv`): a tune-split, in-sample argmin over K, which is a design instrument and
+  not a test-split number.
 - **That Φ beats a tuned schedule.** H1b's pooled cluster CI includes zero, no stratum is
   cluster-significant, at T=500 the schedule wins, and at T ≥ 200 P3\* is itself a cap-filling policy, so the
   comparison there is "Φ vs fill-the-cap", not "Φ vs a schedule".
@@ -975,6 +987,105 @@ or the asymmetry simply reverses. **(b)** The quoted OOD fractions are medians; 
 tables per test were written in one contiguous wave with identical policy sets), the pairwise-table race was
 discharged by building the tables in the parent before forking, and the on-policy undefined counter is a
 shard-scoped lower bound, not a per-chunk restart.
+
+---
+
+## 12. Follow-up experiments (2026-09-20)
+
+Three experiments from the post-study roadmap (`NEXT-STEPS.md` §2), run after every number above was
+restated on the t interval. Each is one table, one script, and one paragraph of what it can and cannot say.
+
+### 12.1 K\*(env, T): the cap was the wrong knob
+
+`fixed_K` — recruit until K arms are held, then refine — over a 14-point K grid, uncapped, on the eight
+main environments at every horizon, **tune split**, M = 500 (`k_star_envelope.py`, 25 s;
+`k_star_envelope.csv`). The optimum is interior and U-shaped at every horizon:
+
+| T | pooled K\* | regret at K\* | regret at K = 64 | per-env K\* range |
+|---|---|---|---|---|
+| 50 | 24 | 0.134409 | — (K > T) | 12–32 |
+| 100 | 32 | 0.122402 | 0.131529 | 16–64 |
+| 200 | 48 | 0.106291 | 0.107567 | 24–128 |
+| 500 | 128 | 0.088783 | 0.097886 | 32–256 |
+| 1000 | 256 | 0.076543 | 0.098225 | 48–400 |
+
+(`k_star_envelope.csv`, level=pooled and the `is_argmin` env rows.) At T = 1000 a fixed K = 64 is
+**0.021682 worse than K = 256** on the same cells — sixteen times the 0.001389 that H1b argued about. §4's
+"the cap is the policy" is therefore incomplete: the cap was also *mis-sized*, by a factor of four at the
+longest horizon. Two readings the table refuses: it is a tune-split in-sample argmin, never a test-split
+result and never a policy the tables above compare against (deployed `fixed_K16` is 0.135722 at T = 50
+against `phi_k4`'s 0.125865, so an untuned fixed K is not a tie); and K\* is environment-specific (48–400
+at T = 1000), so the per-environment argmin is the ceiling and the pooled argmin only a baseline. The
+schedule-tuning and τ-selection passes (Rulings 10 and 20) were both run at cap 64, so every deployed
+constant in this document was tuned inside a budget the envelope says is too small at T ≥ 500.
+
+### 12.2 The K-matched control: a learned rule, or a K chooser?
+
+Every learned policy ends holding some K_final. The control that "does the *timing* of SEARCH matter?"
+needs is `always_search` capped at the policy's own realised K_final, **on the same episodes** — a control
+the study had never run. `run_deployment.py --test capmatch --match <policy>` builds, for each of six
+policies and each of the 33 (env, T ≤ 200) cells of Tests A and C, a cell with the deployed cell's seed and
+cap = round(k_final), and deploys the policy, `always_search` and `uniform` in it (cells already at K = 64
+are Test A / C themselves; `cells.make_matched_cell`). 431 items, six minutes. Δ = policy − `always_search`
+@ K, paired by episode (`analyze_capmatch.py`, `capmatch_contrasts.csv`, reference=always_search):
+
+| policy | Test A pooled Δ | paired CI | t-cluster (n = 8) | p | sign p | Test C pooled Δ (n = 3, paired) |
+|---|---|---|---|---|---|---|
+| `phi_k4` | **+0.000088** | [−0.000224, +0.000406] | [−0.000478, +0.000654] | 0.73 | 0.73 | −0.000791 [−0.001596, −0.000008] |
+| `phi_k16_perstep` | **+0.000102** | [−0.000264, +0.000454] | [−0.000876, +0.001080] | 0.81 | 0.80 | +0.001546 [+0.000750, +0.002370] |
+| `phi_k1` | −0.000369 | [−0.000664, −0.000080] | [−0.001257, +0.000519] | 0.36 | 0.42 | −0.001855 [−0.002618, −0.001091] |
+| `phi_k16_notrunc` | +0.000888 | [+0.000551, +0.001222] | [−0.000071, +0.001847] | 0.065 | **0.0078** | +0.000324 [−0.000262, +0.000939] |
+| `phi_k16` (pre-registered) | **+0.001800** | [+0.001375, +0.002235] | [−0.000103, +0.003703] | 0.060 | **0.023** | +0.003867 [+0.002829, +0.004926] |
+| `p3_star` (tuned schedule) | **+0.000867** | [+0.000626, +0.001108] | [+0.000542, +0.001192] | **0.0004** | **0.0078** | +0.001785 [+0.001186, +0.002383] |
+
+Positive means the policy is *worse* than front-loaded search at its own arm count. **No learned policy
+beats its K-matched control.** `phi_k4` and `phi_k16_perstep` tie it to four decimal places; `phi_k1` is
+0.0004 better on the paired interval and indistinguishable at the environment level. The pre-registered
+`phi_k16` is worse in 7 of 8 environments, `phi_k16_notrunc` in 8 of 8 — and so is the validation-tuned
+schedule P3\*, in 8 of 8 environments, cluster-significantly. The roadmap's reading applies in full: the
+learned SEARCH-vs-REFINE policy is a device for choosing a final arm count, the existing schedule grid
+already does that, and the honest description is **"we learned a growth schedule"** — one whose *timing*
+never beats "reach K as fast as possible, then refine", and for the k = 16 model is worse than it.
+A tie was the stronger result here by construction (the control reaches K by round K, the policy at the
+horizon), and a loss is stronger still. Limitations that travel with the table: the cap is the *mean*
+K_final, so the in-cell policy holds slightly fewer arms than it did deployed (`k_final` vs
+`k_final_deployed`: 41.9 vs 43.0 for `phi_k4`, 33.5 vs 35.3 for `phi_k16`); τ stays at its cap-64 value
+(Ruling 20's asymmetry, unchanged); and the per-cell cap is data-dependent, so this is a diagnostic
+control, never a pre-registered hypothesis. §4's "Φ is genuinely not `always_search` relabelled" at
+cap 128 is narrowed in place: it is not `always_search` *at 128*; at its own K it is, or worse.
+
+### 12.3 H1b′: the registered replacement contrast — supported, and what that means
+
+`DEPLOYMENT_PLAN.md`, "Pre-registration 2": H1b as written was declared answered (null, ~9× under-powered,
+structural zeros at T ≥ 200), and **one** replacement contrast was registered — `phi_k4` vs `p3_star` on
+the 30-environment robustness panel at T ∈ {50, 100, 200}, environment-mean t on n = 30, minimum effect of
+interest 0.002, decision rule written down — in a commit that precedes the run's manifest lines. Test A,
+where `phi_k4` was chosen, is excluded from its evidence. `phi_k4` was then deployed on all 150 robust
+cells (41 s) and `registered_contrast.py` computed the statistic (`h1b_prime.csv`):
+
+| row | T | Δ | paired CI | t-cluster (n = 30) | p | Holm |
+|---|---|---|---|---|---|---|
+| **primary** | 50–200 pooled | **−0.005050** | [−0.005808, −0.004260] | **[−0.006603, −0.003497]** | 2.7e−7 | — |
+| secondary | 50 | −0.008674 | | [−0.011055, −0.006293] | 3.3e−8 | 1.0e−7 |
+| secondary | 100 | −0.006082 | | [−0.008775, −0.003389] | 7.3e−5 | 1.5e−4 |
+| secondary | 200 | −0.000394 | | [−0.000740, −0.000048] | 0.027 | 0.027 |
+| structural | 500 / 1000 | −0.000000 / −0.000001 | | includes zero | 0.44 / 0.42 | — |
+
+**Verdict: supported** — Δ is 2.5× the minimum effect, the t interval excludes −0.002 from above, and the
+row survives at n = 30 with room to spare. It is the study's first registered positive against the tuned
+schedule. What it establishes, and only this: **a k = 4 commitment model beats the validation-tuned power
+schedule on the training corpus's own environments at T ≤ 200.** In-distribution robustness at n = 30 —
+non-claim 11 applies, and Test C (§7.2) already answered generalization against Φ.
+
+What it does *not* establish is a state-dependent rule, and §12.2 is why. On the same panel at T = 50,
+`phi_k4` and `p3_star` hold almost the same number of arms (22.5 vs 21.0, `main_robust_primary.csv`,
+level=horizon) yet differ by 0.0087 in regret; §12.2 shows `phi_k4` merely *matches* front-loaded search
+at its own K while P3\* *loses* to it by 0.0015 at T = 50. The power schedule spreads its recruiting over
+the horizon; the k = 4 model recruits early and stops, which is what the crudest policy does. So H1b′'s
+effect is "reach a sensible K quickly, then refine" — the same lesson as §12.1 from the other side — and
+the learned classifier is one way of arriving at it that a two-parameter schedule tuned for early
+recruitment would presumably match. That comparison (roadmap §3.4, the 3-parameter rule family as the null
+model) has not been run and is the natural next one.
 
 ---
 

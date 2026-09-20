@@ -218,24 +218,43 @@ def mark_untuned_baselines(
     Such a cell is not a tuned comparator, so the aggregations below refuse to pool it
     into a contrast that references it.
 
-    Two sources are consulted, so neither a stale manifest nor a stale JSON can hide one:
-    `policy_table.resolve_params` stamps ``params_tuned: False`` on the item it resolves
-    (read back from the manifest here), and `policy_table.baseline_is_tuned` re-derives
-    the same answer from today's `baseline_params.json` for manifests written before that
-    stamp existed. A policy is untuned in a cell if *either* source says so.
+    Three sources are consulted, so neither a stale manifest nor a stale JSON can hide one:
+
+    * `policy_table.resolve_params` stamps ``params_tuned: False`` on the item it resolves,
+      read back here from the manifest;
+    * `policy_table.baseline_is_tuned` re-derives the same answer from today's
+      `baseline_params.json`, for manifests written before that stamp existed;
+    * `policy_table.deployed_params_are_current` compares the constants the manifest
+      records against what the table resolves today, which catches the opposite case --
+      a horizon tuned *after* its cells ran, where the JSON now looks complete but the
+      episodes on disk came from the placeholder. (The smoke run is exactly that: it
+      precedes M5, so its schedule constants are the registered placeholders while
+      `baseline_params.json` has covered T=100 ever since.)
+
+    A policy is untuned in a cell if *any* source says so.
     """
-    stamped: dict[tuple[str, str], bool] = {
-        (cell, policy): pt.params_are_tuned(rec.get("params"))
-        for (_test, cell, policy), rec in manifest.items()
+    recorded: dict[tuple[str, str], dict] = {
+        (cell, policy): (rec.get("params") or {}) for (_test, cell, policy), rec in manifest.items()
     }
     marks: dict[str, frozenset[str]] = {}
     for c in cells:
-        untuned = {
-            policy
-            for policy in c.policies
-            if not pt.baseline_is_tuned(policy, c.horizon, baseline_params)
-            or not stamped.get((c.name, policy), True)
-        }
+        untuned = set()
+        for policy in c.policies:
+            params = recorded.get((c.name, policy))
+            if not pt.baseline_is_tuned(policy, c.horizon, baseline_params):
+                untuned.add(policy)
+            elif params is not None and not pt.params_are_tuned(params):
+                untuned.add(policy)
+            elif params is not None and not pt.deployed_params_are_current(
+                policy, c.horizon, params, baseline_params
+            ):
+                log.warning(
+                    "%s/%s deployed %s, but the policy table resolves %s today: the episodes "
+                    "on disk are not the tuned comparator",
+                    c.name, policy, params,
+                    pt.resolve_params(policy, c.horizon, baseline_params=baseline_params),
+                )
+                untuned.add(policy)
         c.untuned = frozenset(untuned)
         marks[c.name] = c.untuned
     flagged = sorted({(c.name, p) for c in cells for p in c.untuned})

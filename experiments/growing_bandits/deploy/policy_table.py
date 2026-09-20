@@ -372,6 +372,34 @@ def params_are_tuned(params: dict[str, Any] | None) -> bool:
     return bool((params or {}).get(PARAMS_TUNED, True))
 
 
+#: The kinds whose constructor constants come from `baseline_params.json` (M5). Only
+#: these can be "untuned" in the sense of `PARAMS_TUNED`; a learned policy's threshold
+#: comes from `thresholds.json` and is tracked by `TAU_SOURCES` instead.
+BASELINE_PARAM_KINDS: frozenset[str] = frozenset({"power", "refine_after_init"})
+
+
+def deployed_params_are_current(
+    name: str, horizon: int, recorded: dict | None, baseline_params: dict | None, tol: float = 1e-12
+) -> bool:
+    """Whether `recorded` (a manifest's params) is what this table resolves today.
+
+    A constant that was a placeholder when the cell ran, and has since been tuned, leaves
+    the tuning outputs looking complete while the episodes on disk were produced by the
+    placeholder. `run_deployment.stale_reason` catches that on the next ``--resume``; the
+    analysis needs to catch it too, because it reads the episodes, not the runner
+    (finding B1). Kinds outside `BASELINE_PARAM_KINDS` are not judged here and return True.
+    """
+    entry = POLICIES.get(name)
+    if entry is None or entry["kind"] not in BASELINE_PARAM_KINDS or recorded is None:
+        return True
+    fresh = resolve_params(name, horizon, baseline_params=baseline_params)
+    fresh = {k: v for k, v in fresh.items() if k not in PROVENANCE_KEYS}
+    have = {k: v for k, v in recorded.items() if k not in PROVENANCE_KEYS}
+    if set(have) != set(fresh):
+        return False
+    return all(abs(float(have[k]) - float(fresh[k])) <= tol for k in fresh)
+
+
 def baseline_is_tuned(name: str, horizon: int, baseline_params: dict | None) -> bool:
     """Whether every `baseline_params.json` slot of `name` at `horizon` holds a tuned value.
 

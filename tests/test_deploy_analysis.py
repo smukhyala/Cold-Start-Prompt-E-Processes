@@ -423,7 +423,7 @@ def test_mark_untuned_baselines_reads_the_json_and_the_manifest(caplog):
     for c in cells:
         assert c.untuned == (frozenset({"p3_star"}) if c.horizon == 200 else frozenset())
 
-    # With everything tuned, only the manifest's own stamp can flag a cell.
+    # With everything tuned, the manifest's own stamp still flags a cell.
     cells = synthetic_cells(policies=("cp0", "p3_star", "phi_k16"))
     full = {"power": {}, "refine_after_init": {},
             "p3_star": {str(T): {"alpha": 0.5, "c": 2.0} for T in by_horizon}}
@@ -433,6 +433,22 @@ def test_mark_untuned_baselines_reads_the_json_and_the_manifest(caplog):
     ad.mark_untuned_baselines(cells, manifest, full)
     assert cells[0].untuned == frozenset({"p3_star"})
     assert all(c.untuned == frozenset() for c in cells[1:])
+
+    # ... and so does a manifest that records constants the table no longer resolves:
+    # the horizon was tuned after those cells ran (the smoke run's situation), so the
+    # JSON looks complete while the episodes came from the placeholder.
+    cells = synthetic_cells(policies=("cp0", "p3_star", "phi_k16"))
+    stale = {("synthetic", cells[0].name, "p3_star"): {"params": {"alpha": 0.5, "c": 1.0}}}
+    with caplog.at_level("WARNING", logger="deploy.analyze"):
+        caplog.clear()
+        ad.mark_untuned_baselines(cells, stale, full)
+    assert cells[0].untuned == frozenset({"p3_star"})
+    assert all(c.untuned == frozenset() for c in cells[1:])
+    assert any("not the tuned comparator" in r.message for r in caplog.records)
+    # The same constants the table resolves today are not stale.
+    fresh = {("synthetic", cells[0].name, "p3_star"): {"params": {"alpha": 0.5, "c": 2.0}}}
+    ad.mark_untuned_baselines(cells, fresh, full)
+    assert all(c.untuned == frozenset() for c in cells)
 
 
 def test_secondary_contrasts_exclude_the_pre_registered_pairs(cells, per_cell):

@@ -396,3 +396,75 @@ main runs overrun, and then stated as not done.
   changing the protocol, to prove the reproduction is faithful.
 - Every number in `DEPLOYMENT_RESULTS.md` traceable to a CSV in `results/growing_bandits/deploy/`.
 - Final check that no deployed policy imports/reads `state.mu`, `reservoir`, `oracle_*`, or `meta_*` (grep + test).
+
+---
+
+## Pre-registration 2 — the replacement contrast H1b′ (registered 2026-09-20, before any run)
+
+This section is a second, separate pre-registration. It is written **after** the first study's results
+were read and **before** a single episode of the run it registers exists; the commit that adds it precedes
+the commit that adds the run's manifest lines, and that ordering is the whole of its claim to honesty.
+It is hypothesis switching after seeing the data, and it is labelled as such.
+
+### H1b as written is answered: null, and under-powered
+
+The pre-registered H1b — `phi_k16` (P9₁₆, τ_val) vs the validation-tuned schedule P3\*, pooled over five
+horizons at cap 64 — is **null** in all six tests (`DEPLOYMENT_RESULTS.md` §3.2, §7.5), and the study will
+not spend more compute on it. Three measured reasons it could not have been anything else:
+
+1. **Power.** The best available effect size is d = 0.328 (mean −0.000891, between-environment sd 0.002719,
+   n = 30, `cells_robust_primary.csv`), which needs ~73 environments for 80% power at α = 0.05; Test A has 8.
+2. **Structural zeros.** 12 of the 40 Test-A cells have `d_regret_vs_p3_star` exactly 0.0 for `phi_k16`
+   (17/40 for `phi_k4`, 20/40 for `phi_k1`): at T ≥ 200 the 64-arm cap makes Φ and P3\* the same policy.
+3. **The contrast at T ≥ 200 is not the claimed one.** It is "Φ against fill-the-cap", not "Φ against a
+   schedule" (`DEPLOYMENT_RESULTS.md` §4).
+
+### What motivated the replacement, and why that evidence is excluded
+
+On Test A, the two short-commitment variants beat P3\* in eight of eight environments (`phi_k4` −0.003445,
+cl[−0.006266, −0.000624], p = 0.023; `phi_k1` −0.003429, cl[−0.006280, −0.000578], p = 0.025), where
+`phi_k16` does not (5 of 8). Those numbers were **selected** from 25 exploratory variants after the fact and
+do not survive Holm (min adjusted 0.585). They are the reason this contrast exists; **they are never quoted
+as evidence for it**, and Test A is not part of H1b′'s evidence.
+
+### H1b′ (one contrast)
+
+- **Policy:** `phi_k4` — the k = 4 commitment model, τ from `thresholds.json` exactly as deployed in Test A.
+  Chosen over `phi_k1` because the Test-A effects are indistinguishable (Δ 1.6e−5) and `phi_k4` costs 3.6×
+  less to run; that choice was made on Test A, which is why Test A is excluded above.
+- **Reference:** `p3_star`, the validation-tuned power schedule, constants as deployed (`baseline_params.json`).
+- **Panel:** the 30-environment robustness panel (`--test robust`: all corpus environments, test-split seeds,
+  cap 64, M = 500). Its 150 cells already hold `p3_star`; the run adds `phi_k4` to them and nothing else.
+- **Horizons for the primary statistic:** T ∈ {50, 100, 200} — the horizons where the two policies can differ
+  (reason 2 above). The T ∈ {500, 1000} cells are run too so the standard tables are complete, and are
+  reported as secondary.
+- **Primary statistic:** pooled over the 90 cells (30 environments × 3 horizons), Δ = regret(`phi_k4`) −
+  regret(`p3_star`) per episode, cell-stratified paired bootstrap for the paired CI, and the
+  **environment-mean t interval on n = 30** with its two-sided `cluster_p`. Negative favours `phi_k4`.
+- **Minimum effect of interest:** |Δ| ≥ **0.002** pooled — about 2% of P3\*'s regret on this panel, and the
+  smallest difference the study would act on given that the cap mis-sizing alone is worth 0.02
+  (`k_star_envelope.csv`). A significant Δ smaller than this is reported as "detectable, not material".
+- **Decision rule, stated in advance:** H1b′ is *supported* iff pooled `cluster_p` < 0.05, Δ < 0 and
+  |Δ| ≥ 0.002. It is *refuted* iff Δ ≥ 0 or the t interval excludes −0.002 from below (the effect is
+  significantly smaller than the MEI). Anything else is *inconclusive* and is reported as that word.
+- **Secondary rows:** the three per-horizon strata (n = 30 each), Holm-corrected among themselves; the two
+  long-horizon strata, uncorrected and labelled structural.
+- **Family:** one primary row. No other contrast in this registration.
+
+### What either outcome means
+
+- **Supported:** a learned short-commitment SEARCH rule beats a validation-tuned schedule *on the training
+  corpus's environments*. That is in-distribution robustness at n = 30 (non-claim 11 of the results
+  document still applies) — never generalization, which Test C already answered against.
+- **Refuted or inconclusive:** the learned-policy line closes. The write-up is the negative result the data
+  already support: the arm budget and the commitment horizon set deployed regret, not the decision
+  classifier.
+
+### Run, in order
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 \
+    --policies phi_k4
+.venv/bin/python experiments/growing_bandits/deploy/analyze_deployment.py --test robust --recommender all --gate-from A
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py     # writes tables/h1b_prime.csv
+```

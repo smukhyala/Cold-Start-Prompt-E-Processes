@@ -406,9 +406,10 @@ def file_sha256(path: str | Path) -> str:
 #: Every module whose bytes can change an episode: the transitive closure, over the
 #: project's own code, of `harness.run_cell`, `policy_table` (which resolves the
 #: constants and builds the policy object) and `pairwise_table` (the log-e evidence the
-#: runner hands to a policy). `test_sim_surface_covers_everything_reachable_from_run_cell`
-#: asserts the list *equals* that closure, so a new module cannot join the simulation
-#: surface without joining the fingerprint.
+#: runner hands to a policy), minus `SIM_SURFACE_EXCLUDED`.
+#: `test_sim_surface_covers_everything_reachable_from_run_cell` asserts the two lists
+#: *partition* that closure, so a new module cannot join the simulation surface without
+#: joining the fingerprint.
 #:
 #: The three package ``__init__.py`` shells are docstring-only and deliberately out of
 #: scope; the same test holds them to that.
@@ -436,8 +437,25 @@ SIM_SURFACE_MODULES: tuple[str, ...] = (
     "cold_start.growing.state",
     "cold_start.growing.tables",
     "cold_start.registry",
-    "policy_table",
 )
+
+#: Reachable from `harness.run_cell` and deliberately NOT fingerprinted: `policy_table`
+#: is the study's *registry*, not the simulator.
+#:
+#: Appending a policy to it, or a cap block, cannot change an episode that some other
+#: policy already ran -- but a byte hash cannot know that, so including it made the
+#: commonest edit to the file invalidate every finished item on the next ``--resume``.
+#: `da41273` is the proof: it appended ``EXTRA_CAPS=(128,)`` and registered the two M9
+#: variants, nothing else, and it would have made all 1,360 shipped Test-A items stale.
+#: An unescapable guard with a cost that large is one that gets deleted.
+#:
+#: What `policy_table` contributes to an episode is not lost: the resolved constructor
+#: parameters travel in the manifest and are checked by `stale_reason`, the artifact's
+#: bytes by ``artifact_sha``, and every module `policy_table` *builds from* (`rules`,
+#: `model_policy`, `features_vec`, `history_vec`) is on the surface above. Measured over
+#: all five shas that produced shipped episodes, the surface below is constant at
+#: ``97704d2795f7``; with `policy_table` in, the same tree spanned three values.
+SIM_SURFACE_EXCLUDED: tuple[str, ...] = ("policy_table",)
 
 #: Third-party packages whose version is recorded beside `sim_surface_sha`. The
 #: fingerprint hashes *source only*: a numpy or scipy upgrade changes an episode without
@@ -469,6 +487,9 @@ def sim_surface_sha() -> str:
     surface fingerprint can judge. With this stamped, a ``--resume`` cannot silently keep
     episodes produced by different code, and `analyze_deployment.load_cells` refuses a
     test that spans more than one surface.
+
+    It covers the simulator, not the registry: see `SIM_SURFACE_EXCLUDED` for why
+    `policy_table` is out, and what carries its contribution instead.
 
     Keyed on module name, not path, so the value does not depend on where the checkout
     lives.

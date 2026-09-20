@@ -721,6 +721,15 @@ def test_worker_init_records_the_pool_parent_for_every_pooled_run(tmp_path):
 # ---- the simulation-surface fingerprint ------------------------------------------------------
 
 
+#: `run_deployment.sim_surface_sha()` at every sha that produced a shipped episode, and
+#: at HEAD: 08f0f2c (smoke), 2469bb0 (Test A), bf4719c (B/C/D/robust/cap), da41273 and
+#: 5460638. Recomputed from `git show` over the same module list; the value is constant,
+#: which is what "nothing shipped was produced by a different simulator" means. It is
+#: constant only because the registry (`SIM_SURFACE_EXCLUDED`) is out: `policy_table.py`
+#: is the one file that moved across those revisions.
+SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA = "97704d2795f7"
+
+
 def _sim_surface_closure() -> set[str]:
     """Every project module reachable from the three entry points that make an episode.
 
@@ -755,17 +764,30 @@ def _sim_surface_closure() -> set[str]:
 
 
 def test_sim_surface_covers_everything_reachable_from_run_cell():
-    """The list and the reachable closure are the same set -- a partition assertion.
+    """Fingerprinted and deliberately-excluded PARTITION the reachable closure.
 
     This is the test that matters: a fingerprint over a hand-maintained module list is
     worth nothing the first time someone adds a module to the simulator and forgets the
-    list. Equality (not containment) also keeps dead entries out.
+    list. A partition (not containment) also keeps dead entries out, and forces any new
+    exclusion to be written down in `SIM_SURFACE_EXCLUDED` with its reason rather than
+    just left off.
     """
-    assert _sim_surface_closure() == set(rd.SIM_SURFACE_MODULES)
-    assert len(rd.SIM_SURFACE_MODULES) == len(set(rd.SIM_SURFACE_MODULES))
+    fingerprinted = set(rd.SIM_SURFACE_MODULES)
+    excluded = set(rd.SIM_SURFACE_EXCLUDED)
+    assert fingerprinted | excluded == _sim_surface_closure()
+    assert not (fingerprinted & excluded)
+    assert excluded == {"policy_table"}, "a new exclusion needs a documented reason"
+    assert len(rd.SIM_SURFACE_MODULES) == len(fingerprinted)
     files = rd.sim_surface_files()
-    assert set(files) == set(rd.SIM_SURFACE_MODULES)
+    assert set(files) == fingerprinted
     assert all(path.is_file() and path.suffix == ".py" for path in files.values())
+    # Every module `policy_table` builds a policy FROM is still on the surface, so
+    # excluding the registry does not take any behaviour off it.
+    for built_from in ("cold_start.growing.deploy.rules",
+                       "cold_start.growing.deploy.model_policy",
+                       "cold_start.growing.deploy.features_vec",
+                       "cold_start.growing.deploy.history_vec"):
+        assert built_from in fingerprinted, built_from
 
     # The package shells the closure does not reach are docstring-only, which is why
     # they are out of scope; if one grows a statement, this fails and the list must
@@ -786,6 +808,12 @@ def test_sim_surface_covers_everything_reachable_from_run_cell():
 
 def test_sim_surface_sha_is_stable_deterministic_and_source_dependent(tmp_path, monkeypatch):
     first = rd.sim_surface_sha()
+    # The pinned invariant. Recomputed from `git show` at every sha that produced shipped
+    # episodes -- 08f0f2c, 2469bb0, bf4719c, da41273, 5460638 -- the simulation surface
+    # hashes to this same value, so nothing in the shipped tree was produced by a
+    # different simulator. A legitimate change to a surface module moves it, and this
+    # assertion is where that has to be acknowledged deliberately.
+    assert first == SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA
     assert len(first) == 12 and int(first, 16) >= 0
     rd.sim_surface_sha.cache_clear()
     assert rd.sim_surface_sha() == first

@@ -11,8 +11,12 @@ strictly inside (0, 1), snapshots logged, counters recorded). No simulator mocks
 from __future__ import annotations
 
 import json
+import logging
+import os
 import pickle
 import sys
+import time
+import warnings
 from dataclasses import replace as rd_replace
 from pathlib import Path
 
@@ -569,3 +573,144 @@ def test_learned_policy_smoke_logs_states_and_counters(tmp_path):
     )
     retrained = rd.main([a if a != "16" else "8" for a in argv] + ["--resume"], cells=cells)
     assert retrained["n_run"] == 2 and retrained["n_skipped"] == 2
+
+
+# ---- the orphan-parquet class (ledger rulings 17, 19, 22) ------------------------------------
+
+
+def test_exclusions_are_durable_skips_that_only_force_policies_overrides(tmp_path):
+    """Ruling 19's durable fix, end to end through the CLI.
+
+    Ruling 16 dropped three policies from Test D's T=2000 cells on purpose; nothing on
+    disk recorded that, so the next ``--resume`` scheduled all nine again and the
+    workers that outlived the killed parent left nine orphan parquets (ruling 22). An
+    exclusion line survives a resume, survives a plain re-run, and yields only to
+    ``--force-policies``.
+    """
+    out = tmp_path / "out"
+    cells = _cells(horizon=40, n_replicates=8)
+    manifest = out / "manifest_smoke.jsonl"
+    argv = [
+        "--test", "smoke", "--n-replicates", "8", "--workers", "1",
+        "--policies", "cp0,always_search", "--out-dir", str(out), "--skip-summary",
+        "--models-dir", str(tmp_path / "no-models"),
+    ]
+
+    # A reason is mandatory in both directions: neither half is usable alone.
+    with pytest.raises(SystemExit, match="exclusion-reason"):
+        rd.main(argv + ["--exclude-policies", "always_search"], cells=cells)
+    with pytest.raises(SystemExit, match="exclusion-reason"):
+        rd.main(argv + ["--exclude-policies", "always_search", "--exclusion-reason", "  "],
+                cells=cells)
+    with pytest.raises(SystemExit, match="without --exclude-policies"):
+        rd.main(argv + ["--exclusion-reason", "why"], cells=cells)
+    assert not manifest.exists()
+
+    reason = "costs hours per item through the exact chunked evaluator"
+    first = rd.main(argv + ["--exclude-policies", "always_search",
+                            "--exclusion-reason", reason], cells=cells)
+    assert first["n_run"] == 2 and first["n_skipped"] == 2  # cp0 on both cells only
+    records = _read_manifest(manifest)
+    exclusions = [r for r in records if rd.record_kind(r) == rd.KIND_EXCLUSION]
+    assert len(exclusions) == 2
+    assert {r["cell"] for r in exclusions} == {rd.cell_name(c) for c in cells}
+    for rec in exclusions:
+        assert rec["policy"] == "always_search" and rec["reason"] == reason
+        assert rec["sha"] and rec["at"]
+    assert not list((out / "episodes" / "smoke").rglob("always_search.parquet"))
+
+    # The exclusion is active for every later run, with or without --resume, and
+    # `completed_records` counts it as done-with-no-file.
+    active = rd.active_exclusions(_read_manifest(manifest))
+    assert set(active) == {("smoke", rd.cell_name(c), "always_search") for c in cells}
+    assert set(rd.completed_records(_read_manifest(manifest))) == {
+        ("smoke", rd.cell_name(c), p) for c in cells for p in ("cp0", "always_search")
+    }
+    for extra in ([], ["--resume"]):
+        again = rd.main(argv + extra, cells=cells)
+        assert again["n_skipped"] >= 2
+        assert not list((out / "episodes" / "smoke").rglob("always_search.parquet"))
+
+    # --force-policies overrides it, and the completion supersedes the exclusion.
+    forced = rd.main(argv + ["--resume", "--force-policies", "always_search"], cells=cells)
+    assert forced["n_run"] == 2
+    assert len(list((out / "episodes" / "smoke").rglob("always_search.parquet"))) == 2
+    assert rd.active_exclusions(_read_manifest(manifest)) == {}
+    # ... and the two cannot be asked for at once.
+    with pytest.raises(SystemExit, match="both name"):
+        rd.main(argv + ["--exclude-policies", "always_search", "--exclusion-reason", reason,
+                        "--force-policies", "always_search"], cells=cells)
+
+
+def _fork_quietly() -> int:
+    """`os.fork` without CPython's multi-threaded-process DeprecationWarning.
+
+    pytest is multi-threaded, so every fork from it warns; the fork is the point of the
+    test below and the project keeps test output free of warnings.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return os.fork()
+
+
+def test_an_orphaned_worker_writes_nothing_into_episodes(tmp_path):
+    """Close the write side: a worker whose pool parent is gone publishes no episode.
+
+    Forks a child, forks a grandchild from it, kills the child, and lets the reparented
+    grandchild try to publish a parquet exactly as `run_item` would. Nothing may land in
+    ``episodes/`` -- the file that lands there is the one rulings 17 and 22 had to
+    quarantine by hand.
+    """
+    final = tmp_path / "episodes" / "smoke" / "cell" / "phi_k16.parquet"
+    final.parent.mkdir(parents=True)
+    tmp = final.with_suffix(".parquet.tmp")
+    tmp.write_bytes(b"episode bytes")
+    marker = tmp_path / "outcome.txt"
+
+    child = _fork_quietly()
+    if child == 0:  # the "pool parent"
+        parent_pid = os.getpid()
+        if _fork_quietly() == 0:  # the worker
+            try:
+                rd._worker_init(logging.WARNING, parent_pid)
+                deadline = time.time() + 10.0
+                while os.getppid() == parent_pid and time.time() < deadline:
+                    time.sleep(0.01)
+                try:
+                    rd._atomic_replace(tmp, final)
+                    marker.write_text("WROTE")
+                except rd.OrphanedWorker as exc:
+                    marker.write_text(f"REFUSED {exc}")
+            except BaseException as exc:  # noqa: BLE001 - reported through the marker
+                marker.write_text(f"ERROR {type(exc).__name__}: {exc}")
+            finally:
+                os._exit(0)
+        os._exit(0)  # the parent dies while the worker is still running
+    os.waitpid(child, 0)
+
+    deadline = time.time() + 15.0
+    while not marker.exists() and time.time() < deadline:
+        time.sleep(0.02)
+    assert marker.exists(), "the forked worker never reported"
+    outcome = marker.read_text()
+    assert outcome.startswith("REFUSED"), outcome
+    assert not final.exists(), "an orphaned worker published an episode file"
+    assert not tmp.exists(), "the orphaned worker left its temporary file behind"
+    # The same call from a live parent still publishes normally.
+    rd._PARENT_PID = None
+    tmp.write_bytes(b"episode bytes")
+    rd._atomic_replace(tmp, final)
+    assert final.exists()
+
+
+def test_worker_init_records_the_pool_parent_for_every_pooled_run(tmp_path):
+    """The guard is only armed if `run_items` hands the pool its own pid."""
+    import inspect
+
+    source = inspect.getsource(rd.run_items)
+    assert "initargs=(logging.getLogger().level or logging.INFO, os.getpid())" in source
+    rd._worker_init(logging.WARNING, 4242)
+    assert rd._PARENT_PID == 4242
+    assert rd._parent_is_alive() is (os.getppid() == 4242)
+    rd._worker_init(logging.WARNING, None)
+    assert rd._PARENT_PID is None and rd._parent_is_alive() is True

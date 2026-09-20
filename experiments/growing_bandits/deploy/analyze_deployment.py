@@ -110,8 +110,17 @@ def _seed(*parts) -> int:
     return int(zlib.crc32("|".join(str(p) for p in parts).encode("utf-8")))
 
 
+#: Set by `main` when ``--accept-unmanifested`` is passed. Every table written under that
+#: escape carries ``accepted_unmanifested`` so a reader can tell that the episode tree was
+#: *not* reconciled against the manifest for these numbers (`reconcile_episodes`).
+_ACCEPT_UNMANIFESTED = False
+
+
 def write_csv(df: pd.DataFrame, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if _ACCEPT_UNMANIFESTED:
+        df = df.copy()
+        df["accepted_unmanifested"] = True
     tmp = path.with_suffix(path.suffix + ".tmp")
     df.to_csv(tmp, index=False)
     os.replace(tmp, path)
@@ -158,14 +167,115 @@ def recommenders_in(frame: pd.DataFrame) -> list[str]:
     return [r for r in RECOMMENDER_NAMES if f"regret_{r}" in frame.columns]
 
 
-def load_cells(out_dir: Path, test: str) -> list[Cell]:
+def _is_cell_dir(path: Path) -> bool:
+    """Whether a directory under ``episodes/<test>`` is a cell.
+
+    Quarantined orphans live in a sibling of ``episodes/`` (``episodes_quarantine/``)
+    and are already outside this glob, but a quarantine directory parked *inside* the
+    tree must not be read as a cell either -- that would re-import the very files it was
+    created to hold back.
+    """
+    return path.is_dir() and "quarantine" not in path.name.lower() and not path.name.startswith(".")
+
+
+def episode_files_on_disk(out_dir: Path, test: str) -> dict[tuple[str, str], Path]:
+    """``(cell, policy) -> parquet path`` for every episode file of `test` on disk.
+
+    Globs ``*.parquet`` only, so a ``*.parquet.tmp`` left by a worker that was killed
+    mid-write is not an episode (`run_deployment.OrphanedWorker`).
+    """
+    root = out_dir / "episodes" / test
+    found: dict[tuple[str, str], Path] = {}
+    if not root.is_dir():
+        return found
+    for cell_dir in sorted(p for p in root.iterdir() if _is_cell_dir(p)):
+        for pq in sorted(cell_dir.glob("*.parquet")):
+            found[(cell_dir.name, pq.stem)] = pq
+    return found
+
+
+def reconcile_episodes(
+    out_dir: Path, test: str, manifest: dict[tuple[str, str, str], dict]
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """``(orphans, holes)``: files no manifest line claims, and lines with no file.
+
+    This is the guard that rulings 17 and 22 were missing. The parquet write happens in
+    a pool worker and the manifest append in the parent (`run_deployment.run_items`), so
+    a killed parent leaves complete episode files that no line mentions -- and this
+    function's caller used to ``glob("*.parquet")`` with no reconciliation at all. Nine
+    such files would have lifted Test D's common support from 16 policies to 19, undone
+    a deliberate exclusion and moved a published headline; both batches were caught only
+    by hand.
+
+    An **orphan** is a file on disk whose latest manifest line is absent *or* is an
+    exclusion (`run_deployment.KIND_EXCLUSION`): an item recorded as deliberately not
+    run has no business having episodes. A **hole** is a completion line whose file is
+    gone -- the quarantine case, where the tree can no longer reproduce the manifest.
+
+    Reads only directory entries, never a parquet: 3,510 files in ~0.2 s.
+    """
+    disk = set(episode_files_on_disk(out_dir, test))
+    completions: set[tuple[str, str]] = set()
+    excluded: set[tuple[str, str]] = set()
+    for (rec_test, cell, policy), rec in manifest.items():
+        if rec_test != test:
+            continue
+        if rd.record_kind(rec) == rd.KIND_EXCLUSION:
+            excluded.add((cell, policy))
+        else:
+            completions.add((cell, policy))
+    orphans = sorted((disk - completions) | (disk & excluded))
+    holes = sorted(completions - disk)
+    return orphans, holes
+
+
+def _reconciliation_message(test: str, orphans: list, holes: list) -> str:
+    lines = [
+        f"test {test}: the episode tree and manifest_{test}.jsonl disagree "
+        f"({len(orphans)} orphan file(s), {len(holes)} manifest hole(s)).",
+    ]
+    if orphans:
+        lines.append("  ORPHANS (on disk, not claimed by a completion line) -- a killed "
+                     "--resume leaves these; quarantine them, do not analyse them:")
+        lines += [f"    {c}/{p}.parquet" for c, p in orphans]
+    if holes:
+        lines.append("  HOLES (a completion line whose parquet is gone) -- the tree no "
+                     "longer reproduces the manifest:")
+        lines += [f"    {c}/{p}" for c, p in holes]
+    lines.append("  Resolve it, or re-run with --accept-unmanifested (which stamps "
+                 "accepted_unmanifested on every table this run writes).")
+    return "\n".join(lines)
+
+
+def load_cells(
+    out_dir: Path,
+    test: str,
+    manifest: dict[tuple[str, str, str], dict] | None = None,
+    *,
+    accept_unmanifested: bool = False,
+) -> list[Cell]:
     """Every cell of `test` from ``episodes/<test>``; frames sorted by episode and checked
-    to share the seed and episode set (the CRN pairing the paired statistics assume)."""
+    to share the seed and episode set (the CRN pairing the paired statistics assume).
+
+    `manifest` is `run_deployment.latest_records` of ``manifest_<test>.jsonl``. When it
+    is given -- which the CLI always does -- the tree is reconciled against it first and
+    a disagreement is a `SystemExit` (`reconcile_episodes`), because an unmanifested
+    episode file silently changes the common support and therefore the headline numbers.
+    ``None`` is for hand-built fixtures that have no manifest; it is *not* a CLI option,
+    and `test_cli_always_reconciles_against_the_manifest` holds that line.
+    """
+    if manifest is not None:
+        orphans, holes = reconcile_episodes(out_dir, test, manifest)
+        if orphans or holes:
+            message = _reconciliation_message(test, orphans, holes)
+            if not accept_unmanifested:
+                raise SystemExit(message)
+            log.error("--accept-unmanifested: analysing anyway.\n%s", message)
     root = out_dir / "episodes" / test
     if not root.is_dir():
         raise FileNotFoundError(f"no episodes for test {test!r} under {root}")
     cells: list[Cell] = []
-    for cell_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+    for cell_dir in sorted(p for p in root.iterdir() if _is_cell_dir(p)):
         frames: dict[str, pd.DataFrame] = {}
         groups: dict[str, str] = {}
         meta: dict | None = None
@@ -1284,6 +1394,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
                         "onpolicy_parity table (the same policies and feature layer) as the gate")
     p.add_argument("--allow-unverified", action="store_true",
                    help="write main tables even when no on-policy snapshots exist to verify parity")
+    p.add_argument("--accept-unmanifested", action="store_true",
+                   help="analyse an episode tree that disagrees with manifest_<test>.jsonl "
+                        "(orphan files or missing ones); every table written then carries an "
+                        "accepted_unmanifested column")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
@@ -1300,8 +1414,11 @@ def main(argv: list[str] | None = None) -> dict:
     t_run = time.time()
     written: list[Path] = []
 
-    cells = load_cells(out_dir, test)
+    global _ACCEPT_UNMANIFESTED
+    _ACCEPT_UNMANIFESTED = bool(args.accept_unmanifested)
+
     manifest = rd.latest_records(rd.read_manifest(rd.manifest_path(out_dir, test)))
+    cells = load_cells(out_dir, test, manifest, accept_unmanifested=_ACCEPT_UNMANIFESTED)
     mark_untuned_baselines(cells, manifest, pt.load_baseline_params(out_dir / "baseline_params.json"))
     recs_present = recommenders_in(cells[0].frames[cells[0].policies[0]])
     if args.recommender == "all":

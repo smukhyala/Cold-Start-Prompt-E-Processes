@@ -37,6 +37,7 @@ import analyze_deployment as ad  # noqa: E402
 import make_deploy_figures as mf  # noqa: E402
 import ood  # noqa: E402
 import reservoir_analysis as ra  # noqa: E402
+import run_deployment as rd  # noqa: E402
 
 from cold_start.growing.deploy import feature_groups as fg  # noqa: E402
 from cold_start.growing.deploy import stats  # noqa: E402
@@ -752,7 +753,26 @@ def test_oracle_tail_integral_matches_closed_form_for_beta():
 # ---- CLI end to end on synthetic parquet -------------------------------------------------------------
 
 
+def _manifest_line(out: Path, cell: ad.Cell, policy: str, **extra) -> dict:
+    """A completion record in the runner's schema for one synthetic (cell, policy)."""
+    return {
+        "test": "smoke", "cell": cell.name, "policy": policy, "group": GROUPS[policy],
+        "n": cell.n, "sha": "synthetic", "env_id": cell.env_id, "family": cell.family,
+        "horizon": cell.horizon, "cap": cell.cap, "base_seed": cell.base_seed,
+        "params": {}, "artifact_sha": None, "counters": None, "snapshots": None,
+        "parquet": str(out / "episodes" / "smoke" / cell.name / f"{policy}.parquet"),
+        **extra,
+    }
+
+
 def _write_synthetic_run(out: Path, cells: list[ad.Cell]) -> None:
+    """The episode tree *and* the manifest that claims it, as a real run leaves them.
+
+    Both, always: `ad.load_cells` reconciles one against the other, so a fixture that
+    wrote only the parquet files would be indistinguishable from the orphan batches of
+    rulings 17 and 22.
+    """
+    lines: list[dict] = []
     for c in cells:
         for policy, frame in c.frames.items():
             path = out / "episodes" / "smoke" / c.name / f"{policy}.parquet"
@@ -764,7 +784,163 @@ def _write_synthetic_run(out: Path, cells: list[ad.Cell]) -> None:
             np.savez(dyn, t=grid, K_t=np.linspace(2, 20, 11), best_discovered=np.linspace(0.7, 0.9, 11),
                      best_posterior_mean=np.linspace(0.6, 0.85, 11), q_primary=np.linspace(0.6, 0.88, 11),
                      n_eliminated=np.linspace(0, 3, 11), search_rate=np.full(11, 0.2), herfindahl=np.full(11, 0.3))
-    (out / "manifest_smoke.jsonl").write_text("")
+            lines.append(_manifest_line(out, c, policy))
+    (out / "manifest_smoke.jsonl").write_text(
+        "".join(json.dumps(line) + "\n" for line in lines)
+    )
+
+
+def _smoke_manifest(out: Path) -> dict:
+    return rd.latest_records(rd.read_manifest(out / "manifest_smoke.jsonl"))
+
+
+def test_reconciler_is_clean_on_a_tree_that_matches_its_manifest(tmp_path, cells):
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    orphans, holes = ad.reconcile_episodes(out, "smoke", _smoke_manifest(out))
+    assert orphans == [] and holes == []
+    assert len(ad.episode_files_on_disk(out, "smoke")) == len(cells) * len(POLICIES)
+    assert len(ad.load_cells(out, "smoke", _smoke_manifest(out))) == len(cells)
+
+
+def test_load_cells_refuses_an_orphan_parquet_that_no_manifest_line_claims(tmp_path, cells):
+    """Rulings 17 and 22: a killed --resume leaves complete files with no manifest line.
+
+    The orphan must not enter a number -- before this, `load_cells` globbed the tree and
+    nine such files would have lifted Test D's common support from 16 policies to 19.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    victim = cells[0]
+    orphan = out / "episodes" / "smoke" / victim.name / "orphan_policy.parquet"
+    victim.frames["phi_k16"].to_parquet(orphan, index=False)
+
+    orphans, holes = ad.reconcile_episodes(out, "smoke", _smoke_manifest(out))
+    assert orphans == [(victim.name, "orphan_policy")] and holes == []
+    with pytest.raises(SystemExit) as excinfo:
+        ad.load_cells(out, "smoke", _smoke_manifest(out))
+    assert f"{victim.name}/orphan_policy.parquet" in str(excinfo.value)
+    # The escape hatch reads it, and says so on every table it then writes.
+    loaded = ad.load_cells(out, "smoke", _smoke_manifest(out), accept_unmanifested=True)
+    assert "orphan_policy" in {p for c in loaded for p in c.policies}
+
+
+def test_load_cells_refuses_a_manifest_hole_whose_parquet_is_gone(tmp_path, cells):
+    """The quarantine case: the tree no longer reproduces the manifest."""
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    victim = cells[1]
+    (out / "episodes" / "smoke" / victim.name / "phi_k16.parquet").unlink()
+    orphans, holes = ad.reconcile_episodes(out, "smoke", _smoke_manifest(out))
+    assert orphans == [] and holes == [(victim.name, "phi_k16")]
+    with pytest.raises(SystemExit, match="1 manifest hole"):
+        ad.load_cells(out, "smoke", _smoke_manifest(out))
+
+
+def test_an_excluded_item_with_a_file_on_disk_is_an_orphan(tmp_path, cells):
+    """Ruling 19's durable fix: an exclusion line supersedes a completion.
+
+    An item recorded as deliberately not run has no business having episodes, so a file
+    that reappears under it is exactly the orphan class -- not a legitimate completion.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    victim = cells[0]
+    with open(out / "manifest_smoke.jsonl", "a") as fh:
+        fh.write(json.dumps(rd.exclusion_record(
+            "smoke", victim.name, "phi_k16", "costs hours through the exact evaluator", "sha0"
+        )) + "\n")
+    orphans, holes = ad.reconcile_episodes(out, "smoke", _smoke_manifest(out))
+    assert orphans == [(victim.name, "phi_k16")] and holes == []
+
+    # Remove the file and the exclusion is consistent with the tree: no orphan, no hole
+    # (an exclusion is done-with-no-file, so it is never a hole either).
+    (out / "episodes" / "smoke" / victim.name / "phi_k16.parquet").unlink()
+    assert ad.reconcile_episodes(out, "smoke", _smoke_manifest(out)) == ([], [])
+
+
+def test_reconciler_ignores_quarantine_directories_and_partial_writes(tmp_path, cells):
+    """The nine quarantined orphans of ruling 22 live beside the tree, not in it.
+
+    A ``*.parquet.tmp`` from a worker killed mid-write is not an episode either, so
+    neither may be reported -- otherwise the reconciler cries wolf on a clean tree and
+    its refusal gets routed around.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    victim = cells[0]
+    src = out / "episodes" / "smoke" / victim.name / "phi_k16.parquet"
+
+    quarantine = out / "episodes_quarantine" / "orphaned_20260919" / victim.name
+    quarantine.mkdir(parents=True)
+    (quarantine / "phi_k16.parquet").write_bytes(src.read_bytes())
+    inside = out / "episodes" / "smoke" / "quarantine_20260919"
+    inside.mkdir()
+    (inside / "phi_k16.parquet").write_bytes(src.read_bytes())
+    (out / "episodes" / "smoke" / victim.name / "phi_k16_cs.parquet.tmp").write_bytes(b"partial")
+
+    assert ad.reconcile_episodes(out, "smoke", _smoke_manifest(out)) == ([], [])
+    loaded = ad.load_cells(out, "smoke", _smoke_manifest(out))
+    assert {c.name for c in loaded} == {c.name for c in cells}
+
+
+def test_cli_always_reconciles_against_the_manifest(tmp_path, cells, monkeypatch):
+    """`manifest=None` is legal for fixtures; the CLI must never take it.
+
+    This is the load-bearing half of the fix. `load_cells(out_dir, test)` still works
+    for a hand-built tree with no manifest, so nothing stops a future edit from dropping
+    the argument at the one call site that matters -- which is precisely the state the
+    code was in when rulings 17 and 22 happened. The test pins the call site itself:
+    every `main()` invocation must pass a manifest, and an orphan must reach a
+    `SystemExit` through the CLI, not just through `load_cells`.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    argv = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--allow-unverified", "--recommender", PRIMARY_RECOMMENDER]
+
+    seen: list[dict] = []
+    real_load_cells = ad.load_cells
+
+    def spy(out_dir, test, manifest=None, **kwargs):
+        seen.append({"manifest": manifest, "kwargs": kwargs})
+        return real_load_cells(out_dir, test, manifest, **kwargs)
+
+    monkeypatch.setattr(ad, "load_cells", spy)
+    ad.main(argv)
+    assert len(seen) == 1
+    assert seen[0]["manifest"] is not None, "the CLI passed manifest=None to load_cells"
+    assert set(seen[0]["manifest"]) == {
+        ("smoke", c.name, p) for c in cells for p in POLICIES
+    }
+    assert seen[0]["kwargs"] == {"accept_unmanifested": False}
+
+    # And the refusal is reachable from the CLI: an orphan stops the run.
+    cells[0].frames["phi_k16"].to_parquet(
+        out / "episodes" / "smoke" / cells[0].name / "orphan_policy.parquet", index=False
+    )
+    with pytest.raises(SystemExit, match="orphan"):
+        ad.main(argv)
+
+
+def test_accept_unmanifested_stamps_every_table_it_writes(tmp_path, cells):
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    cells[0].frames["phi_k16"].to_parquet(
+        out / "episodes" / "smoke" / cells[0].name / "orphan_policy.parquet", index=False
+    )
+    argv = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--allow-unverified", "--recommender", PRIMARY_RECOMMENDER]
+    try:
+        result = ad.main(argv + ["--accept-unmanifested"])
+        written = [Path(p) for p in result["written"]]
+        assert written
+        for path in written:
+            frame = pd.read_csv(path)
+            assert "accepted_unmanifested" in frame.columns, path.name
+            assert bool(frame["accepted_unmanifested"].all())
+    finally:
+        ad._ACCEPT_UNMANIFESTED = False
 
 
 def test_cli_refuses_main_tables_without_the_parity_gate(tmp_path, cells):
@@ -813,11 +989,14 @@ def test_cli_refuses_main_tables_when_a_parity_column_fails(tmp_path, cells, mon
     (out / "snapshots").mkdir()
     (out / "snapshots" / "x.pkl").write_bytes(pickle.dumps([]))
     cell = cells[0]
-    (out / "manifest_smoke.jsonl").write_text(json.dumps({
-        "test": "smoke", "cell": cell.name, "policy": "phi_k16", "group": "learned",
-        "snapshots": str(out / "snapshots" / "x.pkl"), "parquet": str(out / "episodes" / "smoke" / cell.name / "phi_k16.parquet"),
-        "params": {"artifact": "unused.joblib", "tau": 0.6}, "counters": {},
-    }) + "\n")
+    # Appended, not written over: the latest line per item wins, so this supersedes the
+    # fixture's own phi_k16 record while every other item keeps its completion line (the
+    # tree and the manifest must still reconcile -- `ad.reconcile_episodes`).
+    with open(out / "manifest_smoke.jsonl", "a") as fh:
+        fh.write(json.dumps(_manifest_line(
+            out, cell, "phi_k16", snapshots=str(out / "snapshots" / "x.pkl"),
+            params={"artifact": "unused.joblib", "tau": 0.6}, counters={},
+        )) + "\n")
     item = ood.SnapshotItem("smoke", cell.name, "phi_k16", cell.env_id, cell.family, cell.horizon, 64, {},
                             str(out / "snapshots" / "x.pkl"), "model", "unused.joblib", 0.6)
     scalar = np.zeros((1200, len(fg.ALL_DEPLOYABLE)))

@@ -29,6 +29,13 @@ a cell's 10k resamples cost one matmul instead of ~1,500 index gathers. It is th
 same percentile bootstrap over episodes; the resample draws are merely reused across
 columns, which is also what pairing suggests.
 
+**These tables are the bootstrap of record.** `run_deployment.py` also bootstraps, into
+``summary_<test>.csv``; that file is the runner's raw per-cell output and its
+``d_*_lo``/``d_*_hi`` are a *different draw* of the same percentile bootstrap (default
+``--n-boot 2000`` against 10,000 here). Point estimates agree exactly, interval bounds
+differ by about 1% of their width. Every published CI comes from ``tables/``; nothing
+should quote a bound out of ``summary_<test>.csv`` (finding F4).
+
 The parity gate. Before any main table is written, every logged on-policy snapshot
 of every learned policy is scored by the scalar corpus extractor and by the
 vectorized deployment extractor (`ood.snapshot_pass`); if any column fails the M1
@@ -138,6 +145,9 @@ class Cell:
     n: int
     frames: dict[str, pd.DataFrame] = field(default_factory=dict)
     groups: dict[str, str] = field(default_factory=dict)
+    #: Policies this cell deployed with a placeholder constant instead of a tuned one
+    #: (`mark_untuned_baselines`); a contrast against one of them is not a tuned comparison.
+    untuned: frozenset[str] = frozenset()
 
     @property
     def policies(self) -> list[str]:
@@ -195,6 +205,47 @@ def load_cells(out_dir: Path, test: str) -> list[Cell]:
         raise FileNotFoundError(f"no parquet frames under {root}")
     log.info("test %s: %d cells, %d policies in the first", test, len(cells), len(cells[0].frames))
     return cells
+
+
+def mark_untuned_baselines(
+    cells: list[Cell], manifest: dict[tuple[str, str, str], dict], baseline_params: dict | None
+) -> dict[str, frozenset[str]]:
+    """Fill `Cell.untuned`: the policies a cell deployed on a placeholder constant.
+
+    `baseline_params.json` is tuned per horizon, and a horizon it does not cover falls
+    back to the registered placeholder -- a schedule nobody selected, deployed under the
+    tuned policy's name (finding B1; the T=2000 block of Test D is the live instance).
+    Such a cell is not a tuned comparator, so the aggregations below refuse to pool it
+    into a contrast that references it.
+
+    Two sources are consulted, so neither a stale manifest nor a stale JSON can hide one:
+    `policy_table.resolve_params` stamps ``params_tuned: False`` on the item it resolves
+    (read back from the manifest here), and `policy_table.baseline_is_tuned` re-derives
+    the same answer from today's `baseline_params.json` for manifests written before that
+    stamp existed. A policy is untuned in a cell if *either* source says so.
+    """
+    stamped: dict[tuple[str, str], bool] = {
+        (cell, policy): pt.params_are_tuned(rec.get("params"))
+        for (_test, cell, policy), rec in manifest.items()
+    }
+    marks: dict[str, frozenset[str]] = {}
+    for c in cells:
+        untuned = {
+            policy
+            for policy in c.policies
+            if not pt.baseline_is_tuned(policy, c.horizon, baseline_params)
+            or not stamped.get((c.name, policy), True)
+        }
+        c.untuned = frozenset(untuned)
+        marks[c.name] = c.untuned
+    flagged = sorted({(c.name, p) for c in cells for p in c.untuned})
+    if flagged:
+        log.warning(
+            "%d (cell, policy) items deployed UNTUNED placeholder constants and will not be "
+            "pooled into any contrast that references them: %s",
+            len(flagged), ", ".join(f"{cell}/{p}" for cell, p in flagged),
+        )
+    return marks
 
 
 # ---- bootstrap engine ---------------------------------------------------------------------
@@ -323,6 +374,26 @@ class Stratum:
     horizon: str  # "all" for pooled-over-horizons
     cell: str  # cell name at level "cell", else ""
     cells: tuple[str, ...]
+    #: The cells of `cells` that carry *every* policy deployed anywhere in the stratum:
+    #: the common support on which a raw level (regret, and the descriptive means beside
+    #: it) is comparable across policies. ``None`` means "not computed" and is read as
+    #: `cells` (a stratum built by hand, e.g. in a test).
+    common: tuple[str, ...] | None = None
+
+
+def common_cells(cells: list[Cell], names: tuple[str, ...]) -> tuple[str, ...]:
+    """The cells of `names` that hold every policy appearing in any of them.
+
+    A level averaged over a policy's own cells is not comparable with one averaged over
+    a different policy's (finding B4: Test D's three T=2000 cells carry 8 of the 11
+    policies, which put a 0.0136 gap between two policies that agree to <1e-4 on every
+    shared cell). Restricting every level in a stratum to the common support makes the
+    column mean the same thing in every row; the ragged cells are still reported in the
+    per-horizon strata, where nothing is mixed.
+    """
+    by_name = {c.name: c for c in cells if c.name in set(names)}
+    policies = set().union(*(set(c.frames) for c in by_name.values())) if by_name else set()
+    return tuple(n for n in names if n in by_name and policies <= set(by_name[n].frames))
 
 
 def strata_of(cells: list[Cell]) -> list[Stratum]:
@@ -330,22 +401,68 @@ def strata_of(cells: list[Cell]) -> list[Stratum]:
     horizons = sorted({c.horizon for c in cells})
     out: list[Stratum] = []
     for c in cells:
-        out.append(Stratum("cell", c.family, str(c.horizon), c.name, (c.name,)))
+        out.append(Stratum("cell", c.family, str(c.horizon), c.name, (c.name,), (c.name,)))
     for f in families:
         for T in horizons:
             names = tuple(c.name for c in cells if c.family == f and c.horizon == T)
             if names:
-                out.append(Stratum("family_horizon", f, str(T), "", names))
+                out.append(Stratum("family_horizon", f, str(T), "", names, common_cells(cells, names)))
     if len(horizons) > 1:
         for f in families:
             names = tuple(c.name for c in cells if c.family == f)
-            out.append(Stratum("family", f, "all", "", names))
+            out.append(Stratum("family", f, "all", "", names, common_cells(cells, names)))
     if len(families) > 1:
         for T in horizons:
             names = tuple(c.name for c in cells if c.horizon == T)
-            out.append(Stratum("horizon", "all", str(T), "", names))
-    out.append(Stratum("pooled", "all", "all", "", tuple(c.name for c in cells)))
+            out.append(Stratum("horizon", "all", str(T), "", names, common_cells(cells, names)))
+    names = tuple(c.name for c in cells)
+    out.append(Stratum("pooled", "all", "all", "", names, common_cells(cells, names)))
+    ragged = [s for s in out if s.common is not None and len(s.common) != len(s.cells)]
+    if ragged:
+        log.warning(
+            "%d of %d strata have a ragged policy membership; their level columns "
+            "(regret and the descriptive means) are restricted to the common support, "
+            "e.g. %s %s/%s: %d of %d cells",
+            len(ragged), len(out), ragged[0].level, ragged[0].family, ragged[0].horizon,
+            len(ragged[0].common or ()), len(ragged[0].cells),
+        )
     return out
+
+
+#: Quantities that are a policy's own level rather than a paired contrast; these are the
+#: ones restricted to a stratum's common support (`common_cells`).
+LEVEL_QUANTITIES: frozenset[str] = frozenset({"regret", "regret_disc", "regret_sel"})
+
+#: Fewest environments at which the percentile cluster bootstrap is still an interval
+#: rather than a range (finding F1).
+#:
+#: `stats.cluster_bootstrap_over_envs` resamples ``n`` environments with replacement and
+#: takes the 2.5th and 97.5th percentiles. The resample that draws the *same* environment
+#: ``n`` times has probability ``n**-n``: 25% at n=2, 3.7% at n=3, 0.39% at n=4. While
+#: that exceeds 2.5%, the 2.5th percentile IS the smallest environment mean and the
+#: 97.5th IS the largest, so the "95% interval" is exactly [min env mean, max env mean]
+#: and "cluster-significant" degrades to "every environment agrees in sign". The bounds
+#: are still emitted -- shipped text already cites them -- but every table that carries
+#: them also carries ``cluster_degenerate`` so a reader can tell the two apart.
+CLUSTER_MIN_ENVS = 4
+
+
+def cluster_is_degenerate(n_envs: int, lo: float) -> bool:
+    """Whether an emitted cluster interval is the [min, max] range (`CLUSTER_MIN_ENVS`)."""
+    return bool(np.isfinite(lo)) and int(n_envs) < CLUSTER_MIN_ENVS
+
+
+def contrast_reference(quantity: str) -> str | None:
+    """The reference policy a ``d_*`` quantity is measured against, else ``None``."""
+    if quantity.startswith("d_regret_vs_"):
+        return quantity[len("d_regret_vs_"):]
+    if quantity in ("d_disc_vs_cp0", "d_sel_vs_cp0"):
+        return "cp0"
+    return None
+
+
+def _level_cells(stratum: Stratum) -> tuple[str, ...]:
+    return stratum.cells if stratum.common is None else stratum.common
 
 
 def aggregate(
@@ -356,14 +473,44 @@ def aggregate(
     The stratum's bootstrap distribution is the average of its cells' resampled-mean
     vectors (each cell resampled within itself), exactly `stats.stratified_pooled`'s
     construction; ``se`` is the equal-weight combination of the per-cell paired SEs;
-    ``win`` the mean of per-cell win rates. Cells lacking the policy or the
-    reference are skipped and counted in ``n_cells``.
+    ``win`` the mean of per-cell win rates.
+
+    Which cells contribute is not simply "those that have the number" (findings B1, B4):
+
+    * a **level** (`LEVEL_QUANTITIES`) is averaged over the stratum's common support, so
+      two policies' levels in the same stratum are over the same cells; the policy's own
+      count is still reported, as ``n_cells_policy``;
+    * a **contrast** is paired within a cell, so it is already on the intersection of the
+      two policies' cell sets -- but a cell whose *reference* deployed an untuned
+      placeholder is refused (``n_cells_excluded_untuned``) as soon as the stratum also
+      holds properly tuned cells. A stratum in which every cell is untuned keeps them and
+      says so with ``ref_tuned = False``: a descriptive row, not a tuned comparison.
     """
     key = (policy, quantity)
-    have = [per_cell[c] for c in stratum.cells if c in per_cell and key in per_cell[c].mean]
+    ref = contrast_reference(quantity)
+    names = _level_cells(stratum) if quantity in LEVEL_QUANTITIES else stratum.cells
+    present = [c for c in names if c in per_cell and key in per_cell[c].mean]
+    own = [c for c in stratum.cells if c in per_cell and key in per_cell[c].mean]
+    n_excluded, ref_tuned = 0, True
+    if ref is not None:
+        untuned = {c for c in present if ref in per_cell[c].cell.untuned}
+        if untuned and len(untuned) < len(present):
+            present = [c for c in present if c not in untuned]
+            n_excluded = len(untuned)
+        elif untuned:
+            ref_tuned = False
+    flags = {
+        "n_cells_policy": len(own),
+        "n_cells_excluded_untuned": n_excluded,
+        "ref_tuned": ref_tuned,
+        "params_tuned": not any(policy in per_cell[c].cell.untuned for c in present),
+        "common_support": len(present) == len(own) == len(stratum.cells),
+    }
+    have = [per_cell[c] for c in present]
     if not have:
         return {"mean": np.nan, "lo": np.nan, "hi": np.nan, "se": np.nan, "win": np.nan,
-                "n_cells": 0, "n_episodes": 0, "n_envs": 0, "cluster_lo": np.nan, "cluster_hi": np.nan}
+                "n_cells": 0, "n_episodes": 0, "n_envs": 0, "cluster_lo": np.nan,
+                "cluster_hi": np.nan, "cluster_degenerate": False, **flags}
     means = np.array([cs.mean[key] for cs in have])
     ses = np.array([cs.se[key] for cs in have])
     boot = np.mean([cs.boot[key].astype(np.float64) for cs in have], axis=0)
@@ -379,6 +526,7 @@ def aggregate(
         "n_envs": len({cs.cell.env_id for cs in have}),
         "cluster_lo": np.nan,
         "cluster_hi": np.nan,
+        **flags,
     }
     envs = [cs.cell.env_id for cs in have]
     if len(set(envs)) >= 2 and stratum.level != "cell":
@@ -388,11 +536,19 @@ def aggregate(
             seed=_seed("cluster", stratum.level, stratum.family, stratum.horizon, policy, quantity),
         )
         out["cluster_lo"], out["cluster_hi"] = cb["lo"], cb["hi"]
+    out["cluster_degenerate"] = cluster_is_degenerate(out["n_envs"], out["cluster_lo"])
     return out
 
 
 def descriptive_for(per_cell: dict[str, CellStats], stratum: Stratum, policy: str) -> dict:
-    have = [per_cell[c] for c in stratum.cells if c in per_cell and policy in per_cell[c].descriptive]
+    """Mean of the descriptive columns over the stratum's common support.
+
+    The same cell set as the `regret` level beside them (finding B4), so a row's
+    ``k_final`` / ``search_frac`` cannot be read against a neighbour's over different
+    cells.
+    """
+    names = _level_cells(stratum)
+    have = [per_cell[c] for c in names if c in per_cell and policy in per_cell[c].descriptive]
     if not have:
         return {}
     keys = list(have[0].descriptive[policy])
@@ -425,7 +581,16 @@ def main_table(
     test: str, rec: str, cells: list[Cell], per_cell: dict[str, CellStats], strata: list[Stratum]
 ) -> pd.DataFrame:
     """Per (stratum, policy): descriptive means, mean regret with CI, paired deltas vs
-    the two references with paired-bootstrap CI, win rate and cluster CI."""
+    the two references with paired-bootstrap CI, win rate and cluster CI.
+
+    Four columns carry the support of the row, and a reader who quotes a level without
+    them can be misled (findings B1, B4): ``n_cells`` is the common support the level and
+    the descriptive means were averaged over, ``n_cells_policy`` how many cells this
+    policy actually ran in, ``common_support`` whether those agree with the stratum, and
+    ``params_tuned`` whether this policy's own constants were tuned at these horizons.
+    Per reference, ``*_ref_tuned`` says the reference was tuned in every contributing
+    cell and ``*_n_excluded_untuned`` counts the cells refused because it was not.
+    """
     cells_by_name = {c.name: c for c in cells}
     policies = sorted({p for c in cells for p in c.policies})
     rows: list[dict] = []
@@ -433,12 +598,20 @@ def main_table(
         for policy in policies:
             desc = descriptive_for(per_cell, s, policy)
             if not desc:
+                if any(policy in cells_by_name[c].frames for c in s.cells if c in cells_by_name):
+                    log.warning(
+                        "%s %s/%s: %s ran only outside the common support (%d of %d cells); "
+                        "no comparable level row is written for it at this level",
+                        s.level, s.family, s.horizon, policy, len(_level_cells(s)), len(s.cells),
+                    )
                 continue
             row = _stratum_meta(test, rec, s, cells_by_name)
             row.update({"policy": policy, "group": policy_group(policy, cells)})
             reg = aggregate(per_cell, s, policy, "regret")
             row.update({
                 "n_cells": reg["n_cells"], "n_envs": reg["n_envs"], "n_episodes": reg["n_episodes"],
+                "n_cells_policy": reg["n_cells_policy"], "common_support": reg["common_support"],
+                "params_tuned": reg["params_tuned"],
                 "regret": reg["mean"], "regret_lo": reg["lo"], "regret_hi": reg["hi"], "regret_se": reg["se"],
                 "q": desc["q"],
             })
@@ -456,6 +629,9 @@ def main_table(
                     p: d["mean"], f"{p}_lo": d["lo"], f"{p}_hi": d["hi"], f"{p}_se": d["se"],
                     f"{p}_win": d["win"], f"{p}_cluster_lo": d["cluster_lo"],
                     f"{p}_cluster_hi": d["cluster_hi"], f"{p}_n_cells": d["n_cells"],
+                    f"{p}_cluster_degenerate": d["cluster_degenerate"],
+                    f"{p}_ref_tuned": d["ref_tuned"],
+                    f"{p}_n_excluded_untuned": d["n_cells_excluded_untuned"],
                 })
             rows.append(row)
     return pd.DataFrame(rows)
@@ -477,12 +653,17 @@ def decomposition_table(
             row = _stratum_meta(test, rec, s, cells_by_name)
             row.update({"policy": policy, "group": policy_group(policy, cells),
                         "n_cells": reg["n_cells"], "n_episodes": reg["n_episodes"],
+                        "n_cells_policy": reg["n_cells_policy"],
+                        "common_support": reg["common_support"], "params_tuned": reg["params_tuned"],
                         "regret": reg["mean"], "regret_lo": reg["lo"], "regret_hi": reg["hi"]})
             for q, name in (("regret_disc", "regret_disc"), ("regret_sel", "regret_sel"),
                             ("d_disc_vs_cp0", "d_disc_vs_cp0"), ("d_sel_vs_cp0", "d_sel_vs_cp0"),
                             ("d_regret_vs_cp0", "d_regret_vs_cp0")):
                 a = aggregate(per_cell, s, policy, q)
                 row.update({name: a["mean"], f"{name}_lo": a["lo"], f"{name}_hi": a["hi"]})
+                if q == "d_regret_vs_cp0":
+                    row.update({"cp0_ref_tuned": a["ref_tuned"],
+                                "cp0_n_excluded_untuned": a["n_cells_excluded_untuned"]})
             rows.append(row)
     return pd.DataFrame(rows)
 
@@ -501,15 +682,55 @@ def _paired_diffs(cells: list[Cell], names: tuple[str, ...], policy: str, ref: s
     return out
 
 
+def missing_status(cells: list[Cell], s: Stratum, policy: str, ref: str) -> str:
+    """Why this stratum has no paired cell, naming the policy that is actually absent.
+
+    Three distinct situations, and the label must not conflate them (finding M1): a
+    policy that was never deployed in this test at all (H2's `phi_k16_quality` on Tests
+    B and D -- *not evaluated*, not a null result); one that ran in the test but not in
+    this stratum's cells (Ruling 16 withdrew `phi_k16` from Test D's T=2000 cells, which
+    the old label blamed on the reference); and the pathological case where both ran here
+    but never in the same cell.
+    """
+    in_test = {p for c in cells for p in c.frames}
+    in_stratum = {p for c in cells if c.name in set(s.cells) for p in c.frames}
+    absent = [n for n in (policy, ref) if n not in in_stratum]
+    if not absent:
+        return f"unpaired:{policy}|{ref}"
+    never = [n for n in absent if n not in in_test]
+    if never:
+        return "not_evaluated:" + "+".join(never)
+    return "missing:" + "+".join(absent)
+
+
 def contrast_via_stats(
     cells: list[Cell], s: Stratum, policy: str, ref: str, rec: str, n_boot: int
 ) -> dict:
-    """One contrast through the landed `stats` functions (used for the pre-registered rows)."""
+    """One contrast through the landed `stats` functions (used for the pre-registered rows).
+
+    Cells whose *reference* deployed an untuned placeholder are refused whenever the
+    stratum also holds tuned ones, exactly as `aggregate` does (finding B1).
+    """
     diffs = _paired_diffs(cells, s.cells, policy, ref, rec)
+    untuned = {c.name for c in cells if c.name in diffs and ref in c.untuned}
+    n_excluded, ref_tuned = 0, True
+    if untuned and len(untuned) < len(diffs):
+        diffs = {name: d for name, d in diffs.items() if name not in untuned}
+        n_excluded = len(untuned)
+    elif untuned:
+        ref_tuned = False
+    by_name = {c.name: c for c in cells}
+    flags = {
+        "evaluated": bool(diffs),
+        "ref_tuned": ref_tuned,
+        "n_cells_excluded_untuned": n_excluded,
+        "params_tuned": not any(policy in by_name[n].untuned for n in diffs),
+    }
     if not diffs:
-        return {"status": f"missing:{policy if not any(policy in c.frames for c in cells) else ref}",
+        return {"status": missing_status(cells, s, policy, ref),
                 "delta": np.nan, "lo": np.nan, "hi": np.nan, "se": np.nan, "win": np.nan,
-                "n_cells": 0, "n_episodes": 0, "n_envs": 0, "cluster_lo": np.nan, "cluster_hi": np.nan}
+                "n_cells": 0, "n_episodes": 0, "n_envs": 0, "cluster_lo": np.nan,
+                "cluster_hi": np.nan, "cluster_degenerate": False, **flags}
     seed = _seed("primary", s.level, s.family, s.horizon, s.cell, policy, ref, rec)
     if len(diffs) == 1:
         d = next(iter(diffs.values()))
@@ -528,9 +749,12 @@ def contrast_via_stats(
     if cm["env_id"].nunique() >= 2:
         cb = stats.cluster_bootstrap_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed + 1)
         cluster_lo, cluster_hi = cb["lo"], cb["hi"]
-    return {"status": "ok", "delta": mean, "lo": lo, "hi": hi, "se": se, "win": win,
+    status = "ok" if ref_tuned else "untuned_reference"
+    n_envs = int(cm["env_id"].nunique())
+    return {"status": status, "delta": mean, "lo": lo, "hi": hi, "se": se, "win": win,
             "n_cells": len(diffs), "n_episodes": int(sum(d.size for d in diffs.values())),
-            "n_envs": int(cm["env_id"].nunique()), "cluster_lo": cluster_lo, "cluster_hi": cluster_hi}
+            "n_envs": n_envs, "cluster_lo": cluster_lo, "cluster_hi": cluster_hi,
+            "cluster_degenerate": cluster_is_degenerate(n_envs, cluster_lo), **flags}
 
 
 def primary_contrasts(
@@ -571,11 +795,15 @@ def secondary_contrasts(
                     continue
                 row = _stratum_meta(test, rec, s, cells_by_name)
                 row.update({"hypothesis": "", "pre_registered": False, "label": "exploratory",
-                            "policy": policy, "reference": ref, "status": "ok",
+                            "policy": policy, "reference": ref,
+                            "status": "ok" if a["ref_tuned"] else "untuned_reference",
                             "delta": a["mean"], "lo": a["lo"], "hi": a["hi"], "se": a["se"],
                             "win": a["win"], "n_cells": a["n_cells"], "n_episodes": a["n_episodes"],
                             "n_envs": a["n_envs"], "cluster_lo": a["cluster_lo"],
-                            "cluster_hi": a["cluster_hi"]})
+                            "cluster_hi": a["cluster_hi"],
+                            "cluster_degenerate": a["cluster_degenerate"], "evaluated": True,
+                            "ref_tuned": a["ref_tuned"], "params_tuned": a["params_tuned"],
+                            "n_cells_excluded_untuned": a["n_cells_excluded_untuned"]})
                 rows.append(row)
     return pd.DataFrame(rows)
 
@@ -1055,6 +1283,7 @@ def main(argv: list[str] | None = None) -> dict:
 
     cells = load_cells(out_dir, test)
     manifest = rd.latest_records(rd.read_manifest(rd.manifest_path(out_dir, test)))
+    mark_untuned_baselines(cells, manifest, pt.load_baseline_params(out_dir / "baseline_params.json"))
     recs_present = recommenders_in(cells[0].frames[cells[0].policies[0]])
     if args.recommender == "all":
         recs = recs_present

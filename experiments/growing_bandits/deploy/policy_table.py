@@ -16,7 +16,10 @@ Every entry is ``{"kind", "params", "group", "requires"}``:
   ``thresholds.json`` for every learned threshold (``tau_val``). Because the smoke run
   happens before tuning, both files may be absent: the slot then takes the registered
   placeholder (`rules.POLICY_SPECS`) or the artifact's own offline ``tau``, and the
-  substitution is logged once per (policy, reason) -- never silently.
+  substitution is logged once per (policy, reason) *and* stamped into the resolved
+  params as ``params_tuned: False`` (`PARAMS_TUNED`) -- never silently. That stamp
+  reaches the run manifest, so the analysis can refuse to pool a cell whose baseline
+  was an untuned placeholder rather than a tuned comparator.
 * ``group`` is ``baseline`` (P0-P3), ``reference`` (``cp0``, ``p3_star``: the two
   pre-registered comparison targets), ``learned`` (a saved model) or ``rule`` (the
   P11 hand rule).
@@ -295,42 +298,100 @@ def _alpha_label(alpha: float) -> str:
     raise KeyError(f"alpha {alpha} is not one of the study's exponents {POWER_ALPHAS}")
 
 
-def _tuned_c(name: str, alpha: float, horizon: int, baseline_params: dict | None) -> float:
-    """``c`` for ``(alpha, T)`` from ``baseline_params["power"]``, else the placeholder."""
+#: Stamped into the resolved params when a schedule constant fell back to its registered
+#: placeholder because `baseline_params.json` has no tuned value for that horizon, plus
+#: the values that were substituted. A warning line scrolls away; these keys travel into
+#: the run manifest and from there into the analysis, so a placeholder can never be
+#: mistaken for a tuned constant (register #7, finding B1).
+#:
+#: The keys are stamped *only* on a fallback. "Tuned" stays the unmarked case so a tuned
+#: item's params -- and therefore its manifest record and `run_deployment.stale_reason` --
+#: are byte-identical to what every earlier run wrote.
+PARAMS_TUNED = "params_tuned"
+PARAMS_FALLBACK = "params_fallback"
+#: Provenance recorded in the params that is not a policy constructor argument.
+PROVENANCE_KEYS: tuple[str, ...] = ("tau_source", PARAMS_TUNED, PARAMS_FALLBACK)
+
+
+def _tuned_c(
+    name: str, alpha: float, horizon: int, baseline_params: dict | None
+) -> tuple[float, dict | None]:
+    """``(c, fallback)`` for ``(alpha, T)`` from ``baseline_params["power"]``.
+
+    `fallback` is ``None`` when the value is the tuned one, else the placeholder values
+    that were substituted (see `PARAMS_FALLBACK`).
+    """
     label = _alpha_label(alpha)
     placeholder = float(rules.POLICY_SPECS[_PLACEHOLDER_POWER_SPEC[label]]["c"])
     if baseline_params is None:
         _warn_once(name, f"no baseline_params; using placeholder c={placeholder}")
-        return placeholder
+        return placeholder, {"c": placeholder}
     by_t = _lookup_by_number(baseline_params.get("power", {}), alpha)
     c = _lookup_by_number(by_t, horizon) if by_t else None
     if c is None:
         _warn_once(name, f"no tuned c for (alpha={alpha:.4f}, T={horizon}); placeholder {placeholder}")
-        return placeholder
-    return float(c)
+        return placeholder, {"c": placeholder}
+    return float(c), None
 
 
-def _tuned_k0(name: str, horizon: int, baseline_params: dict | None) -> int:
+def _tuned_k0(name: str, horizon: int, baseline_params: dict | None) -> tuple[int, dict | None]:
     if baseline_params is None:
         _warn_once(name, f"no baseline_params; using placeholder K0={_PLACEHOLDER_K0}")
-        return _PLACEHOLDER_K0
+        return _PLACEHOLDER_K0, {"K0": _PLACEHOLDER_K0}
     k0 = _lookup_by_number(baseline_params.get("refine_after_init", {}), horizon)
     if k0 is None:
         _warn_once(name, f"no tuned K0 for T={horizon}; placeholder K0={_PLACEHOLDER_K0}")
-        return _PLACEHOLDER_K0
-    return int(k0)
+        return _PLACEHOLDER_K0, {"K0": _PLACEHOLDER_K0}
+    return int(k0), None
 
 
-def _tuned_p3_star(name: str, horizon: int, baseline_params: dict | None) -> tuple[float, float]:
+def _tuned_p3_star(
+    name: str, horizon: int, baseline_params: dict | None
+) -> tuple[tuple[float, float], dict | None]:
     ph = _PLACEHOLDER_P3_STAR
     if baseline_params is None:
         _warn_once(name, f"no baseline_params; using placeholder P3*={ph}")
-        return ph["alpha"], ph["c"]
+        return (ph["alpha"], ph["c"]), dict(ph)
     sel = _lookup_by_number(baseline_params.get("p3_star", {}), horizon)
     if not sel or "alpha" not in sel or "c" not in sel:
         _warn_once(name, f"no validation-selected P3* for T={horizon}; placeholder {ph}")
-        return ph["alpha"], ph["c"]
-    return float(sel["alpha"]), float(sel["c"])
+        return (ph["alpha"], ph["c"]), dict(ph)
+    return (float(sel["alpha"]), float(sel["c"])), None
+
+
+def _stamp_untuned(params: dict[str, Any], fallback: dict | None) -> None:
+    """Record a placeholder substitution in the params it was substituted into."""
+    if fallback is None:
+        return
+    params[PARAMS_TUNED] = False
+    params.setdefault(PARAMS_FALLBACK, {}).update(fallback)
+
+
+def params_are_tuned(params: dict[str, Any] | None) -> bool:
+    """Whether `params` (from `resolve_params` or a manifest record) is fully tuned."""
+    return bool((params or {}).get(PARAMS_TUNED, True))
+
+
+def baseline_is_tuned(name: str, horizon: int, baseline_params: dict | None) -> bool:
+    """Whether every `baseline_params.json` slot of `name` at `horizon` holds a tuned value.
+
+    `resolve_params` stamps `PARAMS_TUNED` on the item it resolves, but a manifest written
+    before that key existed carries no such mark. The analysis re-derives the answer from
+    the same table and the same JSON -- which is also what a rerun today would deploy --
+    so an old manifest cannot hide an untuned baseline.
+    """
+    entry = POLICIES.get(name)
+    if entry is None:
+        return True
+    kind, slots = entry["kind"], entry["params"]
+    if kind == "power":
+        if slots["alpha"] is None:  # p3_star
+            return _tuned_p3_star(name, int(horizon), baseline_params)[1] is None
+        if slots["c"] is None:
+            return _tuned_c(name, float(slots["alpha"]), int(horizon), baseline_params)[1] is None
+    elif kind == "refine_after_init" and slots["K0"] is None:
+        return _tuned_k0(name, int(horizon), baseline_params)[1] is None
+    return True
 
 
 #: Where a deployed threshold came from (recorded in ``params["tau_source"]``).
@@ -407,7 +468,8 @@ def resolve_params(
     result carries ``artifact`` as the resolved *path* (a plain string, so the dict
     is JSON-serialisable and can go into the manifest as provenance) and, for any
     thresholded policy, ``tau_source`` (one of `TAU_SOURCES`) saying where its tau
-    came from.
+    came from. A schedule constant that fell back to its placeholder additionally
+    carries ``params_tuned: False`` and ``params_fallback`` (`PARAMS_TUNED`).
     """
     if name not in POLICIES:
         raise KeyError(f"unknown policy {name!r}; known={sorted(POLICIES)}")
@@ -418,13 +480,16 @@ def resolve_params(
 
     if kind == "power":
         if params["alpha"] is None:  # p3_star
-            alpha, c = _tuned_p3_star(name, horizon, baseline_params)
+            (alpha, c), fallback = _tuned_p3_star(name, horizon, baseline_params)
             params["alpha"], params["c"] = alpha, c
+            _stamp_untuned(params, fallback)
         elif params["c"] is None:
-            params["c"] = _tuned_c(name, float(params["alpha"]), horizon, baseline_params)
+            params["c"], fallback = _tuned_c(name, float(params["alpha"]), horizon, baseline_params)
+            _stamp_untuned(params, fallback)
     elif kind == "refine_after_init":
         if params["K0"] is None:
-            params["K0"] = _tuned_k0(name, horizon, baseline_params)
+            params["K0"], fallback = _tuned_k0(name, horizon, baseline_params)
+            _stamp_untuned(params, fallback)
     elif kind == "reservoir_rule":
         if params["tau"] is None:
             params["tau"], params["tau_source"] = _tuned_tau(
@@ -478,7 +543,8 @@ def build_policy(
     entry = POLICIES[name]
     kind = entry["kind"]
     build_params = dict(params)
-    build_params.pop("tau_source", None)  # provenance for the manifest, not a constructor arg
+    for key in PROVENANCE_KEYS:  # provenance for the manifest, not constructor args
+        build_params.pop(key, None)
     if kind == "model" and artifact is not None:
         build_params["artifact"] = artifact
     policy = rules.make_policy(

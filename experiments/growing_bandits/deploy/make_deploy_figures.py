@@ -148,37 +148,88 @@ def save(fig: plt.Figure, frame: pd.DataFrame, out_dir: Path, stem: str) -> dict
 
 
 LABEL_MIN_GAP_PT = 10.0
+#: Alphas of the two stacked segments of `fig_decomposition`. On `SURFACE` the dimmer of
+#: the two reads as roughly half the luminance of the brighter, so the caption names them
+#: "bright" and "dim" -- calling `R_sel` the "light" segment inverted the key (finding F3).
+#: The caption and the key live here beside the alphas so the words and the rendering
+#: cannot drift apart again.
+DISC_ALPHA, SEL_ALPHA = 0.95, 0.45
+DECOMP_CAPTION = (
+    "Regret decomposition R_T = R_disc (bright, lower) + R_sel (dim, upper); "
+    "whiskers: 95% CI of R_T"
+)
+DECOMP_KEY: tuple[str, str] = (
+    "R_disc (discovery): bright, lower segment",
+    "R_sel (selection): dim, upper segment",
+)
 
 
-def _direct_labels(ax: plt.Axes, items: list[tuple[float, float, str, str]]) -> None:
+def _tie_groups(
+    items: list[tuple[float, float, str, str]], tols: list[float]
+) -> list[list[int]]:
+    """Indices of `items` grouped by coincidence: same x, y closer than the tolerance.
+
+    Spreading labels apart vertically invents a ranking the data does not contain
+    (finding F2): at T=1000 `always_search`, `p3_star`, `phi_k16` and `phi_k16_quality`
+    share their regret to the last bit, and the spreader below used to fan them into a
+    column with Phi16 at the top. Labels that coincide are therefore merged into one,
+    and only distinct values are spread. `tols[i]` is the caller's idea of "the same"
+    -- the CI half-width where it has one, else 0.0, which merges exact ties only.
+    """
+    groups: list[list[int]] = []
+    for i in sorted(range(len(items)), key=lambda i: (items[i][0], items[i][1])):
+        for g in groups:
+            j = g[0]
+            if items[j][0] == items[i][0] and abs(items[i][1] - items[j][1]) <= max(tols[i], tols[j]):
+                g.append(i)
+                break
+        else:
+            groups.append([i])
+    return groups
+
+
+def _direct_labels(
+    ax: plt.Axes, items: list[tuple[float, float, str, str]], tols: list[float] | None = None
+) -> None:
     """Direct labels at line ends, pushed apart vertically so they never overlap.
 
-    `items` are ``(x, y, text, color)`` in data coordinates. The y positions are
-    spread in display space (points) to at least `LABEL_MIN_GAP_PT` apart, then a
-    short leader marks the true end point.
+    `items` are ``(x, y, text, color)`` in data coordinates. Coincident labels
+    (`_tie_groups`, within `tols`) become a single ``a\\n= b\\n= c`` box at their shared
+    value; the distinct ones are spread in display space to at least `LABEL_MIN_GAP_PT`
+    per line, and a leader marks each true end point, which keeps a tick at every real y.
     """
     if not items:
         return
+    tols = list(tols) if tols is not None else [0.0] * len(items)
     fig = ax.figure
     fig.canvas.draw()  # the data->display transform needs final limits
-    order = sorted(range(len(items)), key=lambda i: items[i][1])
-    disp = np.array([ax.transData.transform((items[i][0], items[i][1]))[1] for i in order])
-    gap = LABEL_MIN_GAP_PT * fig.dpi / 72.0
+    groups = _tie_groups(items, tols)
+    anchors = [(items[g[0]][0], float(np.mean([items[i][1] for i in g]))) for g in groups]
+    order = sorted(range(len(groups)), key=lambda k: anchors[k][1])
+    disp = np.array([ax.transData.transform(anchors[k])[1] for k in order])
+    unit = LABEL_MIN_GAP_PT * fig.dpi / 72.0
+    heights = np.array([len(groups[k]) * unit for k in order], dtype=np.float64)
     adj = disp.copy()
     for k in range(1, len(adj)):
-        adj[k] = max(adj[k], adj[k - 1] + gap)
+        adj[k] = max(adj[k], adj[k - 1] + 0.5 * (heights[k - 1] + heights[k]))
     # Re-centre so the stack does not drift upward as a whole.
     adj -= (adj.mean() - disp.mean())
-    for k, i in enumerate(order):
-        x, y, text, color = items[i]
+    for k, gi in enumerate(order):
+        group = groups[gi]
+        x, y = anchors[gi]
+        text = "\n".join(
+            items[i][2] if n == 0 else f"= {items[i][2]}" for n, i in enumerate(group)
+        )
         y_lab = ax.transData.inverted().transform((0.0, adj[k]))[1]
         ax.annotate(
             text, (x, y), xytext=(x, y_lab), textcoords="data", va="center", ha="left",
             fontsize=8, color=INK_2, annotation_clip=False,
             bbox={"boxstyle": "round,pad=0.15", "fc": SURFACE, "ec": "none", "alpha": 0.85},
-            arrowprops={"arrowstyle": "-", "color": AXIS, "lw": 0.8, "shrinkA": 0, "shrinkB": 3},
+            arrowprops={"arrowstyle": "-", "color": MUTED, "lw": 0.9, "shrinkA": 0, "shrinkB": 3},
         )
-        ax.plot([x], [y], marker="o", markersize=5, color=color, markeredgecolor=SURFACE, markeredgewidth=1.2)
+        for i in group:
+            ax.plot([items[i][0]], [items[i][1]], marker="o", markersize=5, color=items[i][3],
+                    markeredgecolor=SURFACE, markeredgewidth=1.2)
 
 
 def _none_requested(stem: str, frame_columns) -> bool:
@@ -209,6 +260,29 @@ def _log_x(ax: plt.Axes, ticks: list) -> None:
     ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
 
 
+#: The live-arm cap every learned model's training corpus was harvested at
+#: (DEPLOYMENT_PLAN.md "Training corpus"). Caps beyond it are out of training support, so
+#: a cap-sweep point to their right is an extrapolation and must not be read as a
+#: measurement of a learned rule. The corpus itself dropped K >= 64 states, so support
+#: degrades as the boundary is approached rather than ending cleanly at it -- hence a
+#: shaded region plus a hairline, not a hard rule.
+TRAINING_CAP = 64
+
+
+def _mark_training_support(ax: plt.Axes, cap: int = TRAINING_CAP, *, annotate: bool = False) -> bool:
+    """Shade the out-of-support side of `cap` on an x axis of live-arm caps."""
+    lo, hi = ax.get_xlim()
+    if hi <= cap:
+        return False
+    ax.axvspan(cap, hi, color=INK, alpha=0.05, lw=0, zorder=0)
+    ax.axvline(cap, color=AXIS, lw=0.9, ls=(0, (4, 3)), zorder=0)
+    ax.set_xlim(lo, hi)
+    if annotate:
+        ax.text(0.985, 0.03, f"cap > {cap}: outside training support", transform=ax.transAxes,
+                ha="right", va="bottom", fontsize=7, color=MUTED)
+    return True
+
+
 # ---- figures ------------------------------------------------------------------------------------
 
 
@@ -230,6 +304,7 @@ def fig_regret_vs_T(
         for ax, fam in zip(axes[0], families, strict=False):
             f = sub[sub["family"] == fam]
             ends: list[tuple[float, float, str, str]] = []
+            tols: list[float] = []
             for p in policies:
                 g = f[f["policy"] == p].sort_values("horizon")
                 if g.empty:
@@ -239,12 +314,15 @@ def fig_regret_vs_T(
                 ax.fill_between(x, g["regret_lo"].to_numpy(), g["regret_hi"].to_numpy(), color=color_of(p), alpha=0.12, lw=0)
                 if p in KEY_POLICIES:
                     ends.append((float(x[-1]), float(y[-1]), label_of(p), color_of(p)))
+                    # Two policies the interval cannot separate get one label, not a ranking.
+                    half = 0.5 * float(g["regret_hi"].iloc[-1] - g["regret_lo"].iloc[-1])
+                    tols.append(half if np.isfinite(half) and half > 0 else 0.0)
             _log_x(ax, list(f["horizon"].unique()))
             ax.set_xlabel("horizon T")
             ax.set_ylabel(f"mean regret ({rec})")
             ax.set_title(f"family {fam}")
             ax.margins(x=0.12)
-            _direct_labels(ax, ends)
+            _direct_labels(ax, ends, tols)
         _legend(fig, policies)
         fig.suptitle("Deployed regret vs horizon (equal weight per cell, 95% cell-stratified bootstrap)", color=INK, fontsize=11, y=1.02)
         fig.subplots_adjust(bottom=0.28, wspace=0.35)
@@ -314,9 +392,12 @@ def fig_decomposition(decomp: pd.DataFrame, policies: Iterable[str], out_dir: Pa
             disc = g["regret_disc"].to_numpy(dtype=np.float64)
             sel = g["regret_sel"].to_numpy(dtype=np.float64)
             colors = [color_of(p) for p in policies]
-            # A 2px surface gap separates the two segments of every bar.
-            ax.bar(x, disc, width=0.62, color=colors, alpha=0.95, edgecolor=SURFACE, linewidth=1.5)
-            ax.bar(x, sel, width=0.62, bottom=disc, color=colors, alpha=0.45, edgecolor=SURFACE, linewidth=1.5)
+            # A 2px surface gap separates the two segments of every bar. R_disc is the
+            # bright segment and R_sel the dim one: on this dark surface the 0.45 alpha
+            # composites to about half the luminance of the 0.95 one, so the caption and
+            # the key below say "bright"/"dim" and not "solid"/"light" (finding F3).
+            ax.bar(x, disc, width=0.62, color=colors, alpha=DISC_ALPHA, edgecolor=SURFACE, linewidth=1.5)
+            ax.bar(x, sel, width=0.62, bottom=disc, color=colors, alpha=SEL_ALPHA, edgecolor=SURFACE, linewidth=1.5)
             # A degenerate bootstrap (identical episodes) puts the bound a float epsilon on the
             # wrong side of the mean; matplotlib rejects a negative error bar length.
             total = disc + sel
@@ -331,9 +412,13 @@ def fig_decomposition(decomp: pd.DataFrame, policies: Iterable[str], out_dir: Pa
                 ax.set_ylabel("regret")
         for k in range(n, nrow * ncol):
             axes[k // ncol][k % ncol].axis("off")
-        fig.suptitle("Regret decomposition R_T = R_disc (solid) + R_sel (light); whiskers: 95% CI of R_T",
-                     color=INK, fontsize=11, y=1.0)
-        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        fig.suptitle(DECOMP_CAPTION, color=INK, fontsize=11, y=1.0)
+        key = [
+            plt.Rectangle((0, 0), 1, 1, facecolor=color_of("phi_k16"), alpha=a, edgecolor=SURFACE)
+            for a in (DISC_ALPHA, SEL_ALPHA)
+        ]
+        fig.legend(key, list(DECOMP_KEY), loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.02))
+        fig.tight_layout(rect=(0, 0.04, 1, 0.96))
         save(fig, sub, out_dir, stem)
     return sub
 
@@ -469,7 +554,12 @@ def fig_ood_heatmap(ood_features: pd.DataFrame, ood_summary: pd.DataFrame, polic
 
 
 def fig_cap_sweep(cap: pd.DataFrame, policies: Iterable[str], out_dir: Path, stem: str) -> pd.DataFrame:
-    """Regret vs live-arm cap per policy; one panel per (environment, horizon)."""
+    """Regret vs live-arm cap per policy; one panel per (environment, horizon).
+
+    The `TRAINING_CAP` boundary is drawn in every panel: this is the one figure a reader
+    uses to judge cap sensitivity, and the learned policies' points beyond cap 64 are
+    extrapolation, not a measurement of a rule that was ever trained there.
+    """
     policies = [p for p in policies if p in set(cap["policy"])]
     sub = cap[cap["policy"].isin(policies)].copy()
     if not policies or sub.empty:
@@ -480,6 +570,7 @@ def fig_cap_sweep(cap: pd.DataFrame, policies: Iterable[str], out_dir: Path, ste
     panels = sorted({(e, T) for e, T in zip(sub["env_id"], sub["horizon"], strict=False)})
     ncol = min(len(panels), 4)
     nrow = int(np.ceil(len(panels) / ncol))
+    shaded = False
     with plt.rc_context(RC):
         fig, axes = plt.subplots(nrow, ncol, figsize=(3.4 * ncol, 2.9 * nrow), squeeze=False)
         for k, (env, T) in enumerate(panels):
@@ -496,9 +587,13 @@ def fig_cap_sweep(cap: pd.DataFrame, policies: Iterable[str], out_dir: Path, ste
             ax.set_xlabel("live-arm cap")
             if k % ncol == 0:
                 ax.set_ylabel("mean regret")
+            shaded = _mark_training_support(ax, annotate=(k == 0)) or shaded
         for k in range(len(panels), nrow * ncol):
             axes[k // ncol][k % ncol].axis("off")
-        fig.suptitle("Cap sensitivity (95% paired-bootstrap CI of the mean)", color=INK, fontsize=11, y=1.0)
+        title = "Cap sensitivity (95% paired-bootstrap CI of the mean)"
+        if shaded:
+            title += f"\nshaded: cap > {TRAINING_CAP}, beyond the learned models' training support"
+        fig.suptitle(title, color=INK, fontsize=11, y=1.0)
         fig.tight_layout(rect=(0, 0.08, 1, 1))
         _legend(fig, policies)
         save(fig, sub, out_dir, stem)

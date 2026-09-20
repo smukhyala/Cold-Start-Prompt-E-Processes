@@ -27,14 +27,21 @@ for _p in (ROOT / "experiments" / "growing_bandits", DEPLOY):
 import cells  # noqa: E402
 import relabel_onpolicy as ro  # noqa: E402
 
+from cold_start.growing.allocation import LUCB  # noqa: E402
 from cold_start.growing.deploy import feature_groups as fg  # noqa: E402
 from cold_start.growing.deploy.artifacts import load_model, save_model  # noqa: E402
 from cold_start.growing.deploy.model_policy import ModelPolicy  # noqa: E402
 from cold_start.growing.deploy.pairwise_table import get_pairwise_table  # noqa: E402
 from cold_start.growing.deploy.rules import make_policy  # noqa: E402
 from cold_start.growing.labeling import Snapshot, materialize  # noqa: E402
+from cold_start.growing.recommend import oracle_prior_from_reservoir  # noqa: E402
+from cold_start.growing.reservoirs import build_reservoir  # noqa: E402
 from cold_start.growing.schema import validate_columns  # noqa: E402
-from cold_start.growing.search_policies import DecisionContext  # noqa: E402
+from cold_start.growing.search_policies import (  # noqa: E402
+    BernoulliSearch,
+    DecisionContext,
+)
+from cold_start.growing.simulator import Simulator  # noqa: E402
 from cold_start.growing.tables import CSTable  # noqa: E402
 
 HAVE_CORPUS = bool(list((ROOT / "data" / "oracle_labels").glob("part-*.parquet")))
@@ -364,6 +371,92 @@ def test_label_writes_corpus_schema_rows_with_finite_k16_labels(labelled, worksp
         write_diagnostics=False,
     )
     assert again["n_run"] == 0 and again["n_parts"] == 2
+
+
+def test_label_rollouts_continue_with_phi_not_a_stateless_fallback(harvested, workspace, monkeypatch):
+    """M9's whole premise: both branches continue with the deployed `phi_k16`.
+
+    Nothing else in the suite observed what the labeller's rollouts actually ran -- a
+    mutation that handed `label_state`'s simulators a stateless cp0-style policy instead
+    of the `_BranchResetPolicy` left all eleven label tests green. Three guards, in
+    decreasing directness:
+
+    1. the continuation is *built from the phi artifact* and really decides inside the
+       rollouts (a swapped simulator never calls `make_inner`, so nothing is built);
+    2. the simulator `label_state` is handed carries the `_BranchResetPolicy` itself;
+    3. the label moves when the continuation is swapped, so its identity is load-bearing
+       on the number rather than decorative.
+
+    Guard 3 uses an always-SEARCH continuation, not cp0: on this tiny fixture the
+    deployed phi never searches at the harvested states and neither does cp0
+    (``K_t < sqrt(t)`` is already false at K = t), so the two produce the *same* label
+    to the last bit. That coincidence is exactly why guards 1 and 2 are the primary ones.
+    """
+    table = workspace["table"]
+    artifact = load_model(workspace["models"] / f"{ro.PHI_VARIANT}.joblib")
+    pairwise = get_pairwise_table(TINY_T, cache_dir=workspace["pairwise"])
+    params = ro.phi_params(TINY_T, models_dir=workspace["models"], thresholds=None, artifact=artifact)
+    rec = harvested[0]
+    with open(rec["pickle"], "rb") as fh:
+        snaps = pickle.load(fh)
+    # The earliest state has the most budget left after the 16 forced rounds, i.e. the
+    # most room for the continuation to matter.
+    snap = min((s for s in snaps if s.k < 64), key=lambda s: s.t)
+    env_spec = cells.ALL_ENVS[rec["env_id"]]
+
+    built: list[ModelPolicy] = []
+    factories: list = []
+    real_build_phi, real_label_state = ro.build_phi, ro.label_state
+
+    def counting_build_phi(*args, **kwargs):
+        policy = real_build_phi(*args, **kwargs)
+        built.append(policy)
+        return policy
+
+    def capturing_label_state(snapshot, sim_factory, *args, **kwargs):
+        factories.append(sim_factory)
+        return real_label_state(snapshot, sim_factory, *args, **kwargs)
+
+    monkeypatch.setattr(ro, "build_phi", counting_build_phi)
+    monkeypatch.setattr(ro, "label_state", capturing_label_state)
+    rows, n_undefined = ro.label_rows_for(
+        [snap], horizon=TINY_T, cap=64, env_id=rec["env_id"], env_spec=env_spec, table=table,
+        pairwise=pairwise, artifact=artifact, params=params,
+        target_se=0.0,  # never stop early: every label here uses exactly max_replicates
+        max_replicates=TINY_MAX_REPLICATES, commit_steps=ro.COMMIT_STEPS, shard="m2",
+    )
+    assert len(rows) == 1 and n_undefined == 0
+
+    # 1. The continuation is the deployed model, and it decided inside the rollouts.
+    assert built, "no phi continuation was ever built for the labelling rollouts"
+    assert all(isinstance(p, ModelPolicy) for p in built)
+    assert all(p.name == ro.PHI_POLICY and p.tau == params["tau"] and p.k == 16 for p in built)
+    assert sum(p.n_decisions for p in built) > 0
+
+    # 2. ... through the branch-resetting wrapper, in the simulator label_state was given.
+    assert factories, "label_state was never called"
+    sim = factories[0](0)
+    assert isinstance(sim.search_policy, ro._BranchResetPolicy)
+    inner = sim.search_policy.make_inner(4)
+    assert isinstance(inner, ModelPolicy) and inner.name == ro.PHI_POLICY and inner.k == 16
+
+    # 3. A different continuation is a different label (same states, same budget, paired
+    #    seeds): the identity of the continuation is load-bearing on the number.
+    reservoir = build_reservoir(env_spec)
+    prior = oracle_prior_from_reservoir(reservoir)
+
+    def always_search_factory(offset: int) -> Simulator:
+        return Simulator(
+            table=table, reservoir=reservoir, allocation=LUCB(),
+            search_policy=BernoulliSearch(p=1.0), horizon=TINY_T, max_live_arms=64,
+        )
+
+    other = real_label_state(
+        snap, always_search_factory, table, target_se=0.0, max_replicates=TINY_MAX_REPLICATES,
+        commit_steps=ro.COMMIT_STEPS, oracle_prior=prior, max_live_arms=64,
+    )
+    assert other.n_replicates == rows[0]["label_M_k16"]
+    assert abs(other.advantage - rows[0]["label_A_k16"]) > 1e-3
 
 
 def test_label_refuses_states_harvested_under_a_different_policy(labelled, workspace, tmp_path):

@@ -227,14 +227,212 @@ def test_primary_contrasts_has_exactly_three_rows_per_stratum(cells):
     assert np.isfinite(pooled.loc["H1a", "cluster_lo"]) and pooled.loc["H1a", "n_envs"] == 3
 
 
+def _ragged_cells() -> list[ad.Cell]:
+    """The three synthetic cells with `phi_k16` withdrawn from the (A, 200) one.
+
+    The shape of Test D after Ruling 16: a policy that ran in the test, but not in every
+    cell of it.
+    """
+    cells = synthetic_cells(policies=("cp0", "p3_star", "phi_k16"))
+    dropped = next(c for c in cells if c.family == "A" and c.horizon == 200)
+    del dropped.frames["phi_k16"]
+    del dropped.groups["phi_k16"]
+    return cells
+
+
 def test_primary_contrasts_keep_three_rows_when_a_policy_is_missing():
     cells = synthetic_cells(policies=("cp0", "p3_star", "phi_k16"))
     strata = ad.strata_of(cells)
     pc = ad.primary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells, strata, 200)
     pooled = pc[pc["level"] == "pooled"].set_index("hypothesis")
     assert len(pooled) == 3
-    assert pooled.loc["H2", "status"] == "missing:phi_k16_quality" and np.isnan(pooled.loc["H2", "delta"])
-    assert pooled.loc["H1a", "status"] == "ok"
+    # phi_k16_quality was never deployed in this test: "not evaluated", not a null result.
+    assert pooled.loc["H2", "status"] == "not_evaluated:phi_k16_quality"
+    assert np.isnan(pooled.loc["H2", "delta"]) and not pooled.loc["H2", "evaluated"]
+    assert pooled.loc["H1a", "status"] == "ok" and pooled.loc["H1a", "evaluated"]
+
+
+def test_missing_label_names_the_absent_policy_not_the_reference():
+    """M1: the label must name the policy that is actually absent from the stratum."""
+    cells = _ragged_cells()
+    strata = ad.strata_of(cells)
+    pc = ad.primary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells, strata, 200)
+    # In the (A, 200) stratum cp0 and p3_star both ran; phi_k16 did not. Blaming the
+    # reference there is the defect: every one of the three rows names phi_k16.
+    gone = pc[(pc["level"] == "family_horizon") & (pc["family"] == "A") & (pc["horizon"] == "200")]
+    assert len(gone) == 3
+    assert set(gone[gone["hypothesis"] != "H2"]["status"]) == {"missing:phi_k16"}
+    assert (~gone["evaluated"]).all()
+    # Both absent (H2's reference was never deployed either) -> the "never deployed"
+    # label wins and names it.
+    assert gone[gone["hypothesis"] == "H2"]["status"].iloc[0] == "not_evaluated:phi_k16_quality"
+    # Strata where it did run are untouched.
+    assert (pc[(pc["level"] == "family_horizon") & (pc["horizon"] == "100")
+               & (pc["hypothesis"] == "H1a")]["status"] == "ok").all()
+
+
+def test_levels_are_pooled_over_the_common_cell_set(caplog):
+    """B4: a level column must mean the same cells in every row of its stratum."""
+    cells = _ragged_cells()
+    with caplog.at_level("WARNING", logger="deploy.analyze"):
+        strata = ad.strata_of(cells)
+    assert any("ragged" in r.message for r in caplog.records)
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    pooled = next(s for s in strata if s.level == "pooled")
+    assert len(pooled.cells) == 3 and len(pooled.common) == 2  # the (A, 200) cell is out
+    common = set(pooled.common)
+
+    # p3_star ran in all three cells but is levelled over the two common ones, so its
+    # regret is comparable with phi_k16's; its own coverage is still reported.
+    a = ad.aggregate(per_cell, pooled, "p3_star", "regret")
+    b = ad.aggregate(per_cell, pooled, "phi_k16", "regret")
+    assert a["n_cells"] == b["n_cells"] == 2
+    assert a["n_cells_policy"] == 3 and b["n_cells_policy"] == 2
+    assert not a["common_support"] and not b["common_support"]
+    expected = float(np.mean([per_cell[n].mean[("p3_star", "regret")] for n in common]))
+    assert a["mean"] == pytest.approx(expected, abs=1e-12)
+    # The three-cell mean -- what a silent drop would have produced -- is a different number.
+    all_cells = float(np.mean([per_cell[c.name].mean[("p3_star", "regret")] for c in cells]))
+    assert abs(a["mean"] - all_cells) > 1e-6
+
+    # The descriptive means travel with it, so no column of the row is over other cells.
+    desc = ad.descriptive_for(per_cell, pooled, "p3_star")
+    k_common = float(np.mean([per_cell[n].descriptive["p3_star"]["k_final"] for n in common]))
+    assert desc["k_final"] == pytest.approx(k_common, abs=1e-12)
+
+    # A paired contrast is already on the intersection; it says so rather than dropping
+    # silently, and the planted effect still comes back.
+    d = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
+    assert d["n_cells"] == 2 and d["n_cells_policy"] == 2
+    assert d["lo"] <= PLANTED["phi_k16"] <= d["hi"]
+    main = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    row = main[(main["level"] == "pooled") & (main["policy"] == "p3_star")].iloc[0]
+    assert row["n_cells"] == 2 and row["n_cells_policy"] == 3 and not row["common_support"]
+
+
+def test_untuned_reference_cells_are_refused_and_flagged(caplog):
+    """B1: an untuned placeholder baseline must not be pooled into a contrast against it."""
+    cells = synthetic_cells(policies=("cp0", "p3_star", "phi_k16"))
+    placeholder = next(c for c in cells if c.family == "B")  # the (B, 100) cell
+    placeholder.untuned = frozenset({"p3_star"})
+    strata = ad.strata_of(cells)
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+
+    pooled = next(s for s in strata if s.level == "pooled")
+    a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_p3_star")
+    assert a["n_cells"] == 2 and a["n_cells_excluded_untuned"] == 1 and a["ref_tuned"]
+    kept = [c.name for c in cells if c is not placeholder]
+    expected = float(np.mean([per_cell[n].mean[("phi_k16", "d_regret_vs_p3_star")] for n in kept]))
+    assert a["mean"] == pytest.approx(expected, abs=1e-12)
+    # Against the other reference, nothing is excluded.
+    assert ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")["n_cells"] == 3
+
+    # The stratum that holds only untuned cells keeps them -- a descriptive row, flagged.
+    only = next(s for s in strata if s.level == "family" and s.family == "B")
+    b = ad.aggregate(per_cell, only, "phi_k16", "d_regret_vs_p3_star")
+    assert b["n_cells"] == 1 and b["n_cells_excluded_untuned"] == 0 and not b["ref_tuned"]
+
+    # The pre-registered path (H1b: phi_k16 vs p3_star) refuses the same cell, and the
+    # flag reaches the table a reader opens.
+    pc = ad.primary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells, strata, 200)
+    h1b = pc[(pc["level"] == "pooled") & (pc["hypothesis"] == "H1b")].iloc[0]
+    assert h1b["n_cells"] == 2 and h1b["n_cells_excluded_untuned"] == 1 and h1b["status"] == "ok"
+    h1b_b = pc[(pc["level"] == "family") & (pc["family"] == "B") & (pc["hypothesis"] == "H1b")].iloc[0]
+    assert h1b_b["status"] == "untuned_reference" and not h1b_b["ref_tuned"]
+    main = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    row = main[(main["level"] == "pooled") & (main["policy"] == "phi_k16")].iloc[0]
+    assert row["d_regret_vs_p3_star_n_excluded_untuned"] == 1
+    assert row["d_regret_vs_p3_star_n_cells"] == 2 and row["d_regret_vs_cp0_n_cells"] == 3
+    # p3_star's own row says its constants were placeholders where it ran untuned.
+    fam_b = main[(main["level"] == "family") & (main["family"] == "B") & (main["policy"] == "p3_star")].iloc[0]
+    assert not fam_b["params_tuned"]
+    assert main[(main["level"] == "family") & (main["family"] == "A")
+                & (main["policy"] == "p3_star")].iloc[0]["params_tuned"]
+
+
+def _cells_across_envs(n_envs: int, policies=("cp0", "p3_star", "phi_k16")) -> list[ad.Cell]:
+    """`n_envs` one-cell environments, so a stratum's cluster bootstrap has n_envs = n."""
+    out: list[ad.Cell] = []
+    for i in range(n_envs):
+        env = f"env{i}"
+        name = f"{env}_T100_cap64"
+        seed = 5_000 + 37 * i
+        frames = {p: _episode_frame(name, env, "A", 100, p, 64, seed) for p in policies}
+        out.append(ad.Cell(name=name, env_id=env, family="A", horizon=100, cap=64, base_seed=seed,
+                           n=64, frames=frames, groups={p: GROUPS[p] for p in policies}))
+    return out
+
+
+def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
+    """F1: below `CLUSTER_MIN_ENVS` the percentile cluster CI IS [min env, max env]."""
+    assert ad.CLUSTER_MIN_ENVS == 4
+    for n_envs in (2, 3):
+        cells = _cells_across_envs(n_envs)
+        per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, N_BOOT) for c in cells}
+        pooled = next(s for s in ad.strata_of(cells) if s.level == "pooled")
+        a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
+        env_means = [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells]
+        assert a["n_envs"] == n_envs and a["cluster_degenerate"] is True
+        # The arithmetic the flag is about: the interval is the range of the env means.
+        assert a["cluster_lo"] == pytest.approx(min(env_means), abs=1e-12)
+        assert a["cluster_hi"] == pytest.approx(max(env_means), abs=1e-12)
+
+    cells = _cells_across_envs(5)
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, N_BOOT) for c in cells}
+    strata = ad.strata_of(cells)
+    pooled = next(s for s in strata if s.level == "pooled")
+    a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
+    env_means = [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells]
+    assert a["n_envs"] == 5 and a["cluster_degenerate"] is False
+    assert a["cluster_lo"] > min(env_means) and a["cluster_hi"] < max(env_means)
+    # A row with no cluster interval at all is not "degenerate", it is empty.
+    cell_level = next(s for s in strata if s.level == "cell")
+    assert not ad.aggregate(per_cell, cell_level, "phi_k16", "d_regret_vs_cp0")["cluster_degenerate"]
+
+    # Every table that carries cluster bounds carries the flag beside them.
+    cells3 = _cells_across_envs(3)
+    per3 = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 400) for c in cells3}
+    strata3 = ad.strata_of(cells3)
+    main = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells3, per3, strata3)
+    pc = ad.primary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells3, strata3, 400)
+    sc = ad.secondary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells3, per3, strata3)
+    for ref in ("cp0", "p3_star"):
+        assert f"d_regret_vs_{ref}_cluster_degenerate" in main.columns
+    pooled_row = main[(main["level"] == "pooled") & (main["policy"] == "phi_k16")].iloc[0]
+    assert pooled_row["d_regret_vs_cp0_cluster_degenerate"]
+    pooled_pc = pc[(pc["level"] == "pooled") & pc["evaluated"]]
+    assert len(pooled_pc) == 2 and pooled_pc["cluster_degenerate"].all()  # H1a, H1b (H2 absent)
+    assert sc[sc["level"] == "pooled"]["cluster_degenerate"].all()
+    # A row with no contrast at all (H2 here) has no interval, so it is not "degenerate".
+    assert not pc[~pc["evaluated"]]["cluster_degenerate"].any()
+
+
+def test_mark_untuned_baselines_reads_the_json_and_the_manifest(caplog):
+    """The flag comes from `baseline_params.json` *or* the manifest's stamp -- either alone."""
+    cells = synthetic_cells(policies=("cp0", "p3_star", "phi_k16"))
+    by_horizon = {c.horizon for c in cells}
+    assert by_horizon == {100, 200}
+    # Tuned at T=100 only: every T=200 cell deployed p3_star on the placeholder.
+    baseline_params = {
+        "power": {}, "refine_after_init": {"100": 8},
+        "p3_star": {"100": {"alpha": 0.5, "c": 2.0, "pooled_regret": 0.1}},
+    }
+    with caplog.at_level("WARNING", logger="deploy.analyze"):
+        ad.mark_untuned_baselines(cells, {}, baseline_params)
+    assert any("UNTUNED" in r.message for r in caplog.records)
+    for c in cells:
+        assert c.untuned == (frozenset({"p3_star"}) if c.horizon == 200 else frozenset())
+
+    # With everything tuned, only the manifest's own stamp can flag a cell.
+    cells = synthetic_cells(policies=("cp0", "p3_star", "phi_k16"))
+    full = {"power": {}, "refine_after_init": {},
+            "p3_star": {str(T): {"alpha": 0.5, "c": 2.0} for T in by_horizon}}
+    target = cells[0]
+    manifest = {("synthetic", target.name, "p3_star"):
+                {"params": {"alpha": 0.5, "c": 1.0, "params_tuned": False}}}
+    ad.mark_untuned_baselines(cells, manifest, full)
+    assert cells[0].untuned == frozenset({"p3_star"})
+    assert all(c.untuned == frozenset() for c in cells[1:])
 
 
 def test_secondary_contrasts_exclude_the_pre_registered_pairs(cells, per_cell):
@@ -715,6 +913,89 @@ def test_figures_render_on_synthetic_tables(tmp_path, cells, per_cell):
     for stem in ("regret", "decomp", "ovd", "tau", "dyn", "ood", "cap", "res"):
         for ext in ("png", "pdf", "csv"):
             assert (out / f"{stem}.{ext}").exists(), (stem, ext)
+
+
+def test_direct_labels_merge_ties_instead_of_fanning_them_into_a_ranking():
+    """F2: four policies with the same regret must not be drawn as a ranked column."""
+    y = 0.054819
+    items = [(1000.0, y, "always search (P0)", "#d55181"), (1000.0, y, "P3*", "#199e70"),
+             (1000.0, y, "Φ16 (P9)", "#3987e5"), (1000.0, y, "Φ16 quality-only (P7)", "#c98500"),
+             (1000.0, 0.070, "cp0", "#d95926")]
+    tols = [1e-4, 1e-4, 1e-4, 1e-4, 1e-4]
+    groups = mf._tie_groups(items, tols)
+    assert sorted(len(g) for g in groups) == [1, 4]
+
+    fig, ax = mf.plt.subplots()
+    ax.plot([100, 1000], [0.09, y])
+    mf._direct_labels(ax, items, tols)
+    texts = [t.get_text() for t in ax.texts]
+    assert len(texts) == 2, texts  # one merged label for the tie, one for cp0
+    tied = next(t for t in texts if "P3*" in t)
+    for name in ("always search (P0)", "P3*", "Φ16 (P9)", "Φ16 quality-only (P7)"):
+        assert name in tied
+    assert tied.count("\n") == 3 and tied.count("= ") == 3  # a = b = c = d, stacked
+    assert "cp0" not in tied
+    # Every member still gets its own marker at its own true y: no invented offsets.
+    ties_at_y = [ln for ln in ax.lines if list(ln.get_ydata()) == [y]]
+    assert len(ties_at_y) == 4
+    mf.plt.close(fig)
+
+    # A separation the CI can resolve is still labelled separately.
+    apart = [(1000.0, 0.05, "a", "#fff"), (1000.0, 0.06, "b", "#fff")]
+    assert [len(g) for g in mf._tie_groups(apart, [1e-4, 1e-4])] == [1, 1]
+    # ... and with no tolerance given, only exact ties merge (the smoke figure's case).
+    assert [len(g) for g in mf._tie_groups(apart, [0.0, 0.0])] == [1, 1]
+    same = [(1.0, 0.062776, "a", "#fff"), (1.0, 0.062776, "b", "#fff")]
+    assert [len(g) for g in mf._tie_groups(same, [0.0, 0.0])] == [2]
+
+
+def test_decomposition_caption_matches_the_rendered_brightness():
+    """F3: the caption said R_sel was the 'light' segment; it is drawn at half the alpha."""
+    assert mf.DISC_ALPHA > mf.SEL_ALPHA
+    caption = mf.DECOMP_CAPTION
+    assert "solid" not in caption and "(light)" not in caption
+    assert caption.index("R_disc") < caption.index("bright") < caption.index("R_sel")
+    assert "dim" in caption[caption.index("R_sel"):]
+    disc_key, sel_key = mf.DECOMP_KEY
+    assert disc_key.startswith("R_disc") and "bright" in disc_key
+    assert sel_key.startswith("R_sel") and "dim" in sel_key
+
+
+def test_cap_sweep_marks_the_training_support_boundary(tmp_path, cells, per_cell):
+    """M3: two of the cap sweep's four points are extrapolation; the panel must say so."""
+    strata = ad.strata_of(cells)
+    full = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    base = full[full["level"] == "cell"].copy()
+    frames = []
+    for c in (32, mf.TRAINING_CAP, 128):
+        g = base.copy()
+        g["cap"] = c
+        frames.append(g)
+    out = tmp_path / "figures"
+    mf.fig_cap_sweep(pd.concat(frames, ignore_index=True), ["phi_k16", "p3_star"], out, "cap")
+    for ext in ("png", "pdf", "csv"):
+        assert (out / f"cap.{ext}").exists()
+
+    # The boundary itself: a shaded out-of-support region, a hairline at the cap, and a
+    # label -- and nothing at all when the sweep stays inside the training support.
+    fig, ax = mf.plt.subplots()
+    ax.plot([32, mf.TRAINING_CAP, 128], [0.10, 0.09, 0.11])
+    mf._log_x(ax, [32, mf.TRAINING_CAP, 128])
+    n_patches, n_lines = len(ax.patches), len(ax.lines)
+    assert mf._mark_training_support(ax, annotate=True) is True
+    assert len(ax.patches) == n_patches + 1 and len(ax.lines) == n_lines + 1
+    assert float(ax.lines[-1].get_xdata()[0]) == float(mf.TRAINING_CAP)
+    assert ax.get_xlim()[1] > mf.TRAINING_CAP
+    assert any(str(mf.TRAINING_CAP) in t.get_text() for t in ax.texts)
+    mf.plt.close(fig)
+
+    fig, ax = mf.plt.subplots()
+    ax.plot([16, 32, mf.TRAINING_CAP], [0.10, 0.09, 0.11])
+    mf._log_x(ax, [16, 32, mf.TRAINING_CAP])
+    ax.set_xlim(16, mf.TRAINING_CAP)
+    assert mf._mark_training_support(ax) is False
+    assert not ax.patches and not ax.texts
+    mf.plt.close(fig)
 
 
 def test_figures_skip_when_no_requested_policy_is_present(tmp_path, cells, per_cell):

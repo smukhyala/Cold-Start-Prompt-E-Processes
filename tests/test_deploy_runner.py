@@ -113,20 +113,30 @@ def test_policy_seed_is_keyed_on_the_study_name():
 
 
 def test_resolve_params_uses_tuning_outputs_and_falls_back_to_placeholders(caplog):
-    # Placeholders (no tuning outputs), logged once per policy and reason.
+    # Placeholders (no tuning outputs), logged once per policy and reason -- and stamped
+    # into the params, so the manifest records that the constant was never tuned.
     pt._warned.clear()
+    c_ph = rules.POLICY_SPECS["power_sqrt"]["c"]
     with caplog.at_level("WARNING", logger="deploy.policy_table"):
         p = pt.resolve_params("power_a0.5", 100)
-        assert p == {"alpha": 0.5, "c": rules.POLICY_SPECS["power_sqrt"]["c"]}
-        assert pt.resolve_params("refine_after_init", 100) == {"K0": pt._PLACEHOLDER_K0}
-        assert pt.resolve_params("p3_star", 100) == pt._PLACEHOLDER_P3_STAR
+        assert p == {"alpha": 0.5, "c": c_ph, "params_tuned": False, "params_fallback": {"c": c_ph}}
+        assert pt.resolve_params("refine_after_init", 100) == {
+            "K0": pt._PLACEHOLDER_K0, "params_tuned": False,
+            "params_fallback": {"K0": pt._PLACEHOLDER_K0},
+        }
+        assert pt.resolve_params("p3_star", 100) == {
+            **pt._PLACEHOLDER_P3_STAR, "params_tuned": False,
+            "params_fallback": dict(pt._PLACEHOLDER_P3_STAR),
+        }
         assert pt.resolve_params("rule_reservoir", 100) == {
             "tau": pt._PLACEHOLDER_RULE_TAU, "tau_source": "registered"
         }
         pt.resolve_params("power_a0.5", 200)
     assert sum("power_a0.5" in r.message for r in caplog.records) == 1
 
-    # Tuned values, keyed exactly the way `tune_baselines.py` writes them.
+    # Tuned values, keyed exactly the way `tune_baselines.py` writes them. A tuned slot
+    # carries NO `params_tuned` key: the unmarked case is "tuned", so a tuned item's
+    # manifest record is byte-identical to the one earlier runs wrote.
     tuned = {
         "power": {str(float(1.0 / 3.0)): {"100": 2.25}, "0.5": {"100": 0.7, "200": 0.9}},
         "refine_after_init": {"100": 8},
@@ -138,13 +148,33 @@ def test_resolve_params_uses_tuning_outputs_and_falls_back_to_placeholders(caplo
     assert p["c"] == 2.25 and abs(p["alpha"] - 1.0 / 3.0) < 1e-12
     assert pt.resolve_params("refine_after_init", 100, baseline_params=tuned) == {"K0": 8}
     assert pt.resolve_params("p3_star", 100, baseline_params=tuned) == {"alpha": 2.0 / 3.0, "c": 0.4}
-    # A horizon the tuning did not cover falls back, per horizon, to the placeholder.
-    assert pt.resolve_params("refine_after_init", 500, baseline_params=tuned)["K0"] == pt._PLACEHOLDER_K0
+    # A horizon the tuning did not cover falls back, per horizon, to the placeholder --
+    # and says so, in the params and through `params_are_tuned` / `baseline_is_tuned`.
+    p500 = pt.resolve_params("refine_after_init", 500, baseline_params=tuned)
+    assert p500["K0"] == pt._PLACEHOLDER_K0 and p500["params_tuned"] is False
+    assert pt.params_are_tuned(p500) is False
+    assert pt.params_are_tuned(pt.resolve_params("refine_after_init", 100, baseline_params=tuned))
+    for name, T, want in (("refine_after_init", 100, True), ("refine_after_init", 500, False),
+                          ("p3_star", 100, True), ("p3_star", 500, False),
+                          ("power_a0.5", 200, True), ("power_a0.5", 500, False),
+                          ("always_search", 500, True), ("phi_k16", 500, True)):
+        assert pt.baseline_is_tuned(name, T, tuned) is want, (name, T)
+    assert pt.baseline_is_tuned("p3_star", 100, None) is False
 
     thresholds = {"reservoir_rule": {"tau_val": 2.5, "tau_off": None, "curve": {}}}
     assert pt.resolve_params("rule_reservoir", 100, thresholds=thresholds) == {
         "tau": 2.5, "tau_source": "tau_val"
     }
+
+
+def test_untuned_provenance_never_reaches_the_policy_constructor():
+    """`params_tuned` / `params_fallback` are manifest provenance, not constructor args."""
+    table = CSTable.load_or_build(50, alpha=0.05)
+    params = pt.resolve_params("p3_star", 100)  # no baseline_params -> placeholder
+    assert params["params_tuned"] is False
+    policy = pt.build_policy("p3_star", params, horizon=50, n_replicates=4, table=table)
+    assert policy.name == "p3_star"
+    assert policy.alpha == pt._PLACEHOLDER_P3_STAR["alpha"] and policy.c == pt._PLACEHOLDER_P3_STAR["c"]
 
 
 def test_learned_tau_resolution_prefers_excl_heldout_for_horizon_holdouts(tmp_path, caplog):

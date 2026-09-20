@@ -8,7 +8,10 @@ import pytest
 
 from cold_start.growing.deploy.stats import (
     cluster_bootstrap_over_envs,
+    cluster_bootstrap_t_over_envs,
+    env_mean_t_interval,
     paired_bootstrap,
+    permutation_over_envs,
     spearman_with_ci,
     stratified_pooled,
 )
@@ -124,6 +127,105 @@ def test_cluster_bootstrap_single_env_is_degenerate_and_missing_column_raises():
     assert out["mean"] == out["lo"] == out["hi"] == 3.0
     with pytest.raises(KeyError):
         cluster_bootstrap_over_envs(df, "environment", "d", n_boot=10)
+
+
+# ---- environment-level t, bootstrap-t and exact sign test (NEXT-STEPS 2.1) --------------
+
+
+def _env_frame(n_envs: int, seed: int, sd_between: float = 0.05, sd_within: float = 0.002,
+               shift: float = 0.0) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    rows = []
+    for i in range(n_envs):
+        effect = shift + rng.normal(0.0, sd_between)
+        for horizon in (50, 100, 200, 500, 1000):
+            rows.append({"env": f"env{i}", "T": horizon, "d": effect + rng.normal(0, sd_within)})
+    return pd.DataFrame(rows)
+
+
+def test_env_mean_t_interval_is_the_student_t_on_the_environment_means():
+    from scipy.stats import t as student_t
+
+    df = _env_frame(8, seed=1)
+    out = env_mean_t_interval(df, "env", "d")
+    env_means = df.groupby("env")["d"].mean().to_numpy()
+    se = env_means.std(ddof=1) / np.sqrt(8)
+    half = student_t.ppf(0.975, df=7) * se
+    assert out["n_envs"] == 8 and out["df"] == 7
+    assert out["mean"] == pytest.approx(env_means.mean())
+    assert out["se"] == pytest.approx(se)
+    assert out["lo"] == pytest.approx(env_means.mean() - half)
+    assert out["hi"] == pytest.approx(env_means.mean() + half)
+    # The two-sided p is the one the interval inverts: p < 0.05 iff 0 is outside it.
+    assert (out["p"] < 0.05) == (not out["lo"] <= 0.0 <= out["hi"])
+
+
+def test_env_mean_t_interval_coverage_is_near_nominal_where_the_percentile_under_covers():
+    """The reason for the swap: at n_envs = 8 the percentile bootstrap covers ~0.89, the t ~0.94."""
+    n_reps, hits_t, hits_pct = 600, 0, 0
+    for rep in range(n_reps):
+        df = _env_frame(8, seed=1000 + rep, shift=0.0)
+        t_out = env_mean_t_interval(df, "env", "d")
+        b_out = cluster_bootstrap_over_envs(df, "env", "d", n_boot=400, seed=rep)
+        hits_t += t_out["lo"] <= 0.0 <= t_out["hi"]
+        hits_pct += b_out["lo"] <= 0.0 <= b_out["hi"]
+    cov_t, cov_pct = hits_t / n_reps, hits_pct / n_reps
+    assert cov_t > cov_pct
+    assert 0.91 <= cov_t <= 0.98
+    assert cov_pct <= 0.93
+
+
+def test_env_mean_t_interval_needs_two_environments():
+    df = pd.DataFrame({"env": ["only"] * 5, "d": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    out = env_mean_t_interval(df, "env", "d")
+    assert out["n_envs"] == 1 and np.isnan(out["lo"]) and np.isnan(out["hi"]) and np.isnan(out["p"])
+
+
+def test_bootstrap_t_interval_brackets_the_mean_and_widens_on_a_heavy_tail():
+    df = _env_frame(8, seed=2)
+    out = cluster_bootstrap_t_over_envs(df, "env", "d", n_boot=4000, seed=0)
+    t_out = env_mean_t_interval(df, "env", "d")
+    assert out["n_envs"] == 8
+    assert out["lo"] < out["mean"] < out["hi"]
+    assert out["mean"] == pytest.approx(t_out["mean"])
+    # Studentized resamples put the interval on the same scale as the t interval.
+    assert (out["hi"] - out["lo"]) == pytest.approx(t_out["hi"] - t_out["lo"], rel=0.6)
+
+
+def test_bootstrap_t_interval_single_env_is_nan():
+    df = pd.DataFrame({"env": ["only"] * 5, "d": [1.0, 2.0, 3.0, 4.0, 5.0]})
+    out = cluster_bootstrap_t_over_envs(df, "env", "d", n_boot=100)
+    assert np.isnan(out["lo"]) and np.isnan(out["hi"])
+
+
+def test_permutation_over_envs_is_exact_and_has_the_2_over_2n_floor():
+    """All eight environments agreeing in sign is the smallest p an 8-env panel can return."""
+    df = _env_frame(8, seed=3, shift=0.5, sd_between=0.01)
+    out = permutation_over_envs(df, "env", "d")
+    assert out["n_envs"] == 8
+    assert out["p"] == pytest.approx(2 / 2**8)
+    assert out["p_floor"] == pytest.approx(2 / 2**8)
+    assert out["n_assignments"] == 2**8
+
+
+def test_permutation_over_envs_on_a_symmetric_panel_is_one():
+    df = pd.DataFrame({"env": ["a", "b", "c", "d"], "d": [1.0, -1.0, 2.0, -2.0]})
+    out = permutation_over_envs(df, "env", "d")
+    # |stat| = 0 is matched or beaten by every sign assignment.
+    assert out["p"] == pytest.approx(1.0)
+
+
+def test_permutation_over_envs_matches_a_hand_enumeration_at_n_3():
+    df = pd.DataFrame({"env": ["a", "b", "c"], "d": [0.3, 0.2, 0.1]})
+    # Observed |mean| = 0.2. Assignments with |mean| >= 0.2: (+++) 0.2, (---) 0.2 -> 2 of 8.
+    out = permutation_over_envs(df, "env", "d")
+    assert out["p"] == pytest.approx(2 / 8)
+
+
+def test_permutation_over_envs_refuses_more_than_20_environments():
+    df = _env_frame(21, seed=4)
+    with pytest.raises(ValueError, match="20"):
+        permutation_over_envs(df, "env", "d")
 
 
 # ---- Spearman -----------------------------------------------------------------------------

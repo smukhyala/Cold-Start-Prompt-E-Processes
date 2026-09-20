@@ -640,18 +640,17 @@ def strata_of(cells: list[Cell]) -> list[Stratum]:
 #: ones restricted to a stratum's common support (`common_cells`).
 LEVEL_QUANTITIES: frozenset[str] = frozenset({"regret", "regret_disc", "regret_sel"})
 
-#: Fewest environments at which the percentile cluster bootstrap is still an interval
-#: rather than a range (finding F1).
+#: Fewest environments at which an environment-level interval is emitted at all
+#: (finding F1, then NEXT-STEPS 2.1).
 #:
-#: `stats.cluster_bootstrap_over_envs` resamples ``n`` environments with replacement and
-#: takes the 2.5th and 97.5th percentiles. The resample that draws the *same* environment
-#: ``n`` times has probability ``n**-n``: 25% at n=2, 3.7% at n=3, 0.39% at n=4. While
-#: that exceeds 2.5%, the 2.5th percentile IS the smallest environment mean and the
-#: 97.5th IS the largest, so the "95% interval" is exactly [min env mean, max env mean]
-#: and "cluster-significant" degrades to "every environment agrees in sign". Below this
-#: many environments `cluster_bounds` therefore emits the range under its own names,
-#: ``cluster_min_env`` / ``cluster_max_env``, leaving ``cluster_lo`` / ``cluster_hi`` NaN
-#: so the range cannot be quoted as an interval; ``cluster_degenerate`` still flags it.
+#: Below this the percentile cluster bootstrap is not an interval: the resample that
+#: draws the *same* environment ``n`` times has probability ``n**-n`` (25% at n=2, 3.7% at
+#: n=3), which exceeds 2.5%, so the "95% interval" is exactly [min env mean, max env
+#: mean] and "cluster-significant" degrades to "every environment agrees in sign". A
+#: t interval at n=3 has 2 degrees of freedom and the exact sign test a floor of 0.25,
+#: so neither is worth shipping either. `cluster_bounds` therefore emits only the range,
+#: under its own names ``cluster_min_env`` / ``cluster_max_env``, and every column that
+#: could be read as a test is NaN; ``cluster_degenerate`` flags the row.
 CLUSTER_MIN_ENVS = 4
 
 
@@ -661,41 +660,72 @@ def cluster_is_degenerate(n_envs: int, lo: float) -> bool:
 
 
 #: Every cluster column a table carries, so a caller can NaN them all out in one place.
+#:
+#: ``cluster_lo`` / ``cluster_hi`` are the PRIMARY environment-level interval: the
+#: Student-t interval on the environment means (`stats.env_mean_t_interval`), with its
+#: standard error ``cluster_se`` and two-sided p ``cluster_p``. ``cluster_p_sign`` is the
+#: exact sign-flip p (`stats.permutation_over_envs`, floor ``2 / 2**n_envs``);
+#: ``cluster_boot_t_*`` the studentized bootstrap-t check; ``cluster_pct_*`` the percentile
+#: cluster bootstrap the study shipped before 2.1, kept so the two can be compared on the
+#: same row. ``cluster_method`` names what ``cluster_lo`` / ``cluster_hi`` are.
 CLUSTER_KEYS: tuple[str, ...] = (
-    "cluster_lo", "cluster_hi", "cluster_min_env", "cluster_max_env", "cluster_degenerate",
+    "cluster_lo", "cluster_hi", "cluster_se", "cluster_p", "cluster_p_sign",
+    "cluster_boot_t_lo", "cluster_boot_t_hi", "cluster_pct_lo", "cluster_pct_hi",
+    "cluster_min_env", "cluster_max_env", "cluster_degenerate", "cluster_method",
 )
+
+#: A row with no environment-level interval at all (a single cell, a missing policy).
+EMPTY_CLUSTER: dict = {
+    **{k: np.nan for k in CLUSTER_KEYS}, "cluster_degenerate": False, "cluster_method": "none",
+}
 
 
 def cluster_bounds(cm: pd.DataFrame, *, n_boot: int, seed: int) -> dict:
     """The environment-level interval for `cm` (columns ``env_id``, ``value``).
 
-    Below `CLUSTER_MIN_ENVS` the percentile bootstrap does not produce an interval: the
-    2.5th percentile IS the smallest environment mean and the 97.5th IS the largest, so
-    the "95% CI" is exactly [min env mean, max env mean]. Flagging that was not enough --
-    a careful reader still quoted one as a 95% interval (ledger correction C7: "C's
-    reported cluster CI [-0.003446, -0.000079] IS [min env mean, max env mean] to full
-    float precision"). So the range now ships under DIFFERENTLY NAMED columns,
-    ``cluster_min_env`` / ``cluster_max_env``, and ``cluster_lo`` / ``cluster_hi`` are
-    NaN: the wrong reading is unavailable rather than merely disclosed, and a downstream
-    script that quotes ``cluster_lo`` gets NaN instead of a number that means something
-    else. ``cluster_degenerate`` stays, so the old flag still reads True on those rows.
+    The interval is the Student-t on the environment means. Measured against the
+    30-environment robustness population, the percentile cluster bootstrap the study
+    first shipped covers 0.719 / 0.796 / 0.863 / 0.893 at n = 3 / 4 / 6 / 8 against
+    nominal 0.95, where the t interval covers 0.918 / 0.922 / 0.935 / 0.943; every
+    adjusted p derived from the percentile interval was therefore too small. The
+    percentile interval still ships as ``cluster_pct_lo`` / ``cluster_pct_hi`` and the
+    studentized bootstrap-t as ``cluster_boot_t_lo`` / ``cluster_boot_t_hi``, so a reader
+    can see all three on one row; ``cluster_method`` says which one ``cluster_lo`` is.
+
+    Below `CLUSTER_MIN_ENVS` no interval is emitted. Flagging a degenerate one was not
+    enough -- a careful reader still quoted one as a 95% interval (ledger correction C7:
+    "C's reported cluster CI [-0.003446, -0.000079] IS [min env mean, max env mean] to
+    full float precision"). So the range ships under DIFFERENTLY NAMED columns,
+    ``cluster_min_env`` / ``cluster_max_env``, and every test-like column is NaN: the
+    wrong reading is unavailable rather than merely disclosed, and a downstream script
+    that quotes ``cluster_lo`` gets NaN instead of a number that means something else.
+    ``cluster_degenerate`` stays, so the old flag still reads True on those rows.
 
     The range is taken from the environment means directly, not from the bootstrap's
     percentiles, so it says what it is named regardless of resample count.
     """
     n_envs = int(cm["env_id"].nunique())
-    out = {"n_envs": n_envs, "cluster_lo": np.nan, "cluster_hi": np.nan,
-           "cluster_min_env": np.nan, "cluster_max_env": np.nan, "cluster_degenerate": False}
+    out = {"n_envs": n_envs, **EMPTY_CLUSTER}
     if n_envs < 2:
         return out
-    cb = stats.cluster_bootstrap_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed)
-    if cluster_is_degenerate(n_envs, cb["lo"]):
+    if n_envs < CLUSTER_MIN_ENVS:
         env_means = cm.groupby("env_id")["value"].mean()
         out["cluster_min_env"] = float(env_means.min())
         out["cluster_max_env"] = float(env_means.max())
         out["cluster_degenerate"] = True
+        out["cluster_method"] = "range"
         return out
-    out["cluster_lo"], out["cluster_hi"] = cb["lo"], cb["hi"]
+    t = stats.env_mean_t_interval(cm, "env_id", "value")
+    bt = stats.cluster_bootstrap_t_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed)
+    pct = stats.cluster_bootstrap_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed)
+    out.update({
+        "cluster_lo": t["lo"], "cluster_hi": t["hi"], "cluster_se": t["se"], "cluster_p": t["p"],
+        "cluster_boot_t_lo": bt["lo"], "cluster_boot_t_hi": bt["hi"],
+        "cluster_pct_lo": pct["lo"], "cluster_pct_hi": pct["hi"],
+        "cluster_method": "env_mean_t",
+    })
+    if n_envs <= stats.PERMUTATION_MAX_ENVS:
+        out["cluster_p_sign"] = stats.permutation_over_envs(cm, "env_id", "value")["p"]
     return out
 
 
@@ -757,7 +787,7 @@ def aggregate(
     if not have:
         return {"mean": np.nan, "lo": np.nan, "hi": np.nan, "se": np.nan, "win": np.nan,
                 "n_cells": 0, "n_episodes": 0, "n_envs": 0,
-                **{k: (False if k == "cluster_degenerate" else np.nan) for k in CLUSTER_KEYS},
+                **EMPTY_CLUSTER,
                 **flags}
     means = np.array([cs.mean[key] for cs in have])
     ses = np.array([cs.se[key] for cs in have])
@@ -772,7 +802,7 @@ def aggregate(
         "n_cells": len(have),
         "n_episodes": int(sum(cs.cell.n for cs in have)),
         "n_envs": len({cs.cell.env_id for cs in have}),
-        **{k: (False if k == "cluster_degenerate" else np.nan) for k in CLUSTER_KEYS},
+        **EMPTY_CLUSTER,
         **flags,
     }
     envs = [cs.cell.env_id for cs in have]
@@ -982,11 +1012,8 @@ def main_table(
                 p = f"d_regret_vs_{ref}"
                 row.update({
                     p: d["mean"], f"{p}_lo": d["lo"], f"{p}_hi": d["hi"], f"{p}_se": d["se"],
-                    f"{p}_win": d["win"], f"{p}_cluster_lo": d["cluster_lo"],
-                    f"{p}_cluster_hi": d["cluster_hi"], f"{p}_n_cells": d["n_cells"],
-                    f"{p}_cluster_min_env": d["cluster_min_env"],
-                    f"{p}_cluster_max_env": d["cluster_max_env"],
-                    f"{p}_cluster_degenerate": d["cluster_degenerate"],
+                    f"{p}_win": d["win"], f"{p}_n_cells": d["n_cells"],
+                    **{f"{p}_{k}": d[k] for k in CLUSTER_KEYS},
                     f"{p}_ref_tuned": d["ref_tuned"],
                     f"{p}_n_excluded_untuned": d["n_cells_excluded_untuned"],
                 })
@@ -1089,7 +1116,7 @@ def contrast_via_stats(
         return {"status": missing_status(cells, s, policy, ref),
                 "delta": np.nan, "lo": np.nan, "hi": np.nan, "se": np.nan, "win": np.nan,
                 "n_cells": 0, "n_episodes": 0, "n_envs": 0,
-                **{k: (False if k == "cluster_degenerate" else np.nan) for k in CLUSTER_KEYS},
+                **EMPTY_CLUSTER,
                 **flags}
     seed = _seed("primary", s.level, s.family, s.horizon, s.cell, policy, ref, rec)
     if len(diffs) == 1:

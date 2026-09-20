@@ -566,7 +566,11 @@ def test_a_degenerate_cluster_range_ships_under_its_own_column_names():
     a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
     env_means = [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells]
     assert a["n_envs"] == 5 and a["cluster_degenerate"] is False
-    assert a["cluster_lo"] > min(env_means) and a["cluster_hi"] < max(env_means)
+    # The primary (t) interval is a real interval, not the range -- at n=5 it is wider
+    # than the range, which is exactly why the percentile bootstrap under-covered.
+    assert a["cluster_lo"] != min(env_means) and a["cluster_hi"] != max(env_means)
+    assert a["cluster_pct_lo"] > min(env_means) and a["cluster_pct_hi"] < max(env_means)
+    assert a["cluster_hi"] - a["cluster_lo"] > a["cluster_pct_hi"] - a["cluster_pct_lo"]
     assert np.isnan(a["cluster_min_env"]) and np.isnan(a["cluster_max_env"])
     # A row with no cluster interval at all is not "degenerate", it is empty.
     cell_level = next(s for s in strata if s.level == "cell")
@@ -598,6 +602,49 @@ def test_a_degenerate_cluster_range_ships_under_its_own_column_names():
     # No shipped table may carry a bound without the degeneracy flag beside it.
     for frame in (pc, sc):
         assert set(ad.CLUSTER_KEYS) <= set(frame.columns)
+
+
+def test_the_primary_cluster_interval_is_the_environment_mean_t():
+    """NEXT-STEPS 2.1: the percentile cluster bootstrap under-covers (0.893 at n=8, 0.719 at
+    n=3 against nominal 0.95), so `cluster_lo`/`cluster_hi` are now the Student-t interval
+    on the environment means, with its p, the exact sign-test p, the studentized
+    bootstrap-t and the old percentile interval each shipped under their own names.
+    """
+    from cold_start.growing.deploy import stats
+
+    cells = _cells_across_envs(5)
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, N_BOOT) for c in cells}
+    pooled = next(s for s in ad.strata_of(cells) if s.level == "pooled")
+    a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
+    cm = pd.DataFrame({
+        "env_id": [c.env_id for c in cells],
+        "value": [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells],
+    })
+    t = stats.env_mean_t_interval(cm, "env_id", "value")
+    assert a["cluster_lo"] == pytest.approx(t["lo"]) and a["cluster_hi"] == pytest.approx(t["hi"])
+    assert a["cluster_se"] == pytest.approx(t["se"]) and a["cluster_p"] == pytest.approx(t["p"])
+    assert a["cluster_p_sign"] == pytest.approx(stats.permutation_over_envs(cm, "env_id", "value")["p"])
+    assert a["cluster_p_sign"] >= 2 / 2**5
+    assert np.isfinite(a["cluster_pct_lo"]) and np.isfinite(a["cluster_pct_hi"])
+    assert np.isfinite(a["cluster_boot_t_lo"]) and np.isfinite(a["cluster_boot_t_hi"])
+    assert a["cluster_boot_t_lo"] < a["mean"] < a["cluster_boot_t_hi"]
+    assert a["cluster_method"] == "env_mean_t"
+
+    # Below CLUSTER_MIN_ENVS nothing that could be read as a test ships -- not even the
+    # exact sign p, whose floor at three environments is 0.25.
+    cells3 = _cells_across_envs(3)
+    per3 = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 400) for c in cells3}
+    pooled3 = next(s for s in ad.strata_of(cells3) if s.level == "pooled")
+    b = ad.aggregate(per3, pooled3, "phi_k16", "d_regret_vs_cp0")
+    for key in ad.CLUSTER_KEYS:
+        if key in ("cluster_min_env", "cluster_max_env"):
+            assert np.isfinite(b[key]), key
+        elif key == "cluster_degenerate":
+            assert b[key] is True
+        elif key == "cluster_method":
+            assert b[key] == "range"
+        else:
+            assert np.isnan(b[key]), key
 
 
 def test_mark_untuned_baselines_reads_the_json_and_the_manifest(caplog):

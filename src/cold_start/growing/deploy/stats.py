@@ -12,6 +12,15 @@ pool is dominated by whichever cells happen to be largest. `stratified_pooled` g
 every cell equal weight and resamples within cells; `cluster_bootstrap_over_envs`
 resamples whole environments, which is the honest interval when the question is
 "would this hold on a fresh environment".
+
+The percentile cluster bootstrap under-covers at the environment counts this study
+has: measured against the 30-environment robustness population it covers 0.719 /
+0.796 / 0.863 / 0.893 at n = 3 / 4 / 6 / 8 against nominal 0.95, where the Student-t
+interval on the environment means covers 0.918 / 0.922 / 0.935 / 0.943
+(NEXT-STEPS 2.1). `env_mean_t_interval` is therefore the primary environment-level
+interval; `cluster_bootstrap_t_over_envs` is its studentized-bootstrap check, and
+`permutation_over_envs` is the assumption-free exact sign test whose floor,
+``2 / 2**n_envs``, bounds what any environment-level test can say at all.
 """
 
 from __future__ import annotations
@@ -19,6 +28,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from scipy.stats import rankdata
+from scipy.stats import t as student_t
 
 #: Resamples are drawn in blocks so a 10k x 2000 index matrix never materializes.
 _BOOT_CHUNK = 512
@@ -197,6 +207,124 @@ def cluster_bootstrap_over_envs(
         "n_boot": int(n_boot),
         "ci": float(ci),
     }
+
+
+def _env_means(cell_means: pd.DataFrame, env_col: str, value_col: str) -> np.ndarray:
+    """The per-environment mean of `value_col` over that environment's cells, sorted by env."""
+    if env_col not in cell_means.columns or value_col not in cell_means.columns:
+        raise KeyError(f"cell_means needs columns {env_col!r} and {value_col!r}")
+    if cell_means.shape[0] < 1:
+        raise ValueError("cell_means has no rows")
+    return cell_means.groupby(env_col, sort=True)[value_col].mean().to_numpy(dtype=np.float64)
+
+
+def env_mean_t_interval(
+    cell_means: pd.DataFrame, env_col: str, value_col: str, ci: float = 0.95
+) -> dict:
+    """Student-t interval on the environment means, and the two-sided p it inverts.
+
+    Environments are the unit of independence for a claim about environments in
+    general, so this treats the ``n_envs`` environment means as the sample: mean
+    ``+/- t_{n-1, 1-alpha/2} * sd / sqrt(n)``. Returns ``mean, lo, hi, se, p, n_envs, df``;
+    below two environments every bound and ``p`` are NaN. The centre is the mean of the
+    environment means (equal weight per environment), which differs from the cell mean
+    only when environments contribute unequal numbers of cells.
+    """
+    _ci_bounds(ci)
+    means = _env_means(cell_means, env_col, value_col)
+    n = int(means.shape[0])
+    out = {"mean": float(means.mean()), "lo": np.nan, "hi": np.nan, "se": np.nan,
+           "p": np.nan, "n_envs": n, "df": n - 1, "ci": float(ci)}
+    if n < 2:
+        return out
+    se = float(means.std(ddof=1) / np.sqrt(n))
+    out["se"] = se
+    if se == 0.0:
+        # Every environment agrees to the bit: a point, and p = 0 unless the point is 0.
+        out["lo"] = out["hi"] = out["mean"]
+        out["p"] = 1.0 if out["mean"] == 0.0 else 0.0
+        return out
+    half = float(student_t.ppf(1.0 - (1.0 - ci) / 2.0, df=n - 1)) * se
+    out["lo"], out["hi"] = out["mean"] - half, out["mean"] + half
+    out["p"] = float(2.0 * student_t.sf(abs(out["mean"]) / se, df=n - 1))
+    return out
+
+
+def cluster_bootstrap_t_over_envs(
+    cell_means: pd.DataFrame,
+    env_col: str,
+    value_col: str,
+    n_boot: int = 10_000,
+    seed: int = 0,
+    ci: float = 0.95,
+) -> dict:
+    """Studentized (bootstrap-t) interval on the environment means.
+
+    Each resample draws ``n_envs`` environment means with replacement and records
+    ``t* = (mean* - mean) / se*``; the interval is ``[mean - t*_hi se, mean - t*_lo se]``
+    with ``se`` from the original sample. Resamples with ``se* = 0`` (every draw the same
+    environment) carry no studentized information and are dropped; their share is
+    ``n_envs ** (1 - n_envs)``, under 0.4% at four environments. Returns
+    ``mean, lo, hi, se, n_envs, n_boot, n_dropped``; below two environments the bounds
+    are NaN.
+    """
+    lo_pct, hi_pct = _ci_bounds(ci)
+    if n_boot < 1:
+        raise ValueError(f"n_boot must be >= 1; got {n_boot}")
+    means = _env_means(cell_means, env_col, value_col)
+    n = int(means.shape[0])
+    out = {"mean": float(means.mean()), "lo": np.nan, "hi": np.nan, "se": np.nan,
+           "n_envs": n, "n_boot": int(n_boot), "n_dropped": 0, "ci": float(ci)}
+    if n < 2:
+        return out
+    se = float(means.std(ddof=1) / np.sqrt(n))
+    out["se"] = se
+    if se == 0.0:
+        out["lo"] = out["hi"] = out["mean"]
+        return out
+    rng = np.random.default_rng(seed)
+    tstar = np.empty(int(n_boot), dtype=np.float64)
+    for start in range(0, int(n_boot), _BOOT_CHUNK):
+        stop = min(start + _BOOT_CHUNK, int(n_boot))
+        draw = means[rng.integers(0, n, size=(stop - start, n))]
+        se_star = draw.std(axis=1, ddof=1) / np.sqrt(n)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            tstar[start:stop] = (draw.mean(axis=1) - out["mean"]) / se_star
+    keep = np.isfinite(tstar)
+    out["n_dropped"] = int((~keep).sum())
+    if keep.sum() < 2:
+        return out
+    t_lo, t_hi = np.percentile(tstar[keep], [lo_pct, hi_pct])
+    out["lo"], out["hi"] = out["mean"] - float(t_hi) * se, out["mean"] - float(t_lo) * se
+    return out
+
+
+#: Exact enumeration of ``2 ** n`` sign assignments stops here; beyond it the floor
+#: ``2 / 2**n`` is below 2e-6 and a t interval is the right tool anyway.
+PERMUTATION_MAX_ENVS = 20
+
+
+def permutation_over_envs(cell_means: pd.DataFrame, env_col: str, value_col: str) -> dict:
+    """Exact two-sided sign-flip test on the environment means, under H0: symmetric about 0.
+
+    Enumerates all ``2 ** n_envs`` sign assignments and counts those whose ``|mean|`` is
+    at least the observed one. It assumes nothing about the distribution of environment
+    effects, and its price is a hard floor: the smallest p it can return is
+    ``2 / 2 ** n_envs`` (every environment agreeing in sign) -- 0.0078 at n = 8. That is
+    why no environment-level exact test survives Holm in a family larger than 6 rows at
+    eight environments. Returns ``p, stat, n_envs, n_assignments, p_floor``.
+    """
+    means = _env_means(cell_means, env_col, value_col)
+    n = int(means.shape[0])
+    if n > PERMUTATION_MAX_ENVS:
+        raise ValueError(f"exact enumeration is limited to {PERMUTATION_MAX_ENVS} environments; got {n}")
+    stat = float(abs(means.mean()))
+    signs = ((np.arange(2**n)[:, None] >> np.arange(n)[None, :]) & 1) * 2 - 1
+    null = np.abs((signs * means[None, :]).mean(axis=1))
+    # >= with a float tolerance so the observed assignment always counts itself.
+    count = int((null >= stat - 1e-12 * max(stat, 1.0)).sum())
+    return {"p": count / 2**n, "stat": stat, "n_envs": n, "n_assignments": 2**n,
+            "p_floor": 2.0 / 2**n}
 
 
 def _rank_correlation(rx: np.ndarray, ry: np.ndarray) -> np.ndarray:

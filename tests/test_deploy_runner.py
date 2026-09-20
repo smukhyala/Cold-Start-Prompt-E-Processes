@@ -10,6 +10,7 @@ strictly inside (0, 1), snapshots logged, counters recorded). No simulator mocks
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import logging
@@ -847,3 +848,148 @@ def test_a_finished_item_records_its_simulation_surface(tmp_path):
     assert len(records) == 1
     assert records[0]["sim_sha"] == rd.sim_surface_sha()
     assert records[0]["sim_versions"]["numpy"] == rd.sim_surface_versions()["numpy"]
+
+
+# ---- the cap the baseline constants were tuned at (finding 4.5 / ruling 20) -------------------
+
+#: sha256 of `baseline_params.json` as shipped, and of the same file with the six T=2000
+#: keys stripped, both serialized the way `tune_baselines.py` writes it
+#: (``json.dumps(..., indent=2)`` plus a trailing newline).
+#:
+#: The M8fix re-review established that the file is byte-identical to its pre-T=2000
+#: state once those six keys are gone. Nothing in the tree holds that earlier file, so
+#: the equality itself is no longer re-derivable -- these digests are what keeps the
+#: anchor checkable: any future edit to the file, or to what "the T=2000 keys" means,
+#: has to move one of them deliberately.
+BASELINE_PARAMS_SHA256 = "3f049fdbabf3d8fc5cce910000b00f508fba103d99375ab9e4e83dd360be444a"
+BASELINE_PARAMS_NO_T2000_SHA256 = "df71174726d2231273a9f313cdb1c1dde712883b54803b40cf07788f58355abc"
+#: The six keys the T=2000 tuning added, by the path they sit at.
+T2000_KEYS: tuple[tuple[str, ...], ...] = (
+    ("p3_star", "2000"),
+    ("power", "0.25", "2000"),
+    ("power", "0.3333333333333333", "2000"),
+    ("power", "0.5", "2000"),
+    ("power", "0.6666666666666666", "2000"),
+    ("refine_after_init", "2000"),
+)
+
+
+def _dump_baseline_params(params: dict) -> bytes:
+    """Exactly how `tune_baselines.py` serializes `baseline_params.json`."""
+    return json.dumps(params, indent=2).encode("utf-8") + b"\n"
+
+
+@pytest.mark.skipif(
+    not pt.DEFAULT_BASELINE_PARAMS_PATH.exists(), reason="baseline_params.json not in the tree"
+)
+def test_baseline_params_migration_is_reversible_and_keeps_the_t2000_anchor():
+    """The per-cap migration must not cost the audit anchor on the real file."""
+    raw = pt.DEFAULT_BASELINE_PARAMS_PATH.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == BASELINE_PARAMS_SHA256
+    params = json.loads(raw)
+    assert pt.tuning_cap(params) == 64
+
+    # Reversible, byte for byte, on the file as shipped -- which is also why the file is
+    # not rewritten: the migration is a pure in-memory view of it.
+    migrated = pt.migrate_baseline_params(params)
+    assert set(migrated[pt.BY_CAP_KEY]) == {"64"}
+    assert not (set(migrated) & set(pt.TUNED_BLOCKS))
+    assert _dump_baseline_params(pt.unmigrate_baseline_params(migrated)) == raw
+    # Migrating twice, or unmigrating an unmigrated file, is an error, not a silent no-op.
+    with pytest.raises(ValueError):
+        pt.migrate_baseline_params(migrated)
+    with pytest.raises(ValueError):
+        pt.unmigrate_baseline_params(params)
+    # The migrated form resolves identically at the cap it was tuned for.
+    for name, horizon in (("p3_star", 1000), ("power_a0.5", 200), ("refine_after_init", 500)):
+        assert (pt.resolve_params(name, horizon, cap=64, baseline_params=migrated)
+                == pt.resolve_params(name, horizon, cap=64, baseline_params=params))
+
+    # The anchor: exactly six keys are "the T=2000 keys", and the file without them
+    # still hashes to what the M8fix re-review compared against.
+    stripped = json.loads(raw)
+    for path in T2000_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    for path in T2000_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] not in node
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_NO_T2000_SHA256
+    )
+    # ... and stripping them is itself reversible through the same migration.
+    assert _dump_baseline_params(
+        pt.unmigrate_baseline_params(pt.migrate_baseline_params(stripped))
+    ) == _dump_baseline_params(stripped)
+
+
+def test_resolve_params_marks_a_cap_mismatch_untuned(caplog):
+    """A constant tuned at cap 64 and deployed at cap 128 is not a tuned comparator."""
+    pt._warned.clear()
+    tuned = {
+        "meta": {"cap": 64},
+        "power": {"0.5": {"200": 0.7}},
+        "refine_after_init": {"200": 8},
+        "p3_star": {"200": {"alpha": 0.5, "c": 0.4}},
+    }
+    # At the tuning cap, and with no cap named at all, nothing is stamped: a matching
+    # item's params stay byte-identical to what every earlier run recorded.
+    plain = pt.resolve_params("power_a0.5", 200, baseline_params=tuned)
+    assert plain == {"alpha": 0.5, "c": 0.7}
+    assert pt.resolve_params("power_a0.5", 200, cap=64, baseline_params=tuned) == plain
+    assert pt.params_are_tuned(plain)
+
+    with caplog.at_level("WARNING", logger="deploy.policy_table"):
+        for name, expected in (("power_a0.5", {"alpha": 0.5, "c": 0.7}),
+                               ("p3_star", {"alpha": 0.5, "c": 0.4}),
+                               ("refine_after_init", {"K0": 8})):
+            got = pt.resolve_params(name, 200, cap=128, baseline_params=tuned)
+            assert pt.constructor_params(got) == expected, name
+            assert got[pt.PARAMS_CAP] == 64 and got[pt.PARAMS_TUNED] is False, name
+            assert not pt.params_are_tuned(got)
+            assert not pt.baseline_is_tuned(name, 200, tuned, cap=128)
+            assert pt.baseline_is_tuned(name, 200, tuned, cap=64)
+    assert any("tuned at cap 64 but deploying at cap 128" in r.message for r in caplog.records)
+
+    # A policy whose constants do not come from baseline_params.json is untouched...
+    assert pt.PARAMS_CAP not in pt.resolve_params("cp0", 200, cap=128, baseline_params=tuned)
+    # ... and neither is a file that does not say what cap it was tuned at.
+    quiet = {k: v for k, v in tuned.items() if k != "meta"}
+    assert pt.tuning_cap(quiet) is None
+    assert pt.PARAMS_CAP not in pt.resolve_params("power_a0.5", 200, cap=128, baseline_params=quiet)
+    # A per-cap block, once one exists, makes that cap the tuned one.
+    per_cap = {"meta": {"cap": 64}, **{k: v for k, v in tuned.items() if k != "meta"},
+               "by_cap": {"128": {"power": {"0.5": {"200": 9.0}}}}}
+    at128 = pt.resolve_params("power_a0.5", 200, cap=128, baseline_params=per_cap)
+    assert at128 == {"alpha": 0.5, "c": 9.0}
+    assert pt.baseline_is_tuned("power_a0.5", 200, per_cap, cap=128)
+
+
+def test_a_cap_stamp_does_not_make_a_finished_item_stale(tmp_path):
+    """The 144 mis-capped shipped items must not all re-run for a provenance key."""
+    cells = [rd_replace(c, cap=128) for c in _cells(horizon=200, n_replicates=4)]
+    tuned = {"meta": {"cap": 64}, "power": {"0.5": {"200": 0.7}}}
+    items = rd.build_work(
+        "smoke", cells, ["power_a0.5"], out_dir=tmp_path, baseline_params=tuned, thresholds=None,
+        models_dir=tmp_path, dynamics_grid=10, done={}, git_sha="test", log_states=False,
+    )
+    item = items[0]
+    assert item.params[pt.PARAMS_CAP] == 64 and item.params[pt.PARAMS_TUNED] is False
+    Path(item.parquet_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(item.parquet_path).touch()
+    # A record written before the stamp existed: same constants, no provenance.
+    old_record = {
+        "parquet": item.parquet_path, "params": {"alpha": 0.5, "c": 0.7}, "artifact_sha": None,
+        "n_replicates": item.spec.n_replicates, "base_seed": item.spec.base_seed,
+        "horizon": item.spec.horizon, "cap": item.spec.cap, "snapshots": None,
+        "sim_sha": item.sim_sha,
+    }
+    assert rd.stale_reason(old_record, item) is None
+    # A genuinely different constant is still stale.
+    changed = {**old_record, "params": {"alpha": 0.5, "c": 0.9}}
+    assert "params" in rd.stale_reason(changed, item)

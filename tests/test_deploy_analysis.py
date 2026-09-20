@@ -217,6 +217,93 @@ def test_main_table_rows_and_columns(cells, per_cell):
     assert not full["stratum_empty_common_support"].any()
 
 
+def _cap_sweep_cells() -> list[ad.Cell]:
+    """One environment and horizon at four caps -- the shape of the cap sweep."""
+    out: list[ad.Cell] = []
+    for i, cap in enumerate((32, 64, 128, 200)):
+        name = f"beta_good_common_T200_cap{cap}"
+        seed = 30_000 + i
+        frames = {p: _episode_frame(name, "beta_good_common", "A", 200, p, 64, seed)
+                  for p in POLICIES}
+        out.append(ad.Cell(name=name, env_id="beta_good_common", family="A", horizon=200,
+                           cap=cap, base_seed=seed, n=64, frames=frames,
+                           groups={p: GROUPS[p] for p in POLICIES}))
+    return out
+
+
+def test_a_test_with_one_cap_keeps_the_strata_it_always_had(cells):
+    """Adding `cap` to `Stratum` must not move a single-cap test's rows."""
+    strata = ad.strata_of(cells)
+    assert {s.cap for s in strata if s.level != "cell"} == {"all"}
+    assert {s.cap for s in strata if s.level == "cell"} == {"64"}
+    assert [(s.level, s.family, s.horizon) for s in strata] == [
+        (s.level, s.family, s.horizon) for s in strata
+    ]
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    main = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    non_cell = main[main["level"] != "cell"]
+    assert set(non_cell["cap"]) == {"all"}
+    assert set(main[main["level"] == "cell"]["cap"]) == {64}
+
+
+def test_strata_split_by_cap_when_a_test_varies_it():
+    """4.5: `main_cap_primary.csv` pooled four caps into one family_horizon row.
+
+    The constants are tuned at one cap, so the four caps are four different comparators;
+    pooling them left a NaN `cap` column on a row that mixed all of them.
+    """
+    cells = _cap_sweep_cells()
+    strata = ad.strata_of(cells)
+    fh = [s for s in strata if s.level == "family_horizon"]
+    assert len(fh) == 4
+    assert {s.cap for s in fh} == {"32", "64", "128", "200"}
+    for s in fh:
+        assert len(s.cells) == 1 and s.cells[0].endswith(f"cap{s.cap}")
+    # The levels that pool horizons or families still pool caps, and say so.
+    assert {s.cap for s in strata if s.level == "pooled"} == {"all"}
+
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    main = ad.main_table("cap", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    rows = main[(main["level"] == "family_horizon") & (main["policy"] == "phi_k16")]
+    assert len(rows) == 4 and set(rows["cap"]) == {"32", "64", "128", "200"}
+    assert (rows["n_cells"] == 1).all()
+    cov = ad.strata_coverage("cap", cells, strata)
+    assert set(cov[cov["level"] == "family_horizon"]["cap"]) == {"32", "64", "128", "200"}
+
+
+def test_mark_untuned_baselines_flags_a_cell_deployed_at_the_wrong_cap(caplog):
+    """The false assertion 4.5 is about: params_tuned = True at a cap never tuned."""
+    cells = _cap_sweep_cells()
+    baseline = {
+        "meta": {"cap": 64},
+        "power": {"0.5": {"200": 0.7}},
+        "p3_star": {"200": {"alpha": 0.5, "c": 0.4}},
+        "refine_after_init": {"200": 8},
+    }
+    # Manifest lines as the shipped ones are: the constants, no provenance at all.
+    manifest = {
+        ("cap", c.name, "p3_star"): {"params": {"alpha": 0.5, "c": 0.4}} for c in cells
+    }
+    with caplog.at_level("WARNING", logger="deploy.analyze"):
+        marks = ad.mark_untuned_baselines(cells, manifest, baseline)
+    for c in cells:
+        if c.cap == 64:
+            assert "p3_star" not in marks[c.name], c.name
+        else:
+            assert "p3_star" in marks[c.name], c.name
+    # ... and the contrast against it is then refused rather than reported as tuned.
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    strata = ad.strata_of(cells)
+    main = ad.main_table("cap", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    wrong_cap = main[(main["level"] == "family_horizon") & (main["cap"] != "64")
+                     & (main["policy"] == "phi_k16")]
+    assert len(wrong_cap) == 3
+    assert not wrong_cap["d_regret_vs_p3_star_ref_tuned"].any()
+    at_64 = main[(main["level"] == "family_horizon") & (main["cap"] == "64")
+                 & (main["policy"] == "phi_k16")]
+    assert at_64["d_regret_vs_p3_star_ref_tuned"].all()
+
+
 def test_primary_contrasts_has_exactly_three_rows_per_stratum(cells):
     strata = ad.strata_of(cells)
     pc = ad.primary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells, strata, N_BOOT)

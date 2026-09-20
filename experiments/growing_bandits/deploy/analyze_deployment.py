@@ -383,6 +383,12 @@ def mark_untuned_baselines(
 
     Three sources are consulted, so neither a stale manifest nor a stale JSON can hide one:
 
+    A cell's live-arm cap is part of this. Every constant in `baseline_params.json` was
+    selected at one cap (``meta.cap`` = 64), so the cap sweep deploys tuned-looking
+    constants at caps 32, 128 and T that were never selected there -- and every shipped
+    manifest line predates the `policy_table.PARAMS_CAP` stamp, so the mismatch is
+    re-derived here from the table rather than read back (finding 4.5 / ruling 20).
+
     * `policy_table.resolve_params` stamps ``params_tuned: False`` on the item it resolves,
       read back here from the manifest;
     * `policy_table.baseline_is_tuned` re-derives the same answer from today's
@@ -404,18 +410,18 @@ def mark_untuned_baselines(
         untuned = set()
         for policy in c.policies:
             params = recorded.get((c.name, policy))
-            if not pt.baseline_is_tuned(policy, c.horizon, baseline_params):
+            if not pt.baseline_is_tuned(policy, c.horizon, baseline_params, cap=c.cap):
                 untuned.add(policy)
             elif params is not None and not pt.params_are_tuned(params):
                 untuned.add(policy)
             elif params is not None and not pt.deployed_params_are_current(
-                policy, c.horizon, params, baseline_params
+                policy, c.horizon, params, baseline_params, cap=c.cap
             ):
                 log.warning(
                     "%s/%s deployed %s, but the policy table resolves %s today: the episodes "
                     "on disk are not the tuned comparator",
                     c.name, policy, params,
-                    pt.resolve_params(policy, c.horizon, baseline_params=baseline_params),
+                    pt.resolve_params(policy, c.horizon, cap=c.cap, baseline_params=baseline_params),
                 )
                 untuned.add(policy)
         c.untuned = frozenset(untuned)
@@ -561,6 +567,14 @@ class Stratum:
     #: it) is comparable across policies. ``None`` means "not computed" and is read as
     #: `cells` (a stratum built by hand, e.g. in a test).
     common: tuple[str, ...] | None = None
+    #: The live-arm cap this stratum is specific to, or ``"all"`` when it pools every cap
+    #: present. A test that varies the cap (the cap sweep) must not pool four caps into
+    #: one `family_horizon` row: the constants were tuned at one cap, so the caps are
+    #: different comparators, not repetitions of the same one (finding 4.5). A test with
+    #: a single cap has nothing to disambiguate and keeps ``"all"``, which leaves every
+    #: other test's strata exactly as they were. Declared last so the positional
+    #: construction in `strata_of` and in tests is unaffected.
+    cap: str = "all"
 
 
 def common_cells(cells: list[Cell], names: tuple[str, ...]) -> tuple[str, ...]:
@@ -581,14 +595,25 @@ def common_cells(cells: list[Cell], names: tuple[str, ...]) -> tuple[str, ...]:
 def strata_of(cells: list[Cell]) -> list[Stratum]:
     families = sorted({c.family for c in cells})
     horizons = sorted({c.horizon for c in cells})
+    caps = sorted({c.cap for c in cells})
     out: list[Stratum] = []
     for c in cells:
-        out.append(Stratum("cell", c.family, str(c.horizon), c.name, (c.name,), (c.name,)))
+        out.append(Stratum("cell", c.family, str(c.horizon), c.name, (c.name,), (c.name,), str(c.cap)))
+    # `family_horizon` splits by cap whenever the test has more than one, the same way
+    # `family` and `horizon` below exist only when there is more than one horizon or
+    # family. Pooling caps 32, 64, 128 and T into one row put a NaN `cap` column on four
+    # different comparators (finding 4.5).
     for f in families:
         for T in horizons:
-            names = tuple(c.name for c in cells if c.family == f and c.horizon == T)
-            if names:
-                out.append(Stratum("family_horizon", f, str(T), "", names, common_cells(cells, names)))
+            for cap in caps if len(caps) > 1 else (None,):
+                names = tuple(
+                    c.name for c in cells
+                    if c.family == f and c.horizon == T and (cap is None or c.cap == cap)
+                )
+                if names:
+                    out.append(Stratum("family_horizon", f, str(T), "", names,
+                                       common_cells(cells, names),
+                                       "all" if cap is None else str(cap)))
     if len(horizons) > 1:
         for f in families:
             names = tuple(c.name for c in cells if c.family == f)
@@ -806,7 +831,9 @@ def _stratum_meta(test: str, rec: str, s: Stratum, cells_by_name: dict[str, Cell
         c = cells_by_name[s.cell]
         meta.update({"env_id": c.env_id, "cap": c.cap, "base_seed": c.base_seed})
     else:
-        meta.update({"env_id": "", "cap": "", "base_seed": ""})
+        # `cap` is the stratum's, not blank: "all" where caps are pooled and the cap
+        # itself where the stratum is specific to one (`Stratum.cap`).
+        meta.update({"env_id": "", "cap": s.cap, "base_seed": ""})
     return meta
 
 
@@ -878,7 +905,7 @@ def strata_coverage(
         anywhere = set().union(*(set(cells_by_name[n].frames) for n in names)) if names else set()
         rows.append({
             "test": test, "level": s.level, "family": s.family, "horizon": s.horizon,
-            "cell": s.cell,
+            "cap": s.cap, "cell": s.cell,
             "n_cells": len(s.cells),
             "n_common": len(common),
             "n_cells_dropped": len(s.cells) - len(common),

@@ -502,6 +502,11 @@ def stale_reason(record: dict, item: WorkItem, *, ignore_sim_sha: bool = False) 
     (`sim_surface_sha`), and whether snapshots were requested but never logged. Dynamics
     grid changes are not tracked.
 
+    Only the *constructor* parameters are compared (`policy_table.constructor_params`):
+    provenance keys are a description of how a constant was chosen, not the constant, and
+    an item whose params gained a ``params_cap`` stamp would otherwise be re-run to
+    produce bit-identical episodes.
+
     A record written before the surface was fingerprinted carries no ``sim_sha`` and is
     *not* called stale on that ground: the whole shipped tree predates the stamp, and
     turning 3,510 items stale would guarantee the flag gets routed around. Those records
@@ -516,7 +521,7 @@ def stale_reason(record: dict, item: WorkItem, *, ignore_sim_sha: bool = False) 
     """
     if not record.get("parquet") or not Path(record["parquet"]).exists():
         return "parquet missing"
-    if record.get("params") != item.params:
+    if pt.constructor_params(record.get("params")) != pt.constructor_params(item.params):
         return f"params changed {record.get('params')} -> {item.params}"
     if int(record.get("n_replicates", -1)) != int(item.spec.n_replicates):
         return f"n_replicates {record.get('n_replicates')} -> {item.spec.n_replicates}"
@@ -610,6 +615,7 @@ def build_work(
             params = pt.resolve_params(
                 policy,
                 spec.horizon,
+                cap=spec.cap,
                 baseline_params=baseline_params,
                 thresholds=thresholds,
                 models_dir=models_dir,

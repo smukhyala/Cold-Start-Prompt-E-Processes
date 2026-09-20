@@ -241,6 +241,8 @@ TEST_POLICIES: dict[str, tuple[str, ...]] = {
     "robust": _ROBUST,
     "cap": _ROBUST,
     "smoke": CORPUS_POLICIES,
+    # The K-matched control deploys these plus the ``--match`` policy (run_deployment.py).
+    "capmatch": ("always_search", "uniform"),
 }
 
 

@@ -89,7 +89,7 @@ log = logging.getLogger("deploy.run")
 
 DEFAULT_OUT_DIR = ROOT / "results" / "growing_bandits" / "deploy"
 
-TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke")
+TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch")
 REFERENCES: tuple[str, ...] = ("cp0", "p3_star")
 
 #: Episodes per cell by test (DEPLOYMENT_PLAN.md "Environments / horizons / episodes").
@@ -101,6 +101,7 @@ DEFAULT_REPLICATES: dict[str, int] = {
     "robust": 500,
     "cap": 1000,
     "smoke": 100,
+    "capmatch": 2000,
 }
 DEFAULT_CAP = 64
 D_HORIZONS: tuple[int, ...] = (200, 1000)
@@ -119,6 +120,14 @@ CAP_SWEEP_ENVS: tuple[str, ...] = (
 CAP_SWEEP_HORIZONS: tuple[int, ...] = (200, 1000)
 CAP_SWEEP_CAPS: tuple[int | str, ...] = (32, 64, "T")
 SMOKE_ENVS: tuple[str, ...] = ("beta_good_common", "tail_b2.0_mu1.0_c1.0")
+#: The K-matched control (NEXT-STEPS 2.4): horizons where a learned policy and the tuned
+#: schedule can differ at all (at T >= 500 the 64-arm cap makes them the same policy), and
+#: the two comparators deployed at each learned policy's own realised K_final. Every cell
+#: at K = DEFAULT_CAP already exists in Test A / C and is read from there by
+#: `analyze_capmatch.py`; only the K < DEFAULT_CAP cells are run.
+CAPMATCH_HORIZONS: tuple[int, ...] = (50, 100, 200)
+CAPMATCH_COMPARATORS: tuple[str, ...] = ("always_search", "uniform")
+CAPMATCH_SOURCE_TESTS: tuple[str, ...] = ("A", "C")
 SMOKE_HORIZON = 100
 
 #: Smoke runs draw validation seeds: no effect size is ever quoted from test seeds
@@ -221,6 +230,44 @@ def _cell_grid(test: str, cells_mod) -> list[tuple[str, int, int, int | None]]:
     return grid
 
 
+def matched_grid(
+    match: str,
+    *,
+    tables_dir: Path,
+    horizons: tuple[int, ...] = CAPMATCH_HORIZONS,
+    include_at_cap: bool = False,
+) -> list[tuple[str, str, int, int]]:
+    """``(source_test, env_id, horizon, K)`` for every Test-A / Test-C cell `match` ran in.
+
+    ``K = round(k_final)`` of `match` in that cell (`cells_<test>_primary.csv`). Cells whose
+    K equals `DEFAULT_CAP` are the deployed cells themselves and are left out unless
+    `include_at_cap`; the analysis reads those from Test A / C directly.
+    """
+    grid: list[tuple[str, str, int, int]] = []
+    seen_policy = False
+    for test in CAPMATCH_SOURCE_TESTS:
+        path = Path(tables_dir) / f"cells_{test}_primary.csv"
+        if not path.exists():
+            continue
+        frame = pd.read_csv(path)
+        frame = frame[frame["policy"] == match]
+        if len(frame):
+            seen_policy = True
+        for row in frame.itertuples(index=False):
+            if int(row.horizon) not in horizons:
+                continue
+            k = int(round(float(row.k_final)))
+            if k >= DEFAULT_CAP and not include_at_cap:
+                continue
+            grid.append((test, str(row.env_id), int(row.horizon), min(k, DEFAULT_CAP)))
+    if not seen_policy:
+        raise RuntimeError(
+            f"{match} has no rows in cells_A_primary.csv / cells_C_primary.csv under {tables_dir}; "
+            "the K-matched control needs the deployed K_final to match"
+        )
+    return grid
+
+
 def parse_cell_overrides(spec: str) -> list[tuple[str, int, int, int | None]]:
     """``env:T:cap[,env:T:cap...]`` -> grid tuples (a manual cell list for any test)."""
     out: list[tuple[str, int, int, int | None]] = []
@@ -241,13 +288,37 @@ def build_cells(
     n_replicates: int | None,
     cells_mod,
     overrides: list[tuple[str, int, int, int | None]] | None = None,
+    match: str | None = None,
+    tables_dir: Path | None = None,
 ) -> list[CellSpec]:
     """The `CellSpec` list for `test`, seeded by `cells.make_cell` on the test split
     (the validation split for the smoke test, see `SMOKE_SPLIT`).
 
     Without `cells.py` only the smoke test may run, on stand-in seeds -- a real test
     on ad-hoc seeds would not be the pre-registered study.
+
+    ``test == "capmatch"`` takes `match` (the learned policy whose K_final sets each
+    cell's cap) and builds `cells.make_matched_cell` cells: the Test-A / C seed, the
+    matched cap, so the control is CRN-paired with the deployed episodes.
     """
+    if test == "capmatch":
+        if not match:
+            raise RuntimeError("--test capmatch needs --match <learned policy>")
+        if cells_mod is None:
+            raise RuntimeError("--test capmatch needs cells.py for the Test-A / C seeds")
+        m = int(n_replicates) if n_replicates is not None else DEFAULT_REPLICATES[test]
+        specs = [
+            cells_mod.make_matched_cell(TEST_SPLIT, env_id, horizon, k, m, seed_cap=DEFAULT_CAP)
+            for _, env_id, horizon, k in matched_grid(
+                match, tables_dir=Path(tables_dir) if tables_dir else DEFAULT_OUT_DIR / "tables",
+            )
+        ]
+        if not specs:
+            raise RuntimeError(f"every cell of {match} is at K = {DEFAULT_CAP}; nothing to run")
+        names = [cell_name(s) for s in specs]
+        if len(set(names)) != len(names):
+            raise RuntimeError(f"duplicate matched cells for {match}: {names}")
+        return specs
     grid = overrides if overrides is not None else _cell_grid(test, cells_mod)
     if cells_mod is None and test != "smoke":
         raise RuntimeError(
@@ -1199,6 +1270,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--workers", type=int, default=12)
     p.add_argument("--policies", default=None, help="comma-separated subset of policy_table.POLICIES")
     p.add_argument("--cells", default=None, help="manual cell list env:T:cap,... (overrides the test's grid)")
+    p.add_argument("--match", default=None,
+                   help="--test capmatch only: the learned policy whose per-cell K_final sets the cap; "
+                        "it is deployed alongside CAPMATCH_COMPARATORS in every matched cell")
     p.add_argument("--dynamics-grid", type=int, default=50)
     p.add_argument("--log-states", action="store_true", help="log on-policy snapshots for learned policies")
     p.add_argument("--log-policies", default=None,
@@ -1244,7 +1318,13 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     models_dir = Path(args.models_dir)
     t_run = time.time()
 
-    policies = list(pt.TEST_POLICIES[test])
+    if test == "capmatch":
+        if not args.match:
+            raise SystemExit("--test capmatch needs --match <learned policy>")
+        pt.check_policies([args.match])
+        policies = [args.match, *CAPMATCH_COMPARATORS]
+    else:
+        policies = list(pt.TEST_POLICIES[test])
     if args.policies:
         policies = [p.strip() for p in args.policies.split(",") if p.strip()]
         pt.check_policies(policies)
@@ -1260,7 +1340,8 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     cells_mod = import_cells_module()
     if cells is None:
         overrides = parse_cell_overrides(args.cells) if args.cells else None
-        cells = build_cells(test, n_replicates=args.n_replicates, cells_mod=cells_mod, overrides=overrides)
+        cells = build_cells(test, n_replicates=args.n_replicates, cells_mod=cells_mod, overrides=overrides,
+                            match=args.match, tables_dir=out_dir / "tables")
     elif args.n_replicates is not None:
         cells = [replace(c, n_replicates=int(args.n_replicates)) for c in cells]
     seeds = [int(c.base_seed) for c in cells]

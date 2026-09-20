@@ -273,6 +273,44 @@ def make_cell(
     )
 
 
+def make_matched_cell(
+    split: str,
+    env_id: str,
+    horizon: int,
+    cap: int,
+    n_replicates: int,
+    seed_cap: int | str = 64,
+    alpha: float = 0.05,
+) -> CellSpec:
+    """A K-matched control cell (NEXT-STEPS 2.4): the ``(env, T, seed_cap)`` cell's seed, at `cap`.
+
+    The control -- `always_search` capped at a learned policy's own realised K_final -- is a
+    control only if it runs on the SAME episodes as the learned policy did, so the cell
+    keeps `base_seed(split, env_id, horizon, seed_cap)` and overrides nothing but the cap.
+    A cell of its own in the grid (the `EXTRA_CAPS` mechanism) would draw fresh episodes
+    and throw the pairing away. Consequently a matched cell has no `cell_id`; it is never
+    part of the study's grid and its name (``<env>_T<T>_cap<K>``) must not collide with
+    one -- which it cannot, since a K that equals a grid cap IS that grid cell.
+
+    `cap` must be reachable: at least `n_initial_arms + 1` (there must be a SEARCH to cap)
+    and at most the horizon.
+    """
+    cap = int(cap)
+    if not 3 <= cap <= int(horizon):
+        raise ValueError(f"matched cap must be in [3, T={horizon}]; got {cap}")
+    if env_id not in ALL_ENVS:
+        raise KeyError(f"unknown environment {env_id!r}; known={ENV_ORDER}")
+    return CellSpec(
+        env_id=env_id,
+        env_spec=ALL_ENVS[env_id],
+        horizon=int(horizon),
+        cap=cap,
+        base_seed=base_seed(split, env_id, horizon, seed_cap),
+        n_replicates=int(n_replicates),
+        alpha=float(alpha),
+    )
+
+
 # ---- seed-disjointness guard --------------------------------------------------------
 
 #: RUNBOOK.md section 1: the arguments the corpus was generated with.

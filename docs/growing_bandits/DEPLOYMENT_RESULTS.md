@@ -22,12 +22,20 @@ such. Three conventions matter throughout:
   learned policy. It decomposes as `R_T = R_disc + R_sel` (discovery + selection).
 - **Multiplicity**: only H1a, H1b and H2 are pre-registered. Everything else is exploratory and uncorrected.
   Section 3.5 states what survives correction, and it is not much.
+- **The cluster interval is the Student-t on the environment means** (`cluster_lo` / `cluster_hi`,
+  `cluster_method = env_mean_t`). The percentile cluster bootstrap this document first shipped under-covers
+  at the environment counts the study has — 0.719 / 0.796 / 0.863 / 0.893 at n_envs = 3 / 4 / 6 / 8 against
+  nominal 0.95, measured on the 30-environment population; the t interval covers 0.918 / 0.922 / 0.935 /
+  0.943 — so it was replaced (NEXT-STEPS 2.1). Every "cluster" interval below is the t interval; its
+  two-sided p is `cluster_p`, the exact sign-flip p is `cluster_p_sign`, and the old percentile interval is
+  still on every row as `cluster_pct_lo` / `cluster_pct_hi` for comparison. Where the swap changed a
+  conclusion the text says so in place. Every point estimate, paired CI and flag is bit-identical to the
+  previous version of this document.
 - **Two bootstrap runs of record.** `primary_contrasts_<test>_primary.csv` and `main_<test>_primary.csv`
-  re-bootstrap the same paired contrasts independently at n_boot = 10000, so their point estimates are
-  bit-identical while their CI bounds differ by Monte-Carlo noise of about 1% of interval width — pooled H1b
-  reads cluster [−0.003379, +0.000508] in the first and [−0.003350, +0.000518] in the second. Both are quoted
-  below with their source file. No CI in this document comes from `summary_<test>.csv`, which is a third,
-  coarser bootstrap (n_boot = 2000).
+  re-bootstrap the same paired contrasts independently at n_boot = 10000, so their point estimates and their
+  (deterministic) t cluster bounds are bit-identical while their *paired* CI bounds differ by Monte-Carlo
+  noise of about 1% of interval width. Both are quoted below with their source file. No CI in this document
+  comes from `summary_<test>.csv`, which is a third, coarser bootstrap (n_boot = 2000).
 
 ---
 
@@ -37,16 +45,20 @@ Deploying the learned k=16 policy Φ lowers simple regret against the continuati
 defined against, and does **not** lower it against a validation-tuned growth schedule.
 
 - **H1a (Φ vs `cp0`)**: pooled Δ = **−0.038165**, paired [−0.039006, −0.037310], environment-cluster
-  [−0.065288, −0.015835]; cluster-significant in all 18 Test-A strata
-  (`primary_contrasts_A_primary.csv`, H1a, level=pooled). The necessary condition holds, conditional on the
-  64-arm cap the labels were harvested under: in the cap sweep pooled H1a is −0.013909 with a cluster upper
-  bound of −0.000245 (Monte-Carlo-close to zero), and at T = 1000 it reverses to **+0.009645**, cluster
-  [+0.000370, +0.015424] (`primary_contrasts_cap_primary.csv`, H1a, level=horizon, horizon=1000).
+  [−0.070636, −0.005693], p = 0.027, and negative in every one of the eight environments (exact sign
+  p = 0.0078); cluster-significant pooled and at every horizon, i.e. in the 6 of 18 Test-A strata that have
+  eight environments — the 12 `family` / `family_horizon` strata have four, where a t interval on three
+  degrees of freedom includes zero although all four environments agree in sign
+  (`primary_contrasts_A_primary.csv`, H1a). The necessary condition holds, conditional on the 64-arm cap the
+  labels were harvested under: in the cap sweep pooled H1a is −0.013909 with a cluster interval
+  [−0.047846, +0.020029] that includes zero (n_envs = 4), and at T = 1000 it reverses in sign to
+  **+0.009645**, cluster [−0.005667, +0.024956], also including zero (`primary_contrasts_cap_primary.csv`,
+  H1a, level=pooled and level=horizon, horizon=1000).
 - **H1b (Φ vs the tuned power schedule P3\*)**: pooled Δ = **−0.001389**, paired [−0.001885, −0.000898],
-  cluster **[−0.003379, +0.000508] — includes zero** (same file, H1b, level=pooled). In none of the six
+  cluster **[−0.003899, +0.001121] — includes zero** (same file, H1b, level=pooled). In none of the six
   tests is Φ cluster-significantly better than P3\*, and on both off-distribution tests it is worse.
 - **H2 (e-process features)**: pooled Δ(`phi_k16` − `phi_k16_quality`) = **+0.000114**, cluster
-  [−0.000184, +0.000430] — a null on Test A, unmeasured on Tests B and D, and negative (the features help)
+  [−0.000277, +0.000505] — a null on Test A, unmeasured on Tests B and D, and negative (the features help)
   only outside the training support.
 - **H3 (offline surrogate)**: Spearman ρ(offline OOF AUC, deployed pooled regret) = **+0.005082**,
   [−0.527026, +0.523659], n_variants = 22 (`surrogate_validity.csv`, test=A,
@@ -139,21 +151,26 @@ Test A is the in-distribution panel: 8 corpus environments × 5 horizons × 2000
 policies, all CRN-paired. The pre-registered table is exactly 54 rows — 3 hypotheses × 18 strata — every one
 `pre_registered=True`, `status=ok`, `n_boot=10000` (`primary_contrasts_A_primary.csv`).
 
-### 3.1 H1a — Φ beats `cp0` in every Test-A stratum
+### 3.1 H1a — Φ beats `cp0`, pooled and at every horizon
 
 | stratum | Δ | paired CI | cluster CI |
 |---|---|---|---|
-| pooled | **−0.038165** | [−0.039006, −0.037310] | [−0.065288, −0.015835] |
-| family A | −0.043414 | [−0.044695, −0.042104] | [−0.089132, −0.013609] |
-| family B | −0.032916 | [−0.033984, −0.031866] | [−0.060414, −0.006917] |
-| T=50 | −0.040014 | [−0.042487, −0.037583] | [−0.069598, −0.016000] |
-| T=100 | −0.040590 | [−0.042839, −0.038340] | [−0.072237, −0.015183] |
-| T=200 | −0.040170 | [−0.042038, −0.038337] | [−0.072993, −0.013776] |
-| T=500 | −0.039152 | [−0.040630, −0.037706] | [−0.064304, −0.017130] |
-| T=1000 | −0.030898 | [−0.031990, −0.029807] | [−0.048954, −0.014216] |
+| pooled | **−0.038165** | [−0.039006, −0.037310] | [−0.070636, −0.005693] |
+| family A | −0.043414 | [−0.044695, −0.042104] | [−0.119764, +0.032936] |
+| family B | −0.032916 | [−0.033984, −0.031866] | [−0.086742, +0.020910] |
+| T=50 | −0.040014 | [−0.042487, −0.037583] | [−0.075587, −0.004440] |
+| T=100 | −0.040590 | [−0.042839, −0.038340] | [−0.078060, −0.003121] |
+| T=200 | −0.040170 | [−0.042038, −0.038337] | [−0.078463, −0.001877] |
+| T=500 | −0.039152 | [−0.040630, −0.037706] | [−0.070866, −0.007438] |
+| T=1000 | −0.030898 | [−0.031990, −0.029807] | [−0.053539, −0.008257] |
 
-(`primary_contrasts_A_primary.csv`, H1a rows; paired win rate 0.604281 pooled.) All 18 strata, including the
-ten `family_horizon` rows not shown, have cluster CIs excluding zero. The effect is large relative to
+(`primary_contrasts_A_primary.csv`, H1a rows; paired win rate 0.604281 pooled.) The pooled row and the five
+`horizon` rows — the six strata with n_envs = 8 — have cluster CIs excluding zero (p = 0.027 pooled; exact
+sign p = 0.0078, all eight environments negative). The two `family` rows and the ten `family_horizon` rows
+not shown have n_envs = 4, and there a t interval on three degrees of freedom includes zero for every one of
+them (p between 0.09 and 0.21) even though all four environments agree in sign in each (sign p = 0.125,
+the floor at n = 4). The previous version of this document reported all 18 as cluster-significant on the
+percentile interval; that interval under-covers at n = 4 (§3.5). The effect is large relative to
 everything else in this study: Φ's pooled regret is 0.110106 against `cp0`'s 0.148271
 (`main_A_primary.csv`, level=pooled), and roughly 86% of `cp0`'s regret is discovery
 (`regret_disc` 0.128180 of 0.148271) — `cp0` simply does not search enough. The necessary condition is met:
@@ -163,41 +180,42 @@ the labels are one improvement step from `cp0`, and deploying the model trained 
 
 | stratum | Δ | paired CI | cluster CI |
 |---|---|---|---|
-| pooled | **−0.001389** | [−0.001885, −0.000898] | [−0.003379, **+0.000508**] |
-| T=50 | −0.002841 | [−0.004472, −0.001214] | [−0.007809, +0.002406] |
-| T=100 | **−0.004067** | [−0.005740, −0.002451] | **[−0.008552, −0.000354]** |
-| T=200 | −0.000387 | [−0.001179, +0.000404] | [−0.002734, +0.001904] |
-| T=500 | **+0.000350** | [+0.000131, +0.000570] | [−0.000372, +0.001448] |
+| pooled | **−0.001389** | [−0.001885, −0.000898] | [−0.003899, **+0.001121**] |
+| T=50 | −0.002841 | [−0.004472, −0.001214] | [−0.009548, +0.003867] |
+| T=100 | −0.004067 | [−0.005740, −0.002451] | [−0.009466, +0.001333] |
+| T=200 | −0.000387 | [−0.001179, +0.000404] | [−0.003375, +0.002600] |
+| T=500 | **+0.000350** | [+0.000131, +0.000570] | [−0.000876, +0.001577] |
 | T=1000 | −7.42e−07 | [−4.6e−06, +2.3e−06] | [−4.0e−06, +2.0e−06] |
 
-(`primary_contrasts_A_primary.csv`, H1b rows.) The pooled cluster CI includes zero. Exactly two of the 18
-strata have a cluster CI excluding zero, both at T=100: `level=horizon` (−0.004067,
-cluster [−0.008552, −0.000354]) and `family=A, horizon=100` (−0.006837, cluster [−0.014112, −0.001728]).
-At T=500 the schedule is better and the paired CI excludes zero. At T=1000 the difference is seven decimal
-places from zero, because both policies are doing the same thing (§4).
+(`primary_contrasts_A_primary.csv`, H1b rows.) The pooled cluster CI includes zero (p = 0.23; sign p = 0.23,
+five of eight environments negative). **No stratum has a cluster CI excluding zero.** The two that did on the
+percentile interval, both at T=100 — `level=horizon` (−0.004067, now cluster [−0.009466, +0.001333],
+p = 0.12) and `family=A, horizon=100` (−0.006837, cluster [−0.019037, +0.005362], n_envs = 4) — do not on
+the t interval. At T=500 the schedule is better and the paired CI excludes zero. At T=1000 the difference
+is seven decimal places from zero, because both policies are doing the same thing (§4).
 The honest statement of H1b is: **on the corpus environments Φ and a validation-tuned power schedule are
-indistinguishable, with a short-horizon advantage to Φ at T=100 and a small advantage to the schedule at
-T=500.**
+indistinguishable, with a short-horizon advantage to Φ at T=100 that the environment-level interval does not
+confirm, and a small advantage to the schedule at T=500.**
 
 ### 3.3 H2 — the e-process features are a null here
 
 | stratum | Δ(`phi_k16` − `phi_k16_quality`) | paired CI | cluster CI |
 |---|---|---|---|
-| pooled | **+0.000114** | [−0.000040, +0.000265] | [−0.000184, +0.000430] |
-| T=100 | +0.000587 | [+0.000025, +0.001165] | [−0.000132, +0.001473] |
-| family A, T=100 | **+0.001354** | [+0.000431, +0.002349] | **[+0.000186, +0.002522]** |
-| family A, T=500 | −0.000340 | [−0.000529, −0.000157] | [−0.000997, 0.000000] |
+| pooled | **+0.000114** | [−0.000040, +0.000265] | [−0.000277, +0.000505] |
+| T=100 | +0.000587 | [+0.000025, +0.001165] | [−0.000475, +0.001648] |
+| family A, T=100 | +0.001354 | [+0.000431, +0.002349] | [−0.000937, +0.003645] |
+| family A, T=500 | −0.000340 | [−0.000529, −0.000157] | [−0.001389, +0.000709] |
 | T=1000 | −9.4e−07 | [−2.4e−06, +3.6e−07] | [−3.0e−06, 0.000000] |
 
 (`primary_contrasts_A_primary.csv`, H2 rows.) A positive Δ means the model *with* the e-process columns is
-slightly worse. Pooled, the interval straddles zero on both bootstraps. The one Test-A stratum whose
-cluster CI excludes zero is the `family_horizon` row family A × T=100, at +0.001354,
-cluster [+0.000186, +0.002522] — at n_envs = 4 that is directional evidence, not a test (§9.4 item 14) —
-i.e. the evidence features appear to cost about a thousandth of a regret unit there. Counted the same way,
-H1b likewise has one `family_horizon` row excluding zero (family A × T=100, −0.006837,
-cluster [−0.014112, −0.001728]) alongside the `horizon`-level T=100 row; those are the two H1b strata
-quoted in §3.2. (The post-hoc review attributed that significance to the `horizon=100` row; the shipped
-table's `horizon=100` cluster CI is [−0.000132, +0.001473] and includes zero. The table is what is quoted
+slightly worse. Pooled, the interval straddles zero. No Test-A stratum has a cluster CI excluding zero. The
+one that did on the percentile interval, the `family_horizon` row family A × T=100 at +0.001354, reads
+cluster [−0.000937, +0.003645] on the t interval (n_envs = 4; §9.4 item 14) — the evidence features appear
+to cost about a thousandth of a regret unit there, and the paired CI [+0.000431, +0.002349] says so, but
+the environment-level interval does not. The same is true of H1b's family A × T=100 row (−0.006837,
+cluster [−0.019037, +0.005362]) and its `horizon`-level T=100 row, the two H1b strata discussed in §3.2.
+(The post-hoc review attributed that significance to the `horizon=100` row; the shipped
+table's `horizon=100` cluster CI is [−0.000475, +0.001648] and includes zero. The table is what is quoted
 here.) A cleaner version of the same ablation is the single-column contrast: `phi_k16` (with `f_log_e_pair`)
 against `phi_k16_cs` (confidence-sequence bounds only) differ by **1.0e−06** in pooled regret
 (0.110106 vs 0.110105, `main_A_primary.csv`, level=pooled). The e-process column changes nothing in
@@ -218,11 +236,11 @@ five rules (`primary_contrasts_A_<rec>.csv`, level=pooled):
 
 | rule | H1a | H1b | H2 |
 |---|---|---|---|
-| `posterior_mean_shrunk` (primary) | −0.038165 cl[−0.065288, −0.015835] | −0.001389 cl[−0.003379, +0.000508] | +0.000114 cl[−0.000184, +0.000430] |
-| `lcb` (secondary) | −0.038218 cl[−0.065339, −0.015894] | −0.001427 cl[−0.003437, +0.000480] | +0.000108 cl[−0.000183, +0.000412] |
-| `oracle_prior` (secondary, not deployable) | −0.038196 cl[−0.065948, −0.015368] | −0.001422 cl[−0.003415, +0.000461] | +0.000101 cl[−0.000181, +0.000396] |
-| `posterior_mean` (secondary) | −0.037593 cl[−0.063806, −0.015481] | −0.000933 cl[−0.002831, +0.000951] | +0.000076 cl[−0.000194, +0.000355] |
-| `empirical` (secondary, the naive control) | −0.034256 cl[−0.060622, −0.013413] | −0.001471 cl[−0.005986, +0.003001] | +0.000992 cl[−0.000013, +0.002262] |
+| `posterior_mean_shrunk` (primary) | −0.038165 cl[−0.070636, −0.005693] | −0.001389 cl[−0.003899, +0.001121] | +0.000114 cl[−0.000277, +0.000505] |
+| `lcb` (secondary) | −0.038218 cl[−0.070741, −0.005695] | −0.001427 cl[−0.003958, +0.001103] | +0.000108 cl[−0.000280, +0.000496] |
+| `oracle_prior` (secondary, not deployable) | −0.038196 cl[−0.070717, −0.005675] | −0.001422 cl[−0.003909, +0.001065] | +0.000101 cl[−0.000272, +0.000473] |
+| `posterior_mean` (secondary) | −0.037593 cl[−0.069648, −0.005538] | −0.000933 cl[−0.003357, +0.001491] | +0.000076 cl[−0.000279, +0.000431] |
+| `empirical` (secondary, the naive control) | −0.034256 cl[−0.064432, −0.004081] | −0.001471 cl[−0.007493, +0.004551] | +0.000992 cl[−0.000508, +0.002492] |
 
 H1a is cluster-significant under every rule; H1b and H2 are cluster-null under every rule. The feared
 inflation from the oracle-prior recommender is empirically nil at cap 64: primary and `oracle_prior` pooled
@@ -234,20 +252,26 @@ degenerate control, reported but never averaged into anything (`recommender_kend
 ### 3.5 Multiplicity, stated explicitly
 
 No multiplicity correction is applied anywhere in the shipped tables, and none is claimed. Computed after the
-fact by Holm on p-values inverted from the cluster interval:
+fact by Holm on the shipped `cluster_p` (the two-sided p of the environment-mean t interval). Every number
+in this section changed when the t interval replaced the percentile bootstrap, in the direction of fewer
+survivors, because the percentile interval was too narrow (header note; NEXT-STEPS 2.1):
 
-- Within the 54-row Test-A pre-registered family, **exactly one row survives**: H1a at `level=horizon`,
-  `horizon=1000` (adjusted p = 0.0264). Pooled H1a gets adjusted p = 0.129 and dies; no H1b or H2 row
-  survives at any stratum.
+- Within the 54-row Test-A pre-registered family, **no row survives**. The previous version's single
+  survivor, H1a at `level=horizon`, `horizon=1000` (adjusted 0.0264 on the percentile interval), has
+  p = 0.0145 on the t interval and adjusted p = 0.78; pooled H1a (p = 0.027) is adjusted to 1.0.
 - Across the full 282-row pre-registered family (A 54 + B 54 + C 21 + D 36 + cap 63 + robust 54), 171 rows
   carry a cluster interval at all — Tests B and D's `not_evaluated` / `missing` rows (18 each), all 21 Test-C
   rows (n_envs = 3, §7.2), and the cap sweep's 12 `untuned_reference` and 42 n_envs = 2 rows do not. Of those
-  171, **14 survive, none of them from Test A, B, C or D**: 13 from the 30-environment robustness sweep and
-  one from the cap sweep (H2 at `level=horizon`, T = 200: −0.005807, adjusted 0.0009).
+  171, **12 survive, every one an H1a row of the 30-environment robustness sweep** (pooled, the five
+  `horizon` rows, and family B's six rows; adjusted p ≤ 0.0032, smallest 1e−4). Nothing from Test A, B, C,
+  D or the cap sweep survives. (On the percentile interval this read 14, with one cap-sweep H2 row and one
+  more robustness row; both are gone.)
 - On the defensible one-row-per-hypothesis-per-test family (13 testable pooled rows — Test C's three have no
-  cluster interval at n_envs = 3, §7.2), **4 survive, all of them H1a** — in Tests A (adjusted 0.0273), B
-  (0.0273, Test A relabelled), D (0.0258) and the robustness sweep (< 1e−8) — and **none points against the
-  thesis**. (An earlier version of this section listed two that did. Test C H1b (+0.00368, "adjusted 0.0476")
+  cluster interval at n_envs = 3, §7.2), **one survives: the robustness sweep's H1a** (n_envs = 30,
+  p = 3e−7). Test A's pooled H1a (p = 0.027), Test B's (the same row relabelled) and Test D's (p = 0.026)
+  are each adjusted to 0.31; the study's only environment-level survivor of a family of any size is the one
+  row with thirty environments behind it. **None points against the thesis**. (An earlier version of this
+  section listed four survivors, and before that two that pointed against. Test C H1b (+0.00368, "adjusted 0.0476")
   rested on the n_envs = 3 [min, max] range read as a 95% interval, which the tables no longer emit as one;
   its *paired* CI [+0.002793, +0.004572] still excludes zero and §7.2 reports it as such — worse, but not
   cluster-tested. Cap H1b at +0.0193 was an artefact of comparing against a schedule constant tuned at a
@@ -262,18 +286,21 @@ expected chance finding before bootstrap noise is considered.
 
 ### 3.6 The exploratory ladder
 
-With that discount in place: of the 25 learned variants in Test A, seven have pooled cluster CIs excluding
-zero against P3\* at the published bootstrap seeds — `phi_k4` (−0.003445, cl[−0.005946, −0.001694]),
-`phi_k1` (−0.003429, cl[−0.005975, −0.001728]), `phi_k16_perstep` (−0.003386, cl[−0.006571, −0.001231]),
-`phi_k16_onpolicy_union` (−0.001936, cl[−0.004038, −0.000315]), `phi_k16_noT200` (−0.001895,
-cl[−0.003921, −0.000125]), `phi_k16_notrunc` (−0.001886, cl[−0.003553, −0.000527]) and `phi_k16_nopolicy`
-(−0.001283, cl[−0.002472, −0.000027]) — and the **pre-registered `phi_k16` is not one of them**
-(−0.001389, cl[−0.003350, +0.000518]) (`main_A_primary.csv`, level=pooled). Three qualifications are
-required and none is optional. (i) The count is uncorrected, with E[false positives] = 1.25 as above. (ii)
-Under Holm across those 25 rows only **two** survive, `phi_k4` and `phi_k1` (adjusted p 0.0374 each);
-`phi_k16_onpolicy_union` reaches 0.817. (iii) The count is not even stable in the bootstrap: re-drawing the
-seed 300 times gives 6/7/8 significant policies in 32/141/127 draws, so "seven" is the modal answer at 47%,
-and only six policies are unanimous across those draws.
+With that discount in place: of the 25 learned variants in Test A, **two** have pooled cluster CIs excluding
+zero against P3\* — `phi_k4` (−0.003445, cl[−0.006266, −0.000624], p = 0.023, negative in all eight
+environments) and `phi_k1` (−0.003429, cl[−0.006280, −0.000578], p = 0.025, likewise eight of eight) — and
+the **pre-registered `phi_k16` is not one of them** (−0.001389, cl[−0.003899, +0.001121])
+(`main_A_primary.csv`, level=pooled). On the percentile interval this document previously counted seven,
+adding `phi_k16_perstep` (−0.003386, now cl[−0.006988, +0.000217], p = 0.062), `phi_k16_onpolicy_union`
+(−0.001936, cl[−0.004382, +0.000509], p = 0.10), `phi_k16_noT200` (−0.001895, cl[−0.004382, +0.000593],
+p = 0.11), `phi_k16_notrunc` (−0.001886, cl[−0.003834, +0.000062], p = 0.056) and `phi_k16_nopolicy`
+(−0.001283, cl[−0.002869, +0.000303], p = 0.097); each of those five loses it on the t interval. Two
+qualifications are required and neither is optional. (i) The count is uncorrected, with E[false positives]
+= 1.25 as above — so two observed against 1.25 expected is not evidence of anything. (ii) Under Holm across
+those 25 rows **nothing** survives: the smallest adjusted p is 0.585 (`phi_k4`). The previous version's
+"`phi_k4` and `phi_k1` survive at 0.0374" was computed from the under-covering interval. (The old count
+was also unstable in its bootstrap seed — 6/7/8 significant policies in 32/141/127 of 300 re-draws; the t
+interval has no seed to re-draw.)
 
 The one robust pattern in the ladder is that **short commitment wins**. `phi_k4` (0.108050), `phi_k1`
 (0.108066) and `phi_k16_perstep` (0.108110 — the k=16 model re-evaluated every step, which is the same
@@ -358,15 +385,17 @@ extrapolating outside its training support against a schedule extrapolating outs
 every cap. No conclusion about "the value of a bigger cap" is drawn here.
 
 **The pre-registered hypotheses move under the cap.** Over the whole sweep, pooled H1a is −0.013909
-(cluster [−0.035086, −0.000245], n_envs=4 — Monte-Carlo-close to zero at the upper end), and at T=1000 it
-**reverses** to +0.009645 (cluster [+0.000370, +0.015424]): Φ loses to `cp0` there because `cp0` never
-over-recruits. Pooled H1b is **+0.000387**, paired [−0.000300, +0.001072], cluster [−0.000756, +0.001917] — a null
+(cluster [−0.047846, +0.020029], n_envs=4 — the interval includes zero; on the percentile interval its
+upper bound was −0.000245), and at T=1000 it **reverses in sign** to +0.009645 (cluster
+[−0.005667, +0.024956], also including zero): Φ loses to `cp0` there, on the point estimate, because `cp0`
+never over-recruits. With four environments neither the pooled deficit nor the T=1000 reversal is
+cluster-significant; what the sweep establishes is that the sign of H1a is cap-dependent, not its size. Pooled H1b is **+0.000387**, paired [−0.000300, +0.001072], cluster [−0.002035, +0.002809] — a null
 (`primary_contrasts_cap_primary.csv`, H1b, level=pooled, n_cells=8, n_envs=4). It is computed on 8 cells
 rather than 32 because the analysis now refuses a contrast whose reference baseline carries a constant tuned
 at a different cap (`params_cap`; status `untuned_reference`). The +0.019327 this document previously reported
 over all 32 cells was that refused comparison: P3\*'s `c`, tuned at cap 64, deployed at caps 32/128/T, and
 most of the effect came from the cap = T cells where it is furthest from its tuning point. The honest reading
-is that the cap sweep says **nothing** about H1b, not that Φ is much worse there. Pooled H2 is −0.008423 (cluster [−0.017889, −0.003375]); see §7.5 for why that is
+is that the cap sweep says **nothing** about H1b, not that Φ is much worse there. Pooled H2 is −0.008423 (cluster [−0.023526, +0.006679]); see §7.5 for why that is
 not a licence to say the e-process features help (`primary_contrasts_cap_primary.csv`). Note that all 18
 `family` and `family_horizon` rows of that table have n_envs = 2 and `cluster_degenerate=True`, where the
 "cluster CI" is just the two environment means and can be up to 24× *narrower* than the paired CI; only the
@@ -516,9 +545,9 @@ policy set. Test B therefore contributes **no independent pre-registered evidenc
 replication of Test A.
 
 Its exploratory rows are the informative part, and they are flat: three variants inside 2.7e−04 of one
-another, with only `phi_k16_nopolicy`'s cluster interval marginally excluding zero at its upper endpoint
-(−0.000027). The rows are `phi_k16_all71` −0.001553 (cluster [−0.003414, +0.000176]), `phi_k16` −0.001389
-and `phi_k16_nopolicy` −0.001283 (cluster [−0.002472, −0.000027]), at pooled regret
+another, none with a cluster interval excluding zero (`phi_k16_nopolicy`'s did so marginally on the
+percentile interval, at an upper endpoint of −0.000027; on the t interval it is +0.000303). The rows are `phi_k16_all71` −0.001553 (cluster [−0.003861, +0.000755]), `phi_k16` −0.001389
+and `phi_k16_nopolicy` −0.001283 (cluster [−0.002869, +0.000303]), at pooled regret
 0.109942 / 0.110106 / 0.110212 (`main_B_primary.csv`, level=pooled). Dropping the fingerprint-heavy
 generating policies and the history features costs nothing and gains nothing. Do not read this off the Test-B line, decomposition, dynamics or
 tau-curve figures: those default to the robustness sweep's six policies, whose intersection with Test B is
@@ -559,9 +588,9 @@ The effect of that correction is the headline finding of the fix wave:
 |---|---|---|
 | `p3_star` at T=2000: regret / k_final | 0.124022 / 45.0 | **0.106148 / 64.0** (cap-filling) |
 | Test-D Δ at T=2000 vs P3\* (all learned + `always_search`) | −0.017889 | **−0.000015** |
-| pooled Δ `phi_sf_k16` | −0.003354 | **−0.000532** (cluster [−0.001026, −0.000118]) |
-| pooled Δ `phi_k16_cs` | −0.002970 | −0.000148 (cluster [−0.001186, +0.000779], includes zero) |
-| pooled Δ `phi_sf_k16_noT1000` | −0.003210 | −0.000388 (cluster [−0.001341, +0.000399], includes zero) |
+| pooled Δ `phi_sf_k16` | −0.003354 | −0.000532 (cluster [−0.001104, +0.000040], includes zero) |
+| pooled Δ `phi_k16_cs` | −0.002970 | −0.000148 (cluster [−0.001503, +0.001042], includes zero) |
+| pooled Δ `phi_sf_k16_noT1000` | −0.003210 | −0.000388 (cluster [−0.001620, +0.000743], includes zero) |
 | pooled Δ `phi_k16_clock` | −0.002220 | **+0.000603** (sign flip) |
 | `refine_after_init` at T=2000 | 0.313886 (K0=4) | 0.240173 (K0=8) |
 
@@ -573,16 +602,17 @@ search_frac 0.031031), so the row says nothing about a learned stopping rule eit
 its bracket [−0.000029, −0.000002] means all three environments agree in sign, at a magnitude of 1e−5.
 
 What remains of horizon transfer is the T=200 holdout, and it is modest: the model that never saw T=200
-(`phi_k16_noT200`) scores Δ = **−0.001542**, paired [−0.002203, −0.000881], **cluster [−0.003460, +0.000006],
+(`phi_k16_noT200`) scores Δ = **−0.001542**, paired [−0.002203, −0.000881], **cluster [−0.003831, +0.000747],
 which includes zero**, against −0.001889 for the model that *did* see T=200 (`phi_k16_noT1000`)
 (`main_D_primary.csv`, level=horizon, horizon=200). Holding out the horizon costs nothing measurable and
 buys nothing measurable. The scale-free clock variant demanded by register row 12 is deployed:
-`phi_sf_k16` scores pooled Δ = −0.000532, cluster [−0.001026, −0.000118] (`main_D_primary.csv`,
+`phi_sf_k16` scores pooled Δ = −0.000532, cluster [−0.001104, +0.000040] (`main_D_primary.csv`,
 level=pooled). That is an exploratory, uncorrected contrast — H1b is pre-registered only for `phi_k16`,
 whose Test-D pooled Δ is −0.000194 with a cluster CI that includes zero — and it is not the largest or the
 only one: `phi_k16_noT1000` is lower in pooled regret (0.100824 against 0.101140) at Δ = −0.000945,
-cluster [−0.001933, −0.000153], and at T=200 both `phi_k16_noT1000` (−0.001889,
-cluster [−0.003866, −0.000291]) and `phi_sf_k16` (−0.001257, cluster [−0.002519, −0.000274]) clear zero.
+cluster [−0.002101, +0.000212], and at T=200 both `phi_k16_noT1000` (−0.001889,
+cluster [−0.004203, +0.000425]) and `phi_sf_k16` (−0.001257, cluster [−0.002701, +0.000187]) have
+paired CIs excluding zero and cluster CIs that do not (they cleared zero on the percentile interval).
 These are not comparable to one another in any case: `phi_sf_k16`'s pooled contrast runs on 19 cells and
 `phi_k16_noT1000`'s on 16 (`d_regret_vs_p3_star_n_cells`). Every one of these is a 5e−04 to 2e−03 effect
 against a tuned schedule; none is a pre-registered Test-D result.
@@ -602,9 +632,9 @@ the contrast column, not the difference of levels.
 ### 7.4 Robustness sweep — 30 environments, marginal
 
 All 30 corpus environments × 5 horizons at M=500. Pooled: `phi_k16_quality` −0.000980
-(cluster [−0.001926, −0.000016]), `phi_k16` −0.000891 (cluster [−0.001843, +0.000045]), against `cp0`
+(cluster [−0.002009, +0.000050]), `phi_k16` −0.000891 (cluster [−0.001906, +0.000124]), against `cp0`
 +0.031917 and `always_search` +0.025593 (`main_robust_primary.csv`, level=pooled; H1a pooled −0.032808
-cluster [−0.042895, −0.023548], cluster-significant in all 18 strata). These 30 environments **are exactly
+cluster [−0.042996, −0.022621], cluster-significant in 16 of 18 strata). These 30 environments **are exactly
 the 30 training-corpus environments**. This is a robustness sweep over a wider environment grid, not
 generalization evidence; Test C is the generalization evidence, and there Φ is worse.
 
@@ -615,12 +645,12 @@ H2 is not a uniform null and must be reported test-conditionally
 
 | test | H2 (Φ − quality-only) | reading |
 |---|---|---|
-| A | +0.000114, cluster [−0.000184, +0.000430] | null |
+| A | +0.000114, cluster [−0.000277, +0.000505] | null |
 | B | **no measurement** — `not_evaluated:phi_k16_quality`, n_cells = 0 | — |
 | C (held-out family) | −0.002046, paired [−0.002476, −0.001622], 3-env range [−0.003446, −0.000079] | the features **help**, three of three environments agreeing in sign |
 | D | **no measurement** — `not_evaluated:phi_k16_quality`, n_cells = 0 | — |
-| cap sweep | −0.008423, paired [−0.009103, −0.007768], cluster [−0.017889, −0.003375] (n_envs=4) | the features help, but see below |
-| robustness (30 corpus envs) | +0.000089, cluster [−0.000122, +0.000291] | null |
+| cap sweep | −0.008423, paired [−0.009103, −0.007768], cluster [−0.023526, +0.006679] (n_envs=4) | the features help on the point estimate; the cluster interval includes zero — see below |
+| robustness (30 corpus envs) | +0.000089, cluster [−0.000132, +0.000309] | null |
 
 So: inside the training support the e-process column is worth nothing; two of the six tests never measured it
 at all; outside the support it is worth something. Both of the "helps" need their conditions attached. On
@@ -639,8 +669,9 @@ zero), D −0.000194 (cluster includes zero), C **+0.003679** (worse), cap **+0.
 on the 8 cells whose reference is tuned at the cap it is deployed at — §4). In none of the six tests is the
 learned policy cluster-significantly better than the validation-tuned schedule, and in one — the held-out
 mixture family — it is worse.
-H1a is negative in all of them — A/B −0.038165, C −0.074116, D −0.035534, cap −0.013909 (upper bound
-−0.000245), robustness −0.032808 — with the cap-sweep reversal at T=1000 as the one place it fails.
+H1a is negative in all of them — A/B −0.038165, C −0.074116, D −0.035534, cap −0.013909 (cluster
+[−0.047846, +0.020029], including zero at n_envs = 4), robustness −0.032808 — with the cap-sweep reversal
+at T=1000 as the one place its sign fails.
 
 ---
 
@@ -663,18 +694,19 @@ schedule-generated rows. Overall: on-policy 0.640 agreement / 0.648 balanced acc
 0.709 / 0.662 / 0.757 on the corpus (`onpolicy_label_diagnostics.csv`).
 
 **One policy-iteration step does not materially change the deployed result.** Φ′(union) scores pooled Δ vs
-P3\* = −0.001936 (cluster [−0.004038, −0.000315]) against base Φ's −0.001389 (cluster [−0.003350, +0.000518])
+P3\* = −0.001936 (cluster [−0.004382, +0.000509]) against base Φ's −0.001389 (cluster [−0.003899, +0.001121])
 — about 0.0005 of pooled regret (`main_A_primary.csv`, level=pooled). Matched directly against base Φ, the
-gain is −0.000547 pooled with cluster [−0.001303, +0.000025], i.e. the cluster interval includes zero, and it
-is bought entirely at two horizons: −0.001753 at T=100 (cluster [−0.003411, −0.000374]) and −0.000816 at
-T=200 (cluster [−0.002142, −0.000043]); at T=500 and T=1000 the two policies are indistinguishable
+gain is −0.000547 pooled with cluster [−0.001414, +0.000320], i.e. the cluster interval includes zero, and it
+is bought entirely at two horizons: −0.001753 at T=100 (cluster [−0.003753, +0.000247]) and −0.000816 at
+T=200 (cluster [−0.002339, +0.000707]); at T=500 and T=1000 the two policies are indistinguishable
 (Δ = +9e−06 and +1e−06, both CIs straddling zero) (`secondary_contrasts_A_primary.csv`,
 policy=phi_k16_onpolicy_union, reference=phi_k16). This is an
-exploratory contrast; under Holm across the 25 pooled learned rows it does not survive (adjusted p 0.817).
+exploratory contrast whose own cluster interval against P3\* includes zero (p = 0.10); under Holm across
+the 25 pooled learned rows it is adjusted to 1.0.
 
 **Training on on-policy data alone is harmful at long horizons.** Φ′(only) vs base Φ: −0.002774 at T=50
-(better), then +0.002583 at T=500 (cluster [+0.000546, +0.005320]) and **+0.029427 at T=1000**
-(cluster [+0.012753, +0.046673]), pooled +0.005642. At T=1000 it ends at K = 47.050 with
+(better), then +0.002583 at T=500 (cluster [−0.000580, +0.005747]) and **+0.029427 at T=1000**
+(cluster [+0.007461, +0.051393]), pooled +0.005642. At T=1000 it ends at K = 47.050 with
 `search_frac` 0.045141, against base Φ's 64.0 and 0.062124 (`main_A_primary.csv`, level=horizon,
 horizon=1000) — it under-searches exactly where its label set is 64% ties. Pooled it ends at K = 46.2 with
 `search_frac` 0.275149, above base Φ's 0.244064, so the deficit is a long-horizon phenomenon and not a
@@ -697,14 +729,17 @@ live at long horizons.
 ### 9.1 Established
 
 1. **H1a.** The learned k=16 policy has lower mean paired regret than `cp0` in the pooled result of every
-   test that deployed both: cluster-significant in all 18 Test-A strata and all 18 strata of the
-   30-environment robustness sweep, and negative in all seven Test-C strata (where, at n_envs = 3, that means
-   all three mixture environments agree in sign). It is the only pre-registered result that survives a
-   conservative view — and even then only partly: in the 54-row Test-A family the single Holm survivor is
-   H1a at `level=horizon`, `horizon=1000` (adjusted p = 0.0264) while **pooled** H1a dies at adjusted
-   p = 0.129; pooled H1a survives only when the family is the 13 one-row-per-hypothesis-per-test rows
-   (adjusted p = 0.0273), not the 54 Test-A rows and not the 282 pre-registered rows (§3.5). It is conditional on the 64-arm cap: in the
-   cap sweep at T = 1000 it reverses to +0.009645.
+   test that deployed both: cluster-significant pooled and at every horizon in Test A (the six strata with
+   eight environments; the twelve with four are negative in every environment but a t interval on three
+   degrees of freedom includes zero), in 16 of the 18 strata of the 30-environment robustness sweep, and
+   negative in all seven Test-C strata (where, at n_envs = 3, that means all three mixture environments
+   agree in sign). It is the only pre-registered result that survives a conservative view — and only where
+   there are thirty environments behind it: under Holm, no Test-A row survives in any family (pooled H1a
+   p = 0.027 is adjusted to 1.0 in the 54-row family and to 0.31 in the 13 one-row-per-hypothesis-per-test
+   rows), and the single survivor of every family is the robustness sweep's pooled H1a (p = 3e−7) with its
+   own horizon and family-B strata (§3.5). It is conditional on the 64-arm cap: in the cap sweep at
+   T = 1000 it reverses in sign to +0.009645, though at four environments that reversal is not itself
+   cluster-significant.
 2. **The harness is sound.** CRN holds exactly across all 296 cells; the tables reproduce from the episode
    parquet (all 54 pre-registered rows to max |Δ| = 9.4e−17); levels, decompositions, manifests and summaries
    reconcile across A, B, C, cap and robust to 1e−12; the parity gate passes on all 71 feature columns over
@@ -721,7 +756,7 @@ live at long horizons.
 - **DP validation.** Register row 14: a dynamic-programming ceiling was declared out of scope in the plan and
   **was not computed**. Nothing in this study is validated against an exact optimum. `dp.py` remains a
   label sanity check only.
-- **That Φ beats a tuned schedule.** H1b's pooled cluster CI includes zero, only T=100 is
+- **That Φ beats a tuned schedule.** H1b's pooled cluster CI includes zero, no stratum is
   cluster-significant, at T=500 the schedule wins, and at T ≥ 200 P3\* is itself a cap-filling policy, so the
   comparison there is "Φ vs fill-the-cap", not "Φ vs a schedule".
 - **That the policy generalizes.** On the one genuinely held-out environment family, the pre-registered Φ is
@@ -868,8 +903,8 @@ is stated anywhere above, in any paraphrase.
    and rests on a P3\* constant its own selection objective cannot identify; and at T=200 cap 128 is worse
    than cap 64 for `always_search` (+0.016010) and P3\* (+0.017858), though Φ's own +0.006344 sits inside the
    0.005909 unpaired-seed floor, so "every policy" is not claimed either (§4).
-5. **Not claimed:** "Φ′(union) is the only learned policy whose cluster CI excludes zero." Seven do at the
-   published seeds; the union is fourth; and it is exploratory and uncorrected, not confirmatory.
+5. **Not claimed:** "Φ′(union)'s cluster CI excludes zero." It does not on the t interval (p = 0.10); only
+   `phi_k4` and `phi_k1` do, and those are exploratory and uncorrected, not confirmatory.
 6. **Not claimed:** "Test D: T=200 `noT200` −0.0019." That is `noT1000`'s number. `noT200` is −0.001542 and
    its cluster CI includes zero.
 7. **Not claimed:** "H3: Spearman(offline OOF AUC, deployed regret) = +0.089 [−0.49, +0.60]." That is a stale
@@ -908,10 +943,12 @@ is stated anywhere above, in any paraphrase.
 22. **Not claimed:** "H2 was measured on all six tests." Tests B and D have no H2 row.
 23. **Not claimed:** "the e-process features help" as an unconditional reading of the cap sweep's −0.008423.
 24. **Not claimed:** that any pre-registered result survives multiplicity correction on the cluster interval,
-    except H1a and then only in the 13-pooled-row family (plus the two families that survive on their own
-    terms: 13 robustness-sweep rows and one cap-sweep H2 row, §3.5).
-25. **Not claimed:** "seven learned policies beat P3\* significantly" without the Monte-Carlo caveat.
-26. **Not claimed:** "Φ′(union) is significant" as surviving correction. Holm-adjusted p = 0.817.
+    except H1a on the 30-environment robustness sweep (pooled, its five horizon rows and family B's six);
+    no Test-A, B, C, D or cap-sweep row survives in any family (§3.5).
+25. **Not claimed:** "seven learned policies beat P3\* significantly." Two do on the uncorrected t interval,
+    against 1.25 expected by chance, and none survives Holm.
+26. **Not claimed:** "Φ′(union) is significant." Its cluster interval includes zero and its Holm-adjusted
+    p is 1.0.
 27. **Not claimed:** any internal ordering of `phi_k4` / `phi_k1` / `phi_k16_perstep`. The spread is 5.9e−05
     and the order changes with the recommendation rule.
 28. **Not claimed:** any policy ranking read off `regret_vs_T_*.png` at the right-hand edge. Exact ties are

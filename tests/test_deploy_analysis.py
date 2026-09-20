@@ -1177,6 +1177,37 @@ def test_load_cells_refuses_a_test_spanning_two_simulation_surfaces(tmp_path, ce
     assert ad.sim_shas_in(_smoke_manifest(out), "smoke")[0] == {"aaaaaaaaaaaa"}
 
 
+def test_diagnostics_rows_are_ordered_deterministically(monkeypatch):
+    """The committed diagnostics tables must be byte-reproducible, not worker-ordered.
+
+    `run_diagnostics` collects through `imap_unordered`, so `onpolicy_parity_detail`,
+    `ood_*` and `reservoir_*` used to come out in whatever order the pool finished in --
+    a re-run rewrote the version-controlled tables with the same content in a different
+    order, which is a diff carrying no information and hiding whether anything moved.
+    """
+    made = [
+        {"cell": "b_T200", "policy": "cp0", "seconds": 0.0},
+        {"cell": "a_T100", "policy": "phi_k16", "seconds": 0.0},
+        {"cell": "a_T100", "policy": "cp0", "seconds": 0.0},
+        {"cell": "b_T200", "policy": "phi_k16", "seconds": 0.0},
+    ]
+    by_key = {(r["cell"], r["policy"]): r for r in made}
+    items = [
+        ad.DiagItem(
+            item=ood.SnapshotItem("smoke", cell, policy, "e", "A", 100, 64, {}, "x.pkl",
+                                  "model", None, None),
+            offline_path=None, oof_path=None, features_cache=None, skip_ood=True,
+        )
+        for cell, policy in by_key
+    ]
+    monkeypatch.setattr(ad, "run_diag_item",
+                        lambda d: by_key[(d.item.cell, d.item.policy)])
+    got = ad.run_diagnostics(items, workers=1)
+    assert [(r["cell"], r["policy"]) for r in got] == [
+        ("a_T100", "cp0"), ("a_T100", "phi_k16"), ("b_T200", "cp0"), ("b_T200", "phi_k16"),
+    ]
+
+
 def test_cli_refuses_main_tables_without_the_parity_gate(tmp_path, cells):
     out = tmp_path / "deploy"
     _write_synthetic_run(out, cells)

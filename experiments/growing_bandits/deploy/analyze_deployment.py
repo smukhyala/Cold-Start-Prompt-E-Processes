@@ -1567,6 +1567,15 @@ def _env_spec_of(env_id: str) -> dict:
 
 
 def run_diagnostics(items: list[DiagItem], workers: int) -> list[dict]:
+    """Every diagnostics item, returned in a deterministic (cell, policy) order.
+
+    The pool hands results back through `imap_unordered`, so without the final sort the
+    row order of every table built from them -- ``onpolicy_parity_detail``, ``ood_*``,
+    ``reservoir_*`` -- is whatever order the workers happened to finish in. Those tables
+    are under version control precisely so a number can be traced from the tree, and a
+    re-run that reshuffles their rows produces a diff with no information in it and no
+    way to tell at a glance that nothing moved.
+    """
     if not items:
         return []
     results: list[dict] = []
@@ -1575,12 +1584,14 @@ def run_diagnostics(items: list[DiagItem], workers: int) -> list[dict]:
         for i, d in enumerate(items, 1):
             results.append(run_diag_item(d))
             log.info("[%d/%d] %s/%s %.1fs", i, len(items), d.item.cell, d.item.policy, results[-1]["seconds"])
+        results.sort(key=lambda r: (str(r["cell"]), str(r["policy"])))
         return results
     ctx = mp.get_context("spawn")
     with ctx.Pool(int(workers), initializer=_worker_init, initargs=(logging.getLogger().level or logging.INFO,)) as pool:
         for i, r in enumerate(pool.imap_unordered(run_diag_item, items, chunksize=1), 1):
             results.append(r)
             log.info("[%d/%d] %s/%s %.1fs (elapsed %.0fs)", i, len(items), r["cell"], r["policy"], r["seconds"], time.time() - t0)
+    results.sort(key=lambda r: (str(r["cell"]), str(r["policy"])))
     return results
 
 

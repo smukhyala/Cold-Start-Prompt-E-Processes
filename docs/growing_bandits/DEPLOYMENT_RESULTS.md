@@ -239,12 +239,20 @@ fact by Holm on p-values inverted from the cluster interval:
 - Within the 54-row Test-A pre-registered family, **exactly one row survives**: H1a at `level=horizon`,
   `horizon=1000` (adjusted p = 0.0264). Pooled H1a gets adjusted p = 0.129 and dies; no H1b or H2 row
   survives at any stratum.
-- Across the full 246-row pre-registered family (A 54 + B 54 + C 21 + D 36 + cap 27 + robust 54),
-  **31 rows survive, none of them from Test A, B or D** — the survivors are the cap sweep (12), Test C (6)
-  and the 30-environment robustness sweep (13).
-- On the defensible one-row-per-hypothesis-per-test family (16 testable pooled rows), 7 survive, and **two of
-  them point against the thesis**: Test C H1b (+0.00368, adjusted 0.0476) and cap H1b (+0.0193, adjusted
-  1.2e−5), both saying the schedule beats Φ.
+- Across the full 282-row pre-registered family (A 54 + B 54 + C 21 + D 36 + cap 63 + robust 54), 171 rows
+  carry a cluster interval at all — Tests B and D's `not_evaluated` / `missing` rows (18 each), all 21 Test-C
+  rows (n_envs = 3, §7.2), and the cap sweep's 12 `untuned_reference` and 42 n_envs = 2 rows do not. Of those
+  171, **14 survive, none of them from Test A, B, C or D**: 13 from the 30-environment robustness sweep and
+  one from the cap sweep (H2 at `level=horizon`, T = 200: −0.005807, adjusted 0.0009).
+- On the defensible one-row-per-hypothesis-per-test family (13 testable pooled rows — Test C's three have no
+  cluster interval at n_envs = 3, §7.2), **4 survive, all of them H1a** — in Tests A (adjusted 0.0273), B
+  (0.0273, Test A relabelled), D (0.0258) and the robustness sweep (< 1e−8) — and **none points against the
+  thesis**. (An earlier version of this section listed two that did. Test C H1b (+0.00368, "adjusted 0.0476")
+  rested on the n_envs = 3 [min, max] range read as a 95% interval, which the tables no longer emit as one;
+  its *paired* CI [+0.002793, +0.004572] still excludes zero and §7.2 reports it as such — worse, but not
+  cluster-tested. Cap H1b at +0.0193 was an artefact of comparing against a schedule constant tuned at a
+  different cap; once those cells are refused it is +0.000387 with a CI including zero — a null, not evidence
+  either way. See §4.)
 
 The exploratory set is larger still: `secondary_contrasts_A_primary.csv` alone is 1,854 rows, every one
 `pre_registered=False`. Wherever this document lists "policies whose cluster CI excludes zero", the expected
@@ -328,19 +336,37 @@ T=200, 30 grid values lie within one pooled SE (1.57e−3) of the selected c=3.7
 (`schedule_tuning.csv`, split=tune, cap=64; Ruling 20). Neither cap-128 number is evidence about a learned
 rule.
 
-**Cap 128 is not uniformly better, and the comparison is not like-for-like.** At T=200 every policy is worse
-at cap 128 than at cap 64 (`always_search` 0.124932 → 0.140941; `phi_k16` 0.125711 → 0.132055; P3\*
-0.124932 → 0.142790); at T=1000 every policy is better (`always_search` 0.118209 → 0.095835). And P3\*'s `c`
-was tuned at cap 64 only (Ruling 20), so the cap-128 column compares a learned policy extrapolating outside
-its training support against a schedule extrapolating outside its tuning support. τ has the same problem in
-mirror image: all 4,880 rows of `threshold_selection.csv` are cap 64, and τ = 0.5 is deployed unchanged at
+**Cap 128 is not uniformly better, and the comparison is not like-for-like.** At T=200 `always_search` goes
+0.124932 → 0.140941 and P3\* 0.124932 → 0.142790 from cap 64 to cap 128, and at T=1000 `always_search` goes
+0.118209 → 0.095835 the other way.
+
+*Read cross-cap differences with care: the cap axis is not CRN-paired.* `base_seed` is a function of
+(split, env, horizon, cap) (`cells.py`, `make_cell`), so the four caps draw four different environments'
+worth of randomness rather than re-running the same draws under a different budget. The size of that noise is
+directly measurable from the two policies whose behaviour cannot depend on the cap at all: over `cp0` and
+`refine_after_init`, the pooled cross-cap spread reaches 0.005909 and the per-environment spread reaches
+0.018652 (`cap_sweep.csv`, means over the 4 environments). The `always_search` (+0.016010) and P3\*
+(+0.017858) changes above clear that floor; `phi_k16`'s (+0.006344, 0.125711 → 0.132055) does not, so this
+document does not claim that *every* policy is worse at cap 128 — for the learned policy that difference is
+within the unpaired-seed noise. Contrasts computed *within* a single cap (every Δ vs P3\* quoted in this
+section) share a `base_seed` and are properly paired; only statements comparing one cap against another are
+affected.
+
+And P3\*'s `c` was tuned at cap 64 only (Ruling 20), so the cap-128 column compares a learned policy
+extrapolating outside its training support against a schedule extrapolating outside its tuning support.
+τ has the same problem in mirror image: all 4,880 rows of `threshold_selection.csv` are cap 64, and τ = 0.5 is deployed unchanged at
 every cap. No conclusion about "the value of a bigger cap" is drawn here.
 
 **The pre-registered hypotheses move under the cap.** Over the whole sweep, pooled H1a is −0.013909
 (cluster [−0.035086, −0.000245], n_envs=4 — Monte-Carlo-close to zero at the upper end), and at T=1000 it
 **reverses** to +0.009645 (cluster [+0.000370, +0.015424]): Φ loses to `cp0` there because `cp0` never
-over-recruits. Pooled H1b is +0.019327 (cluster [+0.011634, +0.027020]), driven by the cap = T cells
-(T=1000 alone +0.043435). Pooled H2 is −0.008423 (cluster [−0.017889, −0.003375]); see §7.5 for why that is
+over-recruits. Pooled H1b is **+0.000387**, paired [−0.000300, +0.001072], cluster [−0.000756, +0.001917] — a null
+(`primary_contrasts_cap_primary.csv`, H1b, level=pooled, n_cells=8, n_envs=4). It is computed on 8 cells
+rather than 32 because the analysis now refuses a contrast whose reference baseline carries a constant tuned
+at a different cap (`params_cap`; status `untuned_reference`). The +0.019327 this document previously reported
+over all 32 cells was that refused comparison: P3\*'s `c`, tuned at cap 64, deployed at caps 32/128/T, and
+most of the effect came from the cap = T cells where it is furthest from its tuning point. The honest reading
+is that the cap sweep says **nothing** about H1b, not that Φ is much worse there. Pooled H2 is −0.008423 (cluster [−0.017889, −0.003375]); see §7.5 for why that is
 not a licence to say the e-process features help (`primary_contrasts_cap_primary.csv`). Note that all 18
 `family` and `family_horizon` rows of that table have n_envs = 2 and `cluster_degenerate=True`, where the
 "cluster CI" is just the two environment means and can be up to 24× *narrower* than the paired CI; only the
@@ -609,8 +635,10 @@ nothing where the policy was trained to operate, and acquire value only in a reg
 excludes by construction.**
 
 Similarly for H1b across tests: A/B −0.001389 (cluster includes zero), robustness −0.000891 (cluster includes
-zero), D −0.000194 (cluster includes zero), C **+0.003679** (worse), cap **+0.019327** (much worse). In none
-of the six tests is the learned policy cluster-significantly better than the validation-tuned schedule.
+zero), D −0.000194 (cluster includes zero), C **+0.003679** (worse), cap **+0.000387** (cluster includes zero,
+on the 8 cells whose reference is tuned at the cap it is deployed at — §4). In none of the six tests is the
+learned policy cluster-significantly better than the validation-tuned schedule, and in one — the held-out
+mixture family — it is worse.
 H1a is negative in all of them — A/B −0.038165, C −0.074116, D −0.035534, cap −0.013909 (upper bound
 −0.000245), robustness −0.032808 — with the cap-sweep reversal at T=1000 as the one place it fails.
 
@@ -674,8 +702,8 @@ live at long horizons.
    all three mixture environments agree in sign). It is the only pre-registered result that survives a
    conservative view — and even then only partly: in the 54-row Test-A family the single Holm survivor is
    H1a at `level=horizon`, `horizon=1000` (adjusted p = 0.0264) while **pooled** H1a dies at adjusted
-   p = 0.129; pooled H1a survives only when the family is the 16 one-row-per-hypothesis-per-test rows
-   (adjusted p = 0.0298), not the 54 Test-A rows and not the 246 pre-registered rows (§3.5). It is conditional on the 64-arm cap: in the
+   p = 0.129; pooled H1a survives only when the family is the 13 one-row-per-hypothesis-per-test rows
+   (adjusted p = 0.0273), not the 54 Test-A rows and not the 282 pre-registered rows (§3.5). It is conditional on the 64-arm cap: in the
    cap sweep at T = 1000 it reverses to +0.009645.
 2. **The harness is sound.** CRN holds exactly across all 296 cells; the tables reproduce from the episode
    parquet (all 54 pre-registered rows to max |Δ| = 9.4e−17); levels, decompositions, manifests and summaries
@@ -699,7 +727,9 @@ live at long horizons.
 - **That the policy generalizes.** On the one genuinely held-out environment family, the pre-registered Φ is
   worse than the schedule.
 - **That a bigger cap is better, or that Φ's extrapolation beyond K = 64 is beneficial.** P3\*'s `c` and Φ's
-  τ are both tuned at cap 64 only (Ruling 20 and §4), so the cap-128 column is not like-for-like.
+  τ are both tuned at cap 64 only (Ruling 20 and §4), so the cap-128 column is not like-for-like — and the cap
+  axis is not CRN-paired (§4), so cross-cap differences carry a seed-noise floor of 0.005909 pooled and
+  0.018652 per environment, measured on the two cap-independent policies.
 - **Any claim about T = 2000 beyond "the tuned schedule and the learned policies are the same policy there"**.
 
 ### 9.3 Every ruling taken during this study, with its cost if wrong
@@ -836,7 +866,8 @@ is stated anywhere above, in any paraphrase.
 4. **Not claimed:** "At cap=128 Φ's out-of-support extrapolation is beneficial at both horizons (−0.011 both)
    because more arms genuinely help up to 128." At T=1000 the −0.010749 is bit-identical to `always_search`'s
    and rests on a P3\* constant its own selection objective cannot identify; and at T=200 cap 128 is worse
-   than cap 64 for every policy.
+   than cap 64 for `always_search` (+0.016010) and P3\* (+0.017858), though Φ's own +0.006344 sits inside the
+   0.005909 unpaired-seed floor, so "every policy" is not claimed either (§4).
 5. **Not claimed:** "Φ′(union) is the only learned policy whose cluster CI excludes zero." Seven do at the
    published seeds; the union is fourth; and it is exploratory and uncorrected, not confirmatory.
 6. **Not claimed:** "Test D: T=200 `noT200` −0.0019." That is `noT1000`'s number. `noT200` is −0.001542 and
@@ -868,14 +899,17 @@ is stated anywhere above, in any paraphrase.
 18. **Not claimed:** "cluster-significant" for any Test-C row. All 21 have n_envs = 3.
 19. **Not claimed:** "cluster-significant" for any cap-sweep `family` or `family_horizon` row. Those have
     n_envs = 2, where the interval is the two environment means and can be 24× narrower than the paired CI.
-20. **Not claimed:** "192 pre-registered rows outside Test A corroborate the result." 36 are untestable NaNs
-    and 48 are Test A's rows relabelled (all 36 Test-B `ok` rows and 12 of Test D's 18); only 108 (C 21,
-    cap 27, robust 54, and Test D's 6 family/pooled rows) are new measurements.
+20. **Not claimed:** "228 pre-registered rows outside Test A corroborate the result." 48 are untestable NaNs
+    (B 18, D 18, and the cap sweep's 12 `untuned_reference` refusals), 48 are Test A's rows relabelled (all 36
+    Test-B `ok` rows and 12 of Test D's 18), and of the 132 that are new measurements (C 21, cap 51, robust
+    54, and Test D's 6 family/pooled rows) only 69 carry a cluster interval that is an interval — the 21
+    Test-C rows and 42 of the cap rows sit below `CLUSTER_MIN_ENVS` and ship [min, max] ranges instead.
 21. **Not claimed:** "Test B's pre-registered contrast confirms Test A."
 22. **Not claimed:** "H2 was measured on all six tests." Tests B and D have no H2 row.
 23. **Not claimed:** "the e-process features help" as an unconditional reading of the cap sweep's −0.008423.
 24. **Not claimed:** that any pre-registered result survives multiplicity correction on the cluster interval,
-    except H1a and then only in the 16-pooled-row family.
+    except H1a and then only in the 13-pooled-row family (plus the two families that survive on their own
+    terms: 13 robustness-sweep rows and one cap-sweep H2 row, §3.5).
 25. **Not claimed:** "seven learned policies beat P3\* significantly" without the Monte-Carlo caveat.
 26. **Not claimed:** "Φ′(union) is significant" as surviving correction. Holm-adjusted p = 0.817.
 27. **Not claimed:** any internal ordering of `phi_k4` / `phi_k1` / `phi_k16_perstep`. The spread is 5.9e−05

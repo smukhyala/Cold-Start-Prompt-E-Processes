@@ -229,6 +229,26 @@ def reconcile_episodes(
     return orphans, holes
 
 
+def sim_shas_in(manifest: dict[tuple[str, str, str], dict], test: str) -> tuple[set[str], int]:
+    """``(distinct sim_sha values, how many completion lines carry none)``.
+
+    `run_deployment.sim_surface_sha` fingerprints the source that determines an episode.
+    Two values in one test means the cells were produced by two different simulators and
+    nothing downstream can tell which row came from which.
+    """
+    stamped: set[str] = set()
+    unstamped = 0
+    for (rec_test, _cell, _policy), rec in manifest.items():
+        if rec_test != test or rd.record_kind(rec) == rd.KIND_EXCLUSION:
+            continue
+        sha = rec.get("sim_sha")
+        if sha:
+            stamped.add(str(sha))
+        else:
+            unstamped += 1
+    return stamped, unstamped
+
+
 def _reconciliation_message(test: str, orphans: list, holes: list) -> str:
     lines = [
         f"test {test}: the episode tree and manifest_{test}.jsonl disagree "
@@ -253,6 +273,7 @@ def load_cells(
     manifest: dict[tuple[str, str, str], dict] | None = None,
     *,
     accept_unmanifested: bool = False,
+    allow_mixed_sim: bool = False,
 ) -> list[Cell]:
     """Every cell of `test` from ``episodes/<test>``; frames sorted by episode and checked
     to share the seed and episode set (the CRN pairing the paired statistics assume).
@@ -263,6 +284,10 @@ def load_cells(
     episode file silently changes the common support and therefore the headline numbers.
     ``None`` is for hand-built fixtures that have no manifest; it is *not* a CLI option,
     and `test_cli_always_reconciles_against_the_manifest` holds that line.
+
+    The same pass refuses a test whose episodes span more than one
+    `run_deployment.sim_surface_sha` (``--allow-mixed-sim`` to override): a table built
+    from two simulators cannot say which row came from which.
     """
     if manifest is not None:
         orphans, holes = reconcile_episodes(out_dir, test, manifest)
@@ -271,6 +296,26 @@ def load_cells(
             if not accept_unmanifested:
                 raise SystemExit(message)
             log.error("--accept-unmanifested: analysing anyway.\n%s", message)
+        stamped, unstamped = sim_shas_in(manifest, test)
+        if len(stamped) > 1:
+            message = (
+                f"test {test}: its episodes span {len(stamped)} simulation surfaces "
+                f"({', '.join(sorted(stamped))}). Rows produced by different code are "
+                "being pooled into one table; re-run the odd cells, or pass "
+                "--allow-mixed-sim if you have checked that the difference cannot "
+                "change an episode."
+            )
+            if not allow_mixed_sim:
+                raise SystemExit(message)
+            log.error("--allow-mixed-sim: analysing anyway. %s", message)
+        if stamped and unstamped:
+            log.warning(
+                "test %s: %d item(s) predate the simulation-surface fingerprint and are "
+                "pooled with %d that carry %s; their code version is unknown",
+                test, unstamped, len(manifest) - unstamped, ", ".join(sorted(stamped)),
+            )
+        elif stamped:
+            log.info("test %s: one simulation surface, %s", test, next(iter(stamped)))
     root = out_dir / "episodes" / test
     if not root.is_dir():
         raise FileNotFoundError(f"no episodes for test {test!r} under {root}")
@@ -1394,6 +1439,9 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
                         "onpolicy_parity table (the same policies and feature layer) as the gate")
     p.add_argument("--allow-unverified", action="store_true",
                    help="write main tables even when no on-policy snapshots exist to verify parity")
+    p.add_argument("--allow-mixed-sim", action="store_true",
+                   help="analyse a test whose episodes were produced by more than one "
+                        "simulation-surface fingerprint (run_deployment.sim_surface_sha)")
     p.add_argument("--accept-unmanifested", action="store_true",
                    help="analyse an episode tree that disagrees with manifest_<test>.jsonl "
                         "(orphan files or missing ones); every table written then carries an "
@@ -1418,7 +1466,8 @@ def main(argv: list[str] | None = None) -> dict:
     _ACCEPT_UNMANIFESTED = bool(args.accept_unmanifested)
 
     manifest = rd.latest_records(rd.read_manifest(rd.manifest_path(out_dir, test)))
-    cells = load_cells(out_dir, test, manifest, accept_unmanifested=_ACCEPT_UNMANIFESTED)
+    cells = load_cells(out_dir, test, manifest, accept_unmanifested=_ACCEPT_UNMANIFESTED,
+                       allow_mixed_sim=bool(args.allow_mixed_sim))
     mark_untuned_baselines(cells, manifest, pt.load_baseline_params(out_dir / "baseline_params.json"))
     recs_present = recommenders_in(cells[0].frames[cells[0].policies[0]])
     if args.recommender == "all":

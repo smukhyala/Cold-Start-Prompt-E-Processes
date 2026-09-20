@@ -913,7 +913,7 @@ def test_cli_always_reconciles_against_the_manifest(tmp_path, cells, monkeypatch
     assert set(seen[0]["manifest"]) == {
         ("smoke", c.name, p) for c in cells for p in POLICIES
     }
-    assert seen[0]["kwargs"] == {"accept_unmanifested": False}
+    assert seen[0]["kwargs"] == {"accept_unmanifested": False, "allow_mixed_sim": False}
 
     # And the refusal is reachable from the CLI: an orphan stops the run.
     cells[0].frames["phi_k16"].to_parquet(
@@ -941,6 +941,48 @@ def test_accept_unmanifested_stamps_every_table_it_writes(tmp_path, cells):
             assert bool(frame["accepted_unmanifested"].all())
     finally:
         ad._ACCEPT_UNMANIFESTED = False
+
+
+def test_load_cells_refuses_a_test_spanning_two_simulation_surfaces(tmp_path, cells):
+    """`--resume` must not be able to keep episodes from a different code version.
+
+    ``manifest_A`` really is 1360 items at one sha plus 80 at another; the repo sha is
+    not a substitute for a surface fingerprint (it moves for every unrelated commit and
+    nothing downstream reads it), so the analysis is where a mixed set has to stop.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    manifest = out / "manifest_smoke.jsonl"
+
+    # Every line unstamped, as the whole shipped tree is: no refusal, nothing to compare.
+    assert ad.sim_shas_in(_smoke_manifest(out), "smoke") == (set(), len(cells) * len(POLICIES))
+    assert len(ad.load_cells(out, "smoke", _smoke_manifest(out))) == len(cells)
+
+    # One surface: fine, and only one.
+    lines = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
+    manifest.write_text("".join(
+        json.dumps({**line, "sim_sha": "aaaaaaaaaaaa"}) + "\n" for line in lines
+    ))
+    assert ad.sim_shas_in(_smoke_manifest(out), "smoke") == ({"aaaaaaaaaaaa"}, 0)
+    assert len(ad.load_cells(out, "smoke", _smoke_manifest(out))) == len(cells)
+
+    # Two: refused by name, and only --allow-mixed-sim gets past it.
+    manifest.write_text("".join(
+        json.dumps({**line, "sim_sha": "aaaaaaaaaaaa" if i else "bbbbbbbbbbbb"}) + "\n"
+        for i, line in enumerate(lines)
+    ))
+    assert ad.sim_shas_in(_smoke_manifest(out), "smoke")[0] == {"aaaaaaaaaaaa", "bbbbbbbbbbbb"}
+    with pytest.raises(SystemExit, match="2 simulation surfaces"):
+        ad.load_cells(out, "smoke", _smoke_manifest(out))
+    assert len(ad.load_cells(out, "smoke", _smoke_manifest(out), allow_mixed_sim=True)) == len(cells)
+
+    # An exclusion line carries no sim_sha and must not count as a second surface.
+    with open(manifest, "w") as fh:
+        for line in lines:
+            fh.write(json.dumps({**line, "sim_sha": "aaaaaaaaaaaa"}) + "\n")
+        fh.write(json.dumps(rd.exclusion_record(
+            "smoke", cells[0].name, "phi_k16", "deliberately dropped", "sha0")) + "\n")
+    assert ad.sim_shas_in(_smoke_manifest(out), "smoke")[0] == {"aaaaaaaaaaaa"}
 
 
 def test_cli_refuses_main_tables_without_the_parity_gate(tmp_path, cells):

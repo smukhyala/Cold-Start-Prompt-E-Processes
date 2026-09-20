@@ -10,6 +10,7 @@ strictly inside (0, 1), snapshots logged, counters recorded). No simulator mocks
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import os
@@ -714,3 +715,135 @@ def test_worker_init_records_the_pool_parent_for_every_pooled_run(tmp_path):
     assert rd._parent_is_alive() is (os.getppid() == 4242)
     rd._worker_init(logging.WARNING, None)
     assert rd._PARENT_PID is None and rd._parent_is_alive() is True
+
+
+# ---- the simulation-surface fingerprint ------------------------------------------------------
+
+
+def _sim_surface_closure() -> set[str]:
+    """Every project module reachable from the three entry points that make an episode.
+
+    `harness.run_cell` runs it, `policy_table` resolves the constants and builds the
+    policy object, and `pairwise_table` is the log-e evidence the runner hands in. The
+    walk follows module objects *and* the defining module of every imported name, so
+    ``from x import y`` is followed as well as ``import x``.
+    """
+    import types
+
+    import cold_start.growing.deploy.harness as harness
+    import cold_start.growing.deploy.pairwise_table as pairwise_table
+
+    seen: set[str] = set()
+    stack = [harness, pairwise_table, pt]
+    while stack:
+        module = stack.pop()
+        if module.__name__ in seen:
+            continue
+        seen.add(module.__name__)
+        for value in vars(module).values():
+            if isinstance(value, types.ModuleType):
+                name, found = value.__name__, value
+            else:
+                name = getattr(value, "__module__", None)
+                found = sys.modules.get(name) if name else None
+            if not name or found is None or name in seen:
+                continue
+            if name.startswith("cold_start") or name == "policy_table":
+                stack.append(found)
+    return seen
+
+
+def test_sim_surface_covers_everything_reachable_from_run_cell():
+    """The list and the reachable closure are the same set -- a partition assertion.
+
+    This is the test that matters: a fingerprint over a hand-maintained module list is
+    worth nothing the first time someone adds a module to the simulator and forgets the
+    list. Equality (not containment) also keeps dead entries out.
+    """
+    assert _sim_surface_closure() == set(rd.SIM_SURFACE_MODULES)
+    assert len(rd.SIM_SURFACE_MODULES) == len(set(rd.SIM_SURFACE_MODULES))
+    files = rd.sim_surface_files()
+    assert set(files) == set(rd.SIM_SURFACE_MODULES)
+    assert all(path.is_file() and path.suffix == ".py" for path in files.values())
+
+    # The package shells the closure does not reach are docstring-only, which is why
+    # they are out of scope; if one grows a statement, this fails and the list must
+    # take it in.
+    import ast
+
+    for package in ("cold_start", "cold_start.growing", "cold_start.growing.deploy"):
+        init = Path(importlib.import_module(package).__file__)
+        for node in ast.parse(init.read_text()).body:
+            inert = (
+                isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+                or isinstance(node, ast.ImportFrom) and node.module == "__future__"
+                or isinstance(node, ast.Assign)
+                and all(isinstance(t, ast.Name) and t.id.startswith("__") for t in node.targets)
+            )
+            assert inert, f"{init} defines {ast.dump(node)[:60]}: it belongs on the surface"
+
+
+def test_sim_surface_sha_is_stable_deterministic_and_source_dependent(tmp_path, monkeypatch):
+    first = rd.sim_surface_sha()
+    assert len(first) == 12 and int(first, 16) >= 0
+    rd.sim_surface_sha.cache_clear()
+    assert rd.sim_surface_sha() == first
+
+    # One changed byte anywhere on the surface changes the fingerprint.
+    victim = rd.sim_surface_files()["cold_start.growing.simulator"]
+    edited = tmp_path / "simulator.py"
+    edited.write_text(victim.read_text() + "\n# a byte that changes an episode\n")
+    patched = dict(rd.sim_surface_files())
+    patched["cold_start.growing.simulator"] = edited
+    monkeypatch.setattr(rd, "sim_surface_files", lambda: patched)
+    rd.sim_surface_sha.cache_clear()
+    try:
+        assert rd.sim_surface_sha() != first
+    finally:
+        monkeypatch.undo()
+        rd.sim_surface_sha.cache_clear()
+    assert rd.sim_surface_sha() == first
+
+    versions = rd.sim_surface_versions()
+    assert versions["python"].startswith("3.")
+    for package in rd.SIM_SURFACE_PACKAGES:
+        assert versions[package] != "absent", package
+
+
+def test_stale_reason_flags_a_changed_surface_but_spares_an_unstamped_record(tmp_path):
+    cells = _cells(horizon=20, n_replicates=4)
+    items = rd.build_work(
+        "smoke", cells, ["cp0"], out_dir=tmp_path, baseline_params=None, thresholds=None,
+        models_dir=tmp_path, dynamics_grid=10, done={}, git_sha="test", log_states=False,
+    )
+    item = items[0]
+    assert item.sim_sha == rd.sim_surface_sha()
+    Path(item.parquet_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(item.parquet_path).touch()
+    record = {
+        "parquet": item.parquet_path, "params": item.params, "artifact_sha": None,
+        "n_replicates": item.spec.n_replicates, "base_seed": item.spec.base_seed,
+        "horizon": item.spec.horizon, "cap": item.spec.cap, "snapshots": None,
+        "sim_sha": item.sim_sha,
+    }
+    assert rd.stale_reason(record, item) is None
+    moved = {**record, "sim_sha": "0123456789ab"}
+    assert "simulation surface" in rd.stale_reason(moved, item)
+    # ... with a deliberate escape, so the benign case (a new policy registered in
+    # `policy_table`, which is on the surface) does not cost a full re-run.
+    assert rd.stale_reason(moved, item, ignore_sim_sha=True) is None
+    # The 3,510 shipped records predate the stamp; they must not all turn stale.
+    assert rd.stale_reason({k: v for k, v in record.items() if k != "sim_sha"}, item) is None
+
+
+def test_a_finished_item_records_its_simulation_surface(tmp_path):
+    out = tmp_path / "out"
+    cells = _cells(horizon=30, n_replicates=4)[:1]
+    rd.main([
+        "--test", "smoke", "--n-replicates", "4", "--workers", "1", "--policies", "cp0",
+        "--out-dir", str(out), "--skip-summary", "--models-dir", str(tmp_path / "no-models"),
+    ], cells=cells)
+    records = _read_manifest(out / "manifest_smoke.jsonl")
+    assert len(records) == 1
+    assert records[0]["sim_sha"] == rd.sim_surface_sha()
+    assert records[0]["sim_versions"]["numpy"] == rd.sim_surface_versions()["numpy"]

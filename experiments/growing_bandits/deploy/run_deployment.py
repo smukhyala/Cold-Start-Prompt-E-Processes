@@ -43,7 +43,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import functools
 import hashlib
+import importlib
+import importlib.metadata
 import json
 import logging
 import multiprocessing as mp
@@ -376,6 +379,8 @@ class WorkItem:
     snapshots_path: str | None
     git_sha: str
     artifact_sha: str | None = None
+    #: `sim_surface_sha` of the code that will produce this episode.
+    sim_sha: str = ""
 
 
 def _git_sha() -> str:
@@ -398,13 +403,116 @@ def file_sha256(path: str | Path) -> str:
     return h.hexdigest()
 
 
-def stale_reason(record: dict, item: WorkItem) -> str | None:
+#: Every module whose bytes can change an episode: the transitive closure, over the
+#: project's own code, of `harness.run_cell`, `policy_table` (which resolves the
+#: constants and builds the policy object) and `pairwise_table` (the log-e evidence the
+#: runner hands to a policy). `test_sim_surface_covers_everything_reachable_from_run_cell`
+#: asserts the list *equals* that closure, so a new module cannot join the simulation
+#: surface without joining the fingerprint.
+#:
+#: The three package ``__init__.py`` shells are docstring-only and deliberately out of
+#: scope; the same test holds them to that.
+SIM_SURFACE_MODULES: tuple[str, ...] = (
+    "cold_start.growing.deploy.artifacts",
+    "cold_start.growing.deploy.comparators",
+    "cold_start.growing.deploy.feature_groups",
+    "cold_start.growing.deploy.features_vec",
+    "cold_start.growing.deploy.harness",
+    "cold_start.growing.deploy.history_vec",
+    "cold_start.growing.deploy.model_policy",
+    "cold_start.growing.deploy.pairwise_table",
+    "cold_start.growing.deploy.recommenders",
+    "cold_start.growing.deploy.rules",
+    "cold_start.growing.allocation",
+    "cold_start.growing.evidence",
+    "cold_start.growing.features",
+    "cold_start.growing.labeling",
+    "cold_start.growing.recommend",
+    "cold_start.growing.reservoirs",
+    "cold_start.growing.rng",
+    "cold_start.growing.schema",
+    "cold_start.growing.search_policies",
+    "cold_start.growing.simulator",
+    "cold_start.growing.state",
+    "cold_start.growing.tables",
+    "cold_start.registry",
+    "policy_table",
+)
+
+#: Third-party packages whose version is recorded beside `sim_surface_sha`. The
+#: fingerprint hashes *source only*: a numpy or scipy upgrade changes an episode without
+#: changing a byte of this repo, so the versions are stamped rather than pretended away.
+SIM_SURFACE_PACKAGES: tuple[str, ...] = ("numpy", "scipy", "scikit-learn", "pandas", "pyarrow")
+
+
+def sim_surface_files() -> dict[str, Path]:
+    """``module name -> source file`` for `SIM_SURFACE_MODULES`."""
+    out: dict[str, Path] = {}
+    for name in SIM_SURFACE_MODULES:
+        module = importlib.import_module(name)
+        path = getattr(module, "__file__", None)
+        if path is None:
+            raise RuntimeError(f"{name} has no source file; it cannot be fingerprinted")
+        out[name] = Path(path)
+    return out
+
+
+@functools.lru_cache(maxsize=1)
+def sim_surface_sha() -> str:
+    """A 12-hex fingerprint of the simulation surface's source.
+
+    `stale_reason` checks the resolved params, the seed and replicate count, the
+    horizon/cap and the model artifact's bytes -- but never the code, and the manifest's
+    ``sha`` (the repo HEAD) is not a substitute: it moves for every unrelated commit and
+    the analysis never reads it. The shipped episode sets are in fact mixed across code
+    versions (``manifest_A`` is 1360 items at one sha plus 80 at another), which only a
+    surface fingerprint can judge. With this stamped, a ``--resume`` cannot silently keep
+    episodes produced by different code, and `analyze_deployment.load_cells` refuses a
+    test that spans more than one surface.
+
+    Keyed on module name, not path, so the value does not depend on where the checkout
+    lives.
+    """
+    h = hashlib.sha256()
+    for name, path in sorted(sim_surface_files().items()):
+        h.update(name.encode("utf-8"))
+        h.update(b"\0")
+        h.update(file_sha256(path).encode("ascii"))
+        h.update(b"\n")
+    return h.hexdigest()[:12]
+
+
+def sim_surface_versions() -> dict[str, str]:
+    """The resolved versions of the numerical stack `sim_surface_sha` cannot hash."""
+    out = {"python": ".".join(str(v) for v in sys.version_info[:3])}
+    for name in SIM_SURFACE_PACKAGES:
+        try:
+            out[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            out[name] = "absent"
+    return out
+
+
+def stale_reason(record: dict, item: WorkItem, *, ignore_sim_sha: bool = False) -> str | None:
     """Why a manifest `record` no longer describes `item`, or ``None`` if it still does.
 
     The checks are the inputs that change an item's *result*: its resolved
     parameters (a tau or schedule constant that arrived with the tuning outputs),
-    its seed and replicate count, the artifact's bytes, and whether snapshots were
-    requested but never logged. Dynamics grid changes are not tracked.
+    its seed and replicate count, the artifact's bytes, the simulation surface's source
+    (`sim_surface_sha`), and whether snapshots were requested but never logged. Dynamics
+    grid changes are not tracked.
+
+    A record written before the surface was fingerprinted carries no ``sim_sha`` and is
+    *not* called stale on that ground: the whole shipped tree predates the stamp, and
+    turning 3,510 items stale would guarantee the flag gets routed around. Those records
+    are surfaced instead, by `analyze_deployment.load_cells`, at analysis time.
+
+    `ignore_sim_sha` (``--allow-stale-sim``) is the deliberate escape for the common
+    benign case: `policy_table` is on the surface, so *registering a new policy* moves
+    the fingerprint although no existing policy's episode can change. Without an escape
+    that case costs a full re-run, and an unescapable guard is the kind that gets
+    deleted. The item keeps the ``sim_sha`` it was produced under, so the analysis still
+    sees -- and still refuses -- the mixed set.
     """
     if not record.get("parquet") or not Path(record["parquet"]).exists():
         return "parquet missing"
@@ -418,6 +526,9 @@ def stale_reason(record: dict, item: WorkItem) -> str | None:
         return "horizon/cap changed"
     if item.artifact_sha is not None and record.get("artifact_sha") != item.artifact_sha:
         return f"artifact bytes changed ({record.get('artifact_sha')} -> {item.artifact_sha})"
+    recorded_sim = record.get("sim_sha")
+    if not ignore_sim_sha and recorded_sim and item.sim_sha and recorded_sim != item.sim_sha:
+        return f"simulation surface changed ({recorded_sim} -> {item.sim_sha})"
     if item.snapshots_path is not None and not record.get("snapshots"):
         return "snapshots requested but not logged before"
     return None
@@ -454,6 +565,7 @@ def build_work(
     artifact_shas: dict[str, str] | None = None,
     excluded: dict[tuple[str, str, str], dict] | None = None,
     force_policies: set[str] | None = None,
+    allow_stale_sim: bool = False,
 ) -> list[WorkItem]:
     """Resolve every (cell, policy) into a `WorkItem`, skipping those `done` describes.
 
@@ -475,6 +587,7 @@ def build_work(
     artifact_shas = artifact_shas or {}
     excluded = excluded or {}
     force_policies = force_policies or set()
+    sim_sha = sim_surface_sha()
     items: list[WorkItem] = []
     for spec in cells:
         name = cell_name(spec)
@@ -524,10 +637,11 @@ def build_work(
                 snapshots_path=str(snapshots) if logged else None,
                 git_sha=git_sha,
                 artifact_sha=artifact_shas.get(variant) if variant is not None else None,
+                sim_sha=sim_sha,
             )
             record = done.get((test, name, policy))
             if record is not None:
-                reason = stale_reason(record, item)
+                reason = stale_reason(record, item, ignore_sim_sha=allow_stale_sim)
                 if reason is None:
                     continue
                 log.warning("resume: re-running %s/%s: %s", name, policy, reason)
@@ -724,6 +838,8 @@ def run_item(item: WorkItem) -> dict:
         "n": int(res.n_episodes),
         "seconds": round(time.perf_counter() - t0, 3),
         "sha": item.git_sha,
+        "sim_sha": item.sim_sha,
+        "sim_versions": sim_surface_versions(),
         "env_id": spec.env_id,
         "family": family_of(spec.env_spec),
         "horizon": int(spec.horizon),
@@ -1071,6 +1187,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
                         "and surfaced in strata_coverage_<test>.csv")
     p.add_argument("--force-policies", default=None,
                    help="comma-separated policies to run even though an exclusion line is active")
+    p.add_argument("--allow-stale-sim", action="store_true",
+                   help="do not re-run an item just because sim_surface_sha() moved (e.g. a new "
+                        "policy was registered); the item keeps the surface it was produced "
+                        "under, so analyze_deployment still refuses the mixed set")
     p.add_argument("--n-boot", type=int, default=2000, help="paired-bootstrap resamples in the summary")
     p.add_argument("--skip-summary", action="store_true")
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
@@ -1190,12 +1310,15 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
         artifact_shas=artifact_shas,
         excluded=excluded,
         force_policies=force_policies,
+        allow_stale_sim=bool(args.allow_stale_sim),
     )
     n_total = len(cells) * len(policies)
     n_skipped = n_total - len(items)
     log.info(
-        "test %s: %d cells x %d policies = %d items, %d to run (%d workers, git %s)",
+        "test %s: %d cells x %d policies = %d items, %d to run (%d workers, git %s, "
+        "sim surface %s)",
         test, len(cells), len(policies), n_total, len(items), args.workers, git_sha,
+        sim_surface_sha(),
     )
 
     # Every shared, memory-mapped table is built here, before any worker exists.

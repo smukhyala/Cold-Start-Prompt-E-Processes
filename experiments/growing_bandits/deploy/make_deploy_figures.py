@@ -325,7 +325,9 @@ def fig_regret_vs_T(
             _direct_labels(ax, ends, tols)
         _legend(fig, policies)
         fig.suptitle("Deployed regret vs horizon (equal weight per cell, 95% cell-stratified bootstrap)", color=INK, fontsize=11, y=1.02)
-        fig.subplots_adjust(bottom=0.28, wspace=0.35)
+        # Wide gutter: the direct labels sit outside the axes and would otherwise run
+        # into the next panel's y-axis label.
+        fig.subplots_adjust(bottom=0.28, wspace=0.62)
         save(fig, sub, out_dir, stem)
     return sub
 

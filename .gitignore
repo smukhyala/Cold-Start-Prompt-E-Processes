@@ -63,3 +63,8 @@ results/gitlab_strong_arm/replay_oracle_policy/
 
 # Generated synthetic datasets for the growing-bandits study (see src/cold_start/growing/).
 data/
+
+# results/ is ignored wholesale (above), but the artifacts DEPLOYMENT_RESULTS.md cites are force-tracked
+# (`git add -f`) so every number in the document is traceable from the repo alone. The one exception is
+# results/growing_bandits/deploy/tables/dynamics_A.csv (47 MB of per-step traces) — regenerate it with the
+# analyze command in RUNBOOK.md if you need it. Episode parquet stays untracked by design.

@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "bal_acc_05_fold_mean": 0.6472273661666843,
+  "auc_fold_mean": 0.740515342827849,
+  "target_bal_acc": 0.647,
+  "target_auc": 0.7405,
+  "tol": 0.01,
+  "asserted": true
+}

@@ -468,3 +468,59 @@ as evidence for it**, and Test A is not part of H1b′'s evidence.
 .venv/bin/python experiments/growing_bandits/deploy/analyze_deployment.py --test robust --recommender all --gate-from A
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py     # writes tables/h1b_prime.csv
 ```
+
+---
+
+## Pre-registration 3 — the null model H1b′ must beat (registered 2026-09-20, before selection or run)
+
+H1b′ was supported (`DEPLOYMENT_RESULTS.md` §12.3), and §12.2 says why in a way that undercuts it: `phi_k4`
+merely matches front-loaded search at its own arm count. The question that remains is whether the learned
+model carries *any* information a schedule cannot. This registers the schedule it must beat and the rule for
+reading the result, before the schedule's constants are selected.
+
+### The null model, and why this form (a declared researcher degree of freedom)
+
+**`fixed_K_star`: recruit to K(T) arms as fast as possible, then refine only; K(T) chosen per horizon on the
+validation split.** The functional form was chosen *after* reading §12.1–12.2 — they say the whole effect is
+"which K, and reach it early" — so the roadmap's 3-parameter feature rule (NEXT-STEPS §3.4) is replaced by
+the simplest rule that embodies that finding. This is a researcher degree of freedom and is declared as such.
+It has no features, costs what `p3_star` costs, and is the existing `fixed_K` kind with a per-horizon K
+(`policy_table.py`, `fixed_K_star`; constants in `baseline_params.json["fixed_K_star"]`).
+
+- **Selection:** for each T ∈ {50, 100, 200, 500, 1000}, the 8 main environments on the **validation** split,
+  cap 64, M = 2000, K over the grid {4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64} ∩ [3, T]
+  (≤ 17 candidates per horizon); K(T) = argmin of the environment-equal-weight pooled regret
+  (`select_fixed_k.py`, `tables/fixed_k_selection.csv`). The same protocol P3\* was selected under, with a
+  smaller candidate set. Selection is on deployed validation regret, so it carries the same winner's curse as
+  P3\*; at the measured selection SE that is ≤ 1.7e−3, below the minimum effect of interest.
+- **Deployment:** `fixed_K_star` on the robustness panel (150 cells), Test A and Test C, test-split seeds,
+  CRN-paired with every policy already there.
+
+### The registered contrasts
+
+- **Primary — H1b″:** `phi_k4` − `fixed_K_star` on the robustness panel at T ∈ {50, 100, 200}, pooled over 90
+  cells, environment-mean t on n = 30, MEI 0.002, the same rule as H1b′:
+  *supported* iff `cluster_p` < 0.05, Δ < 0 and |Δ| ≥ 0.002 — the learned model carries information a
+  per-horizon fixed K does not; *refuted* iff Δ ≥ 0 or the t interval lies above −0.002 — it does not;
+  otherwise *inconclusive*.
+- **Secondary:** `fixed_K_star` − `p3_star` on the same cells (does the null model itself beat the tuned power
+  schedule, i.e. is H1b′'s effect available without a classifier?), and the per-horizon rows of the primary,
+  Holm-corrected among the three.
+
+### What either outcome means
+
+- **Refuted:** "a per-horizon fixed K selected on validation regret matches a 62-feature logistic policy
+  trained on 87,148 oracle-labelled states." The corpus-labelling line retires; the paper is about the arm
+  budget.
+- **Supported:** the study's first defensible claim that the learned model carries information a simple rule
+  cannot — on the training corpus's environments, at T ≤ 200, against this null.
+
+### Run, in order
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/select_fixed_k.py --workers 12        # validation split
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 --policies fixed_K_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test A      --resume --workers 12 --policies fixed_K_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test C      --resume --workers 12 --policies fixed_K_star
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_null   # tables/h1b_null.csv
+```

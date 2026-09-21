@@ -41,6 +41,41 @@ such. Three conventions matter throughout:
 
 ## 1. Bottom line
 
+### 1.0 What this study found (read this first; §12 is the evidence)
+
+This study set out to test whether a learned SEARCH-vs-REFINE policy beats a tuned growth schedule at
+choosing *when* to recruit a new arm. What it found, across the pre-registered tests (§3–§8) and the seven
+registered follow-ups that re-examined them (§12), is the following.
+
+1. **The arm budget is the policy.** Regret in this problem is set by how many arms a policy ends up holding
+   and how fast it gets there. Given the same final arm count, no learned policy beats "recruit first,
+   then refine" (§12.2): the *timing* of search is worth nothing. The optimal count K\* is interior — 24 at
+   T = 50, ~200–250 at T = 1000 (§12.1, §12.7) — and the study's inherited 64-arm cap was a third of it at
+   long horizons. Under that cap **every policy in the study is the same policy** at T ≥ 200, to four
+   decimals (§12.7); the cap cost 0.021 of regret at T = 1000, 16× the effect H1b argued about.
+2. **The learned policy is a three-number rule.** Asked what it reads (§12.6), the k = 4 model's decisions
+   are reproduced to 2e−5 by *recruit to T^0.75 · exp(4 · (0.5 − level)) arms, then refine*, level being the
+   mean posterior of the arms held. It rediscovered a sensible infinite-armed heuristic from 87,148 oracle
+   labels; it did not learn anything beyond it, and the pre-registered k = 16 model did not learn it at all.
+3. **Most of the learned policy's measured advantage was the advantage of not filling a too-small cap.**
+   With every constant re-tuned at each cap and the caps paired (§12.7), the residual edge of the best rule
+   over a re-tuned schedule with room to work is ~0.001–0.002 and not cluster-significant on eight
+   environments. Given headroom the learned policies over-recruit to 380–527 arms and lose 0.06–0.08; the
+   corpus held no state above 64 arms and neither model learned "enough".
+4. **Generalization comes from the schedule, not from a signal.** On the held-out family with the cap
+   lifted (§12.8, registered), a schedule with two constants tuned on the corpus is within 0.001 of the best
+   single K; the model's own signal is worse off-family by 0.005; the learned policy is worse by 0.035, under-
+   recruiting where its k = 16 sibling over-recruits; and an oracle handed the true tail exponent is worse
+   still. Regret is flat near K\*, so on families like these there is at most ~0.01 for any adaptive signal
+   to buy.
+5. **Offline model selection did not transfer.** Spearman ρ between offline OOF AUC and deployed regret is
+   +0.005 [−0.53, +0.52] over 22 variants (§6); the feature ladder collapses to CLOCK + QUALITY (§3.6).
+
+The rest of §1 states the pre-registered hypotheses as they were tested, at cap 64. They are correct as
+written; §12.7 is what they mean.
+
+### 1.1 The pre-registered results at cap 64
+
 Deploying the learned k=16 policy Φ lowers simple regret against the continuation policy its labels were
 defined against, and does **not** lower it against a validation-tuned growth schedule.
 
@@ -1315,6 +1350,58 @@ What this section replaces: §4's cap paragraphs (unpaired, untuned; kept for th
 "that a bigger cap is better, or that Φ's extrapolation beyond K = 64 is beneficial" — a bigger cap is
 better by 0.02 at T = 1000 for every tuned schedule, and Φ's extrapolation is harmful), and non-claim 4
 of §9.4. What it does not touch: every Test-A number, which is what it says it is, at cap 64.
+
+### 12.8 Generalization: the schedule carries it, the signals do not
+
+Two pieces. The first is a diagnostic; the second is the registration that rests on it.
+
+**How many arms are good, everywhere.** `k_star_envelope.py` on all 33 environments (30 corpus + the 3
+held-out mixtures), uncapped, tune split (`k_star_envelope_all33.csv`): K\*(T = 1000) runs from 12 to 400.
+The infinite-armed theory's exponent — K\* ∝ T^{β/(β+1)}, β the reservoir's upper-tail exponent, which
+this study's reservoirs are parameterized by — predicts the growth loosely (Spearman 0.69 between β and
+K\*(1000) over the 33; 0.80 inside the tail family, where β is the clean parameter), but environments with
+the same β differ up to 8× in K\*: the tail's *mass* near the top matters as much as its exponent. So the
+target itself is a two-quantity object, and it is a flat one — regret near K\* moves by thousandths over a
+factor of two in K.
+
+**An oracle for the signal** (`tail_rule_probe.py`, `tail_rule_probe.csv`; all 33 environments, uncapped,
+test split, M = 1000, T ∈ {200, 1000}; not registered). A fixed K at c · T^{β/(β+1)} with the **true** β
+and one c chosen on the corpus is the worst rule tried: 0.009–0.011 above the per-environment ceiling on
+the corpus, and 0.22 above it on `mix_bulk_half_tiny_cluster_high`, where it holds 588 arms. Knowing the
+exponent without the mass is harmful. Against that: the corpus-tuned, uncapped power schedule is within
+0.001 of the per-environment ceiling on the mixtures (and 0.002–0.004 below it at T = 200, the ceiling being
+a coarse tune-split argmin); the level rule is within 0.002 on the corpus but 0.009–0.010 behind on two of
+the three mixtures; a single fixed K for everyone is within 0.003 on average and 0.011 at worst. The upside
+of *any* environment-adaptive signal on these families is therefore bounded by the flatness of regret near
+K\*: a few thousandths on average, about 0.01 in the worst environment.
+
+**Pre-registration 8** (`DEPLOYMENT_PLAN.md`; committed before the run): the 3 mixture environments ×
+T ∈ {200, 1000}, **uncapped**, on Test C's own seeds, M = 2000, every constant the cap-T one selected on
+the corpus — the mixtures voted on nothing. At n_envs = 3 there is no environment-level interval, so the
+rules were stated on the paired CI over the six cells and are weaker than every other registration's;
+they are labelled so here (`capc_primary.csv`, `capc_level.csv`, `capc_phi.csv`):
+
+| registered claim | Δ | paired CI | T = 200 / T = 1000 | verdict |
+|---|---|---|---|---|
+| **the schedule generalizes** (non-inferiority, P3\* − fixed K, MEI 0.002) | −0.000610 | [−0.001557, +0.000374] | −0.0018 / +0.0006 | **supported** |
+| the level rule is not better off-family (`level_star` − P3\*) | **+0.005200** | [+0.003836, +0.006587] | +0.0078 / +0.0026 | **supported** — it is worse |
+| the learned policy is not better off-family (`phi_k4` − P3\*) | **+0.035038** | [+0.033310, +0.036738] | +0.0028 / +0.0672 | **supported** — it is much worse |
+
+Per environment, uncapped, T = 1000 (regret; K_final): P3\* 0.042 / 0.028 / 0.030 holding 240 arms;
+the fixed K 0.041 / 0.028 / 0.029 at 256; the level rule 0.041 / 0.029 / 0.038 at 139–149; `phi_k4`
+**0.064 / 0.101 / 0.137 holding 28–57 arms**; `phi_k16` 0.063 / 0.076 / 0.099 holding 438–485. The learned
+K choice fails off-family in *both* directions — the k = 4 model under-recruits where the k = 16 model
+over-recruits — while a schedule with two constants tuned on a different family holds 240 and is within
+0.001 of the best fixed K. §7.2's "the pre-registered Φ is worse than the schedule on the held-out family"
+was measured under a cap that made most policies identical; without the cap the gap is 0.035 pooled
+and 0.067 at T = 1000.
+
+**What this settles.** Generalization in this problem is delivered by *the schedule at the right budget*,
+not by anything that reads the environment: the level statistic the learned model turned out to use
+(§12.6) is a within-family regularity, the tail exponent alone is worse than nothing, and the models
+themselves are unreliable out of support. A signal could matter only on a family engineered so that K\*
+spans far more than these do at a fixed horizon and no single schedule can be near-optimal — a different
+study, with a different question. This one's answer is the schedule.
 
 ---
 

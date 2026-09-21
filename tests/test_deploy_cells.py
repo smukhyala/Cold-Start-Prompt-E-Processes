@@ -511,6 +511,18 @@ def test_threshold_selection_end_to_end(clock_models, tmp_path):
         df, artifacts, TINY_ENVS[:1], horizons, grids, "val", 16, fingerprints
     )
     assert set(thresholds) == set(variants)
+    # Rows from a second cap in the same CSV (roadmap 3.3) must not break the curve: with
+    # every cell present twice the variant used to be refused as incomplete. Filtered by
+    # cap, each cap selects on its own rows.
+    other = df.assign(cap=df["cap"] + 32, mean_regret=df["mean_regret"] + 0.01)
+    both = pd.concat([df, other], ignore_index=True)
+    assert set(st.build_thresholds(both, artifacts, TINY_ENVS[:1], horizons, grids, "val", 16, fingerprints)) == set()
+    at_cap = st.build_thresholds(both, artifacts, TINY_ENVS[:1], horizons, grids, "val", 16, fingerprints,
+                                 cap=int(df["cap"].iloc[0]))
+    assert at_cap["tiny_clock"]["curve"] == thresholds["tiny_clock"]["curve"]
+    shifted = st.build_thresholds(both, artifacts, TINY_ENVS[:1], horizons, grids, "val", 16, fingerprints,
+                                  cap=int(df["cap"].iloc[0]) + 32)
+    assert all(abs(shifted["tiny_clock"]["curve"][k] - v - 0.01) < 1e-9 for k, v in thresholds["tiny_clock"]["curve"].items())
     plain, holdout = thresholds["tiny_clock"], thresholds["tiny_clock_noT100"]
     assert plain["tau_off"] == 0.55 and plain["k"] == 4 and plain["kind"] == "model"
     assert plain["tau_val"] in taus and plain["fingerprint"] == fingerprints["tiny_clock"]

@@ -444,8 +444,13 @@ def build_thresholds(
     split: str = SELECT_SPLIT,
     n_replicates: int | None = None,
     fingerprints: Mapping[str, str] | None = None,
+    cap: int | None = None,
 ) -> dict[str, dict]:
     """``{variant: {"tau_val", "curve", ...}}`` for every variant with a complete curve.
+
+    `cap` restricts the rows to those selected at that cap: `threshold_selection.csv`
+    accumulates every cap's runs (roadmap 3.3), and a curve mixing two caps' rows is not
+    a curve (it has two rows per cell and was refused as incomplete).
 
     `artifacts` maps variant -> loaded artifact (``None`` for the rule); `taus` maps
     variant -> its grid. With `fingerprints`, only rows produced by the artifact on disk
@@ -463,6 +468,8 @@ def build_thresholds(
         sub = df[(df["variant"] == variant) & (df["split"] == split)]
         if n_replicates is not None:
             sub = sub[sub["n_replicates"] == int(n_replicates)]
+        if cap is not None and "cap" in sub.columns:
+            sub = sub[sub["cap"] == int(cap)]
         if fingerprints is not None:
             sub = sub[sub["fingerprint"] == fingerprints[variant]]
         grid = [float(t) for t in taus[variant]]
@@ -643,7 +650,7 @@ def main(argv: list[str] | None = None) -> None:
                   f"{el:.0f}s elapsed  ETA {eta:.0f}s")
 
     thresholds = build_thresholds(
-        df, artifacts, env_ids, horizons, grids, args.split, args.n_replicates, fingerprints
+        df, artifacts, env_ids, horizons, grids, args.split, args.n_replicates, fingerprints, cap=args.cap
     )
     # Entries written by an earlier run under the same protocol (a `--variants` subset,
     # say) are kept only while the artifact they were selected for is still the one on

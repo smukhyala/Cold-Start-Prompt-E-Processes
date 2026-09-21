@@ -292,6 +292,9 @@ TEST_POLICIES: dict[str, tuple[str, ...]] = {
     # follow-ups selected, and the two learned policies the document compares.
     "capp": ("always_search", "cp0", "refine_after_init", "p3_star", "fixed_K_star", "level_star",
              "phi_k4", "phi_k16"),
+    # Pre-registration 8: the held-out family with the cap lifted; the same eight.
+    "capc": ("always_search", "cp0", "refine_after_init", "p3_star", "fixed_K_star", "level_star",
+             "phi_k4", "phi_k16"),
 }
 
 

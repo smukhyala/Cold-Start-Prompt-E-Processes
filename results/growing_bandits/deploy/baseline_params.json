@@ -169,6 +169,270 @@
       "n_candidates": 50,
       "pooling": "equal weight over envs of the cell mean regret",
       "band": 0.05
+    },
+    "bestmean_star": {
+      "select_split": "val",
+      "cap": 64,
+      "n_replicates": 2000,
+      "horizons": [
+        50,
+        100,
+        200
+      ],
+      "envs": [
+        "beta_good_common",
+        "beta_rare_excellent",
+        "beta_mostly_mediocre",
+        "beta_skewed",
+        "tail_b0.5_mu1.0_c1.0",
+        "tail_b2.0_mu1.0_c1.0",
+        "tail_b8.0_mu1.0_c1.0",
+        "tail_b1.0_mu0.9_c2.0"
+      ],
+      "grid": [
+        {
+          "theta": 0.55,
+          "alpha": 0.5,
+          "c": 3.0
+        },
+        {
+          "theta": 0.55,
+          "alpha": 0.5,
+          "c": 4.0
+        },
+        {
+          "theta": 0.55,
+          "alpha": 0.5,
+          "c": 6.0
+        },
+        {
+          "theta": 0.55,
+          "alpha": 0.5,
+          "c": 8.0
+        },
+        {
+          "theta": 0.55,
+          "alpha": 0.75,
+          "c": 1.0
+        },
+        {
+          "theta": 0.55,
+          "alpha": 0.75,
+          "c": 1.5
+        },
+        {
+          "theta": 0.55,
+          "alpha": 0.75,
+          "c": 2.0
+        },
+        {
+          "theta": 0.55,
+          "alpha": 0.75,
+          "c": 3.0
+        },
+        {
+          "theta": 0.6,
+          "alpha": 0.5,
+          "c": 3.0
+        },
+        {
+          "theta": 0.6,
+          "alpha": 0.5,
+          "c": 4.0
+        },
+        {
+          "theta": 0.6,
+          "alpha": 0.5,
+          "c": 6.0
+        },
+        {
+          "theta": 0.6,
+          "alpha": 0.5,
+          "c": 8.0
+        },
+        {
+          "theta": 0.6,
+          "alpha": 0.75,
+          "c": 1.0
+        },
+        {
+          "theta": 0.6,
+          "alpha": 0.75,
+          "c": 1.5
+        },
+        {
+          "theta": 0.6,
+          "alpha": 0.75,
+          "c": 2.0
+        },
+        {
+          "theta": 0.6,
+          "alpha": 0.75,
+          "c": 3.0
+        },
+        {
+          "theta": 0.625,
+          "alpha": 0.5,
+          "c": 3.0
+        },
+        {
+          "theta": 0.625,
+          "alpha": 0.5,
+          "c": 4.0
+        },
+        {
+          "theta": 0.625,
+          "alpha": 0.5,
+          "c": 6.0
+        },
+        {
+          "theta": 0.625,
+          "alpha": 0.5,
+          "c": 8.0
+        },
+        {
+          "theta": 0.625,
+          "alpha": 0.75,
+          "c": 1.0
+        },
+        {
+          "theta": 0.625,
+          "alpha": 0.75,
+          "c": 1.5
+        },
+        {
+          "theta": 0.625,
+          "alpha": 0.75,
+          "c": 2.0
+        },
+        {
+          "theta": 0.625,
+          "alpha": 0.75,
+          "c": 3.0
+        },
+        {
+          "theta": 0.65,
+          "alpha": 0.5,
+          "c": 3.0
+        },
+        {
+          "theta": 0.65,
+          "alpha": 0.5,
+          "c": 4.0
+        },
+        {
+          "theta": 0.65,
+          "alpha": 0.5,
+          "c": 6.0
+        },
+        {
+          "theta": 0.65,
+          "alpha": 0.5,
+          "c": 8.0
+        },
+        {
+          "theta": 0.65,
+          "alpha": 0.75,
+          "c": 1.0
+        },
+        {
+          "theta": 0.65,
+          "alpha": 0.75,
+          "c": 1.5
+        },
+        {
+          "theta": 0.65,
+          "alpha": 0.75,
+          "c": 2.0
+        },
+        {
+          "theta": 0.65,
+          "alpha": 0.75,
+          "c": 3.0
+        },
+        {
+          "theta": 0.675,
+          "alpha": 0.5,
+          "c": 3.0
+        },
+        {
+          "theta": 0.675,
+          "alpha": 0.5,
+          "c": 4.0
+        },
+        {
+          "theta": 0.675,
+          "alpha": 0.5,
+          "c": 6.0
+        },
+        {
+          "theta": 0.675,
+          "alpha": 0.5,
+          "c": 8.0
+        },
+        {
+          "theta": 0.675,
+          "alpha": 0.75,
+          "c": 1.0
+        },
+        {
+          "theta": 0.675,
+          "alpha": 0.75,
+          "c": 1.5
+        },
+        {
+          "theta": 0.675,
+          "alpha": 0.75,
+          "c": 2.0
+        },
+        {
+          "theta": 0.675,
+          "alpha": 0.75,
+          "c": 3.0
+        },
+        {
+          "theta": 0.7,
+          "alpha": 0.5,
+          "c": 3.0
+        },
+        {
+          "theta": 0.7,
+          "alpha": 0.5,
+          "c": 4.0
+        },
+        {
+          "theta": 0.7,
+          "alpha": 0.5,
+          "c": 6.0
+        },
+        {
+          "theta": 0.7,
+          "alpha": 0.5,
+          "c": 8.0
+        },
+        {
+          "theta": 0.7,
+          "alpha": 0.75,
+          "c": 1.0
+        },
+        {
+          "theta": 0.7,
+          "alpha": 0.75,
+          "c": 1.5
+        },
+        {
+          "theta": 0.7,
+          "alpha": 0.75,
+          "c": 2.0
+        },
+        {
+          "theta": 0.7,
+          "alpha": 0.75,
+          "c": 3.0
+        }
+      ],
+      "n_candidates": 48,
+      "pooling": "equal weight over envs of the cell mean regret"
     }
   },
   "p3_star": {
@@ -271,6 +535,12 @@
     "alpha": 0.75,
     "c": 1.0,
     "b": 0.0,
+    "pooled_regret": 0.12175207115336402
+  },
+  "bestmean_star": {
+    "theta": 0.675,
+    "alpha": 0.75,
+    "c": 1.0,
     "pooled_regret": 0.12175207115336402
   }
 }

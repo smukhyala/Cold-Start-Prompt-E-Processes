@@ -62,8 +62,8 @@ import policy_table as pt  # noqa: E402
 from cells import (  # noqa: E402
     HORIZONS,
     assert_seed_disjointness,
+    cell_at_cap,
     env_ids_for,
-    make_cell,
 )
 from tune_baselines import (  # noqa: E402
     check_splits,
@@ -183,7 +183,7 @@ class ThresholdItem:
 
     @property
     def spec(self) -> CellSpec:
-        return make_cell(self.split, self.env_id, self.horizon, self.cap, self.n_replicates)
+        return cell_at_cap(self.split, self.env_id, self.horizon, self.cap, self.n_replicates)
 
 
 def row_key(row) -> tuple:
@@ -591,7 +591,7 @@ def main(argv: list[str] | None = None) -> None:
     env_ids = env_ids_for(args.envs)
     horizons = [int(h) for h in args.horizons]
     seeds = [
-        make_cell(args.split, env_id, horizon, args.cap, args.n_replicates).base_seed
+        cell_at_cap(args.split, env_id, horizon, args.cap, args.n_replicates).base_seed
         for env_id in env_ids
         for horizon in horizons
     ]

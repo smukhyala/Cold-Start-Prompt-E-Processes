@@ -54,8 +54,8 @@ import policy_table as pt  # noqa: E402
 from cells import (  # noqa: E402
     HORIZONS,
     assert_seed_disjointness,
+    cell_at_cap,
     env_ids_for,
-    make_cell,
 )
 
 from cold_start.growing.deploy.comparators import episode_reservoir_prefix  # noqa: E402
@@ -199,7 +199,7 @@ class WorkItem:
 
     @property
     def spec(self) -> CellSpec:
-        return make_cell(self.split, self.env_id, self.horizon, self.cap, self.n_replicates)
+        return cell_at_cap(self.split, self.env_id, self.horizon, self.cap, self.n_replicates)
 
 
 def row_key(row) -> tuple:
@@ -660,7 +660,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"WARNING: tuning and selection on the same split ({args.split}); "
               "P3* will be optimistic")
     seeds = [
-        make_cell(split, env_id, horizon, args.cap, args.n_replicates).base_seed
+        cell_at_cap(split, env_id, horizon, args.cap, args.n_replicates).base_seed
         for split in {args.split, args.select_split}
         for env_id in env_ids
         for horizon in horizons

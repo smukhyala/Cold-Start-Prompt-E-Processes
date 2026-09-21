@@ -66,7 +66,7 @@ def select(
     items = []
     for env_id in env_ids:
         for T in horizons:
-            spec = cells.make_cell(SPLIT, env_id, int(T), cap, int(n_replicates))
+            spec = cells.cell_at_cap(SPLIT, env_id, int(T), cap, int(n_replicates))
             for K in candidates(int(T), k_grid, cap):
                 items.append(ks.Item(split=SPLIT, spec=spec, K=int(K)))
     log.info("%d candidates: %d envs x %d horizons, <=%d K each, M=%d, split=%s, cap=%d",

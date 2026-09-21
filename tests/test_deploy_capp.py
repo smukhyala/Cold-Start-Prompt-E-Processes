@@ -54,3 +54,11 @@ def test_main_accepts_shared_seeds_for_capp_only(monkeypatch):
     """The runner refuses cells that share a base_seed -- except the paired sweep, where sharing IS the design."""
     assert rd.seeds_may_repeat("capp") is True
     assert rd.seeds_may_repeat("A") is False and rd.seeds_may_repeat("cap") is False
+
+
+def test_cell_at_cap_uses_the_grid_seed_for_grid_caps_and_the_cap_64_seed_otherwise():
+    grid = cells.cell_at_cap("tune", "beta_good_common", 200, 32, 16)
+    assert grid.base_seed == cells.make_cell("tune", "beta_good_common", 200, 32, 16).base_seed and grid.cap == 32
+    ladder = cells.cell_at_cap("tune", "beta_good_common", 200, 48, 16)
+    assert ladder.base_seed == cells.make_cell("tune", "beta_good_common", 200, 64, 16).base_seed and ladder.cap == 48
+    assert cells.cell_at_cap("val", "beta_good_common", 1000, 512, 16).cap == 512

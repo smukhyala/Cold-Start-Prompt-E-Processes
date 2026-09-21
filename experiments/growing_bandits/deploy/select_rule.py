@@ -161,7 +161,7 @@ def select(
     candidates = tuple(candidates) if candidates is not None else rule.candidates()
     names = list(rule.param_names)
     items = [
-        Item(cells.make_cell(SPLIT, env_id, int(T), cap, int(n_replicates)), rule.kind,
+        Item(cells.cell_at_cap(SPLIT, env_id, int(T), cap, int(n_replicates)), rule.kind,
              tuple((k, float(cand[k])) for k in names))
         for env_id in env_ids for T in horizons for cand in candidates
     ]

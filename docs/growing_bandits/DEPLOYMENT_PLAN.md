@@ -576,3 +576,46 @@ kind (`adaptive_K`), feature-free apart from that one statistic, evaluated vecto
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_adaptive
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_adaptive_secondary
 ```
+
+---
+
+## Pre-registration 5 — the rule the model appears to be (registered 2026-09-20, before code, selection or run)
+
+`model_reads.py` (results §12.6) asked `phi_k4` directly what it reads on the H1b′ cells. The answer is the
+**best held arm's posterior mean**: the top feature at every horizon, tracking the per-environment K at
+|ρ| ≥ 0.93, and a rule on it plus log K reproduces 96 / 93 / 85% of the model's decisions at T = 50 / 100 /
+200. This registers that rule as the null model and states, before selection, what beating or matching it
+means.
+
+### The null model (a declared researcher degree of freedom, chosen from `model_reads.py`)
+
+**`bestmean_star`: SEARCH while `best_mean_t < θ` **and** `K_t < c · T^α`** — recruit until the best arm you
+hold is good enough, never beyond a per-horizon ceiling, then refine. `best_mean_t` is the maximum posterior
+mean `(S+1)/(n+2)` over held arms, computed by the rule itself (no evidence pass). Three scalars (θ, α, c);
+θ ≥ 1 is the fixed-K schedule of Pre-registration 3, so the null nests it.
+
+- **Selection:** the 8 main environments × T ∈ {50, 100, 200} on the **validation** split, cap 64, M = 2000;
+  one (θ, α, c) for all horizons; grid θ ∈ {0.55, 0.60, 0.625, 0.65, 0.675, 0.70} ×
+  (α, c) ∈ {(0.5, 3), (0.5, 4), (0.5, 6), (0.5, 8), (0.75, 1), (0.75, 1.5), (0.75, 2), (0.75, 3)} —
+  48 candidates (`select_rule.py --rule bestmean_star`, `tables/bestmean_selection.csv`,
+  `baseline_params.json["bestmean_star"]`).
+- **Deployment:** robustness panel, Test A, Test C; test-split seeds.
+
+### The registered contrasts (robustness panel, T ∈ {50, 100, 200}, env-mean t on n = 30, MEI 0.002)
+
+- **Primary — H1b⁗:** `phi_k4` − `bestmean_star`. *Supported* iff `cluster_p` < 0.05, Δ < 0 and |Δ| ≥ 0.002:
+  the model carries information beyond its own top feature. *Refuted* iff Δ ≥ 0 or the t interval lies
+  above −0.002: **the model is this rule**, and the programme's result is three numbers.
+- **Secondary:** `bestmean_star` − `fixed_K_star` (does the best-mean gate deliver the environment sizing of
+  §12.4?), and the per-horizon rows of the primary, Holm-corrected among the three.
+
+### Run, in order
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/select_rule.py --rule bestmean_star --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 --policies bestmean_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test A      --resume --workers 12 --policies bestmean_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test C      --resume --workers 12 --policies bestmean_star
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_bestmean
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_bestmean_secondary
+```

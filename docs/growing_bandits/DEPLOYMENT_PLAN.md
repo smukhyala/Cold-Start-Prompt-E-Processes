@@ -524,3 +524,55 @@ It has no features, costs what `p3_star` costs, and is the existing `fixed_K` ki
 .venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test C      --resume --workers 12 --policies fixed_K_star
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_null   # tables/h1b_null.csv
 ```
+
+---
+
+## Pre-registration 4 — an environment-adaptive schedule as the null model (registered 2026-09-20, before code, selection or run)
+
+§12.4 of the results says the learned model's value is sizing K to the environment. The question that
+closes the programme is whether a schedule that *observes* the environment through something already on
+the policy's hot path can do the same. If it can, the 62-feature classifier is a lookup table with extra
+steps; if it cannot, the learned model is the result.
+
+### The null model (a declared researcher degree of freedom, chosen after reading §12.4)
+
+**`adaptive_K_star`: SEARCH while K_t < K\_target(t), with K\_target = c · T^α · (1 + b · (1 − q_t))**, where
+q_t is the fraction of currently held arms whose posterior mean lies within 0.05 of the best held arm's
+(`est_frac_arms_within_5pct_of_best`, a QUALITY feature the study already computes; `(S+1)/(n+2)` means, no
+confidence sequence, no e-process). In a thin-tailed reservoir q_t → 1 and the target collapses to the plain
+schedule c · T^α; in a heavy-tailed one q_t → 0 and it is up to (1 + b) times larger. Three scalars (α, c, b);
+b = 0 is a per-horizon power fixed K, so the null nests Pre-registration 3's. It is a new `search_policy`
+kind (`adaptive_K`), feature-free apart from that one statistic, evaluated vectorized each step.
+
+- **Selection:** the 8 main environments × T ∈ {50, 100, 200} on the **validation** split, cap 64,
+  M = 2000; one (α, c, b) for all horizons, the argmin of pooled regret over the 24 cells, grid
+  α ∈ {0.5, 0.75} × c ∈ {1, 2, 3, 4, 6} × b ∈ {0, 1, 2, 4, 8} — 50 candidates (`select_adaptive_k.py`,
+  `tables/adaptive_k_selection.csv`, `baseline_params.json["adaptive_K_star"]`).
+- **Deployment:** robustness panel, Test A, Test C; test-split seeds; CRN-paired with everything there.
+
+### The registered contrasts (robustness panel, T ∈ {50, 100, 200}, env-mean t on n = 30, MEI 0.002)
+
+- **Primary — H1b‴:** `phi_k4` − `adaptive_K_star`. *Supported* iff `cluster_p` < 0.05, Δ < 0 and
+  |Δ| ≥ 0.002: the learned model carries information a three-parameter environment-adaptive schedule does
+  not. *Refuted* iff Δ ≥ 0 or the t interval lies above −0.002: it does not, and the classifier reduces to
+  "size K to the observed tail". Otherwise *inconclusive*.
+- **Secondary:** `adaptive_K_star` − `fixed_K_star` (does observing the tail buy what §12.4 attributed to it?),
+  and the per-horizon rows of the primary, Holm-corrected among the three.
+
+### What either outcome means
+
+- **Refuted:** the programme's result is a three-parameter rule — recruit to c · T^α, more when the held arms
+  are spread out — and the oracle-labelling pipeline was an expensive route to it.
+- **Supported:** the learned model reads something about the environment that the held arms' 5%-band does
+  not carry, on the corpus environments at T ≤ 200. One registered claim, in-distribution.
+
+### Run, in order
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/select_adaptive_k.py --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 --policies adaptive_K_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test A      --resume --workers 12 --policies adaptive_K_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test C      --resume --workers 12 --policies adaptive_K_star
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_adaptive
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_adaptive_secondary
+```

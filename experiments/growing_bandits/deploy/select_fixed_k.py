@@ -81,9 +81,13 @@ def select(
         "k_grid": [int(k) for k in k_grid], "envs": list(env_ids), "horizons": [int(T) for T in horizons],
         "pooling": "equal weight over envs of the cell mean regret",
     }
+    # Serialized exactly as `tune_baselines.py` writes it (indent 2, trailing newline),
+    # existing keys in their existing order and the new block appended: the per-cap
+    # migration is only reversible while the tuned blocks are contiguous, and the audit
+    # anchor on this file (`test_deploy_runner.py`) is a byte hash.
     tmp = path.with_suffix(".json.tmp")
     with open(tmp, "w") as fh:
-        json.dump(params, fh, indent=2, sort_keys=True)
+        json.dump(params, fh, indent=2)
         fh.write("\n")
     tmp.replace(path)
     tables = out_dir / "tables"

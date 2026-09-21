@@ -889,8 +889,16 @@ def test_a_finished_item_records_its_simulation_surface(tmp_path):
 #: the equality itself is no longer re-derivable -- these digests are what keeps the
 #: anchor checkable: any future edit to the file, or to what "the T=2000 keys" means,
 #: has to move one of them deliberately.
-BASELINE_PARAMS_SHA256 = "3f049fdbabf3d8fc5cce910000b00f508fba103d99375ab9e4e83dd360be444a"
+BASELINE_PARAMS_SHA256 = "80fd3bb9f6713a9bc880e78fe5e9fe8b08c8f713043f4ea226d0e20e1546879b"
+#: ... and with the two `fixed_K_star` keys (Pre-registration 3, 2026-09-20) stripped: the
+#: file as the M8fix re-review saw it.
+BASELINE_PARAMS_PRE_FIXED_K_SHA256 = "3f049fdbabf3d8fc5cce910000b00f508fba103d99375ab9e4e83dd360be444a"
 BASELINE_PARAMS_NO_T2000_SHA256 = "df71174726d2231273a9f313cdb1c1dde712883b54803b40cf07788f58355abc"
+#: The two keys `select_fixed_k.py` added, by the path they sit at.
+FIXED_K_STAR_KEYS: tuple[tuple[str, ...], ...] = (
+    ("fixed_K_star",),
+    ("meta", "fixed_K_star"),
+)
 #: The six keys the T=2000 tuning added, by the path they sit at.
 T2000_KEYS: tuple[tuple[str, ...], ...] = (
     ("p3_star", "2000"),
@@ -933,9 +941,19 @@ def test_baseline_params_migration_is_reversible_and_keeps_the_t2000_anchor():
         assert (pt.resolve_params(name, horizon, cap=64, baseline_params=migrated)
                 == pt.resolve_params(name, horizon, cap=64, baseline_params=params))
 
-    # The anchor: exactly six keys are "the T=2000 keys", and the file without them
-    # still hashes to what the M8fix re-review compared against.
+    # The anchor, in two links. Without the two fixed_K_star keys the file is the one the
+    # M8fix re-review saw; without the six T=2000 keys as well, it is that review's
+    # pre-T=2000 state.
     stripped = json.loads(raw)
+    for path in FIXED_K_STAR_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_PRE_FIXED_K_SHA256
+    )
     for path in T2000_KEYS:
         node = stripped
         for key in path[:-1]:

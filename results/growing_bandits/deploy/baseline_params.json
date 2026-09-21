@@ -1,26 +1,4 @@
 {
-  "fixed_K_star": {
-    "100": {
-      "K": 36,
-      "pooled_regret": 0.12032302725275804
-    },
-    "1000": {
-      "K": 64,
-      "pooled_regret": 0.09829563074931502
-    },
-    "200": {
-      "K": 64,
-      "pooled_regret": 0.10852587283146567
-    },
-    "50": {
-      "K": 24,
-      "pooled_regret": 0.13494356338205032
-    },
-    "500": {
-      "K": 64,
-      "pooled_regret": 0.09444750538282096
-    }
-  },
   "meta": {
     "alphas": [
       0.25,
@@ -89,6 +67,24 @@
       "tail_b8.0_mu1.0_c1.0",
       "tail_b1.0_mu0.9_c2.0"
     ],
+    "horizons": [
+      50,
+      100,
+      200,
+      500,
+      1000,
+      2000
+    ],
+    "k0_grid": [
+      2,
+      4,
+      8
+    ],
+    "n_replicates": 500,
+    "pooling": "equal weight over envs of the cell mean regret",
+    "recommender": "posterior_mean_shrunk",
+    "select_split": "val",
+    "tune_split": "tune",
     "fixed_K_star": {
       "cap": 64,
       "envs": [
@@ -130,25 +126,7 @@
       "n_replicates": 2000,
       "pooling": "equal weight over envs of the cell mean regret",
       "select_split": "val"
-    },
-    "horizons": [
-      50,
-      100,
-      200,
-      500,
-      1000,
-      2000
-    ],
-    "k0_grid": [
-      2,
-      4,
-      8
-    ],
-    "n_replicates": 500,
-    "pooling": "equal weight over envs of the cell mean regret",
-    "recommender": "posterior_mean_shrunk",
-    "select_split": "val",
-    "tune_split": "tune"
+    }
   },
   "p3_star": {
     "100": {
@@ -223,5 +201,27 @@
     "2000": 8,
     "50": 8,
     "500": 8
+  },
+  "fixed_K_star": {
+    "100": {
+      "K": 36,
+      "pooled_regret": 0.12032302725275804
+    },
+    "1000": {
+      "K": 64,
+      "pooled_regret": 0.09829563074931502
+    },
+    "200": {
+      "K": 64,
+      "pooled_regret": 0.10852587283146567
+    },
+    "50": {
+      "K": 24,
+      "pooled_regret": 0.13494356338205032
+    },
+    "500": {
+      "K": 64,
+      "pooled_regret": 0.09444750538282096
+    }
   }
 }

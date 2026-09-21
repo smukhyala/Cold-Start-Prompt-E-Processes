@@ -546,7 +546,7 @@ kind (`adaptive_K`), feature-free apart from that one statistic, evaluated vecto
 
 - **Selection:** the 8 main environments × T ∈ {50, 100, 200} on the **validation** split, cap 64,
   M = 2000; one (α, c, b) for all horizons, the argmin of pooled regret over the 24 cells, grid
-  α ∈ {0.5, 0.75} × c ∈ {1, 2, 3, 4, 6} × b ∈ {0, 1, 2, 4, 8} — 50 candidates (`select_adaptive_k.py`,
+  α ∈ {0.5, 0.75} × c ∈ {1, 2, 3, 4, 6} × b ∈ {0, 1, 2, 4, 8} — 50 candidates (`select_rule.py --rule adaptive_K_star`,
   `tables/adaptive_k_selection.csv`, `baseline_params.json["adaptive_K_star"]`).
 - **Deployment:** robustness panel, Test A, Test C; test-split seeds; CRN-paired with everything there.
 
@@ -569,7 +569,7 @@ kind (`adaptive_K`), feature-free apart from that one statistic, evaluated vecto
 ### Run, in order
 
 ```
-.venv/bin/python experiments/growing_bandits/deploy/select_adaptive_k.py --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/select_rule.py --rule adaptive_K_star --workers 12
 .venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 --policies adaptive_K_star
 .venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test A      --resume --workers 12 --policies adaptive_K_star
 .venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test C      --resume --workers 12 --policies adaptive_K_star

@@ -164,6 +164,46 @@ class TailAdaptiveSchedule(SearchPolicy):
         return _force_first_arm(state, state.Kt < self.target(state, ctx))
 
 
+def best_held_mean(state: GrowingState) -> np.ndarray:
+    """Per replicate, the largest posterior mean ``(S+1)/(n+2)`` over held arms; 0 with none."""
+    post = state.view(state.empirical_mean())
+    held = np.arange(post.shape[1])[None, :] < state.Kt[:, None]
+    best = np.where(held, post, -np.inf).max(axis=1)
+    return np.where(state.Kt > 0, best, 0.0)
+
+
+@register("bestmean_K", kind="search_policy")
+class BestMeanGate(SearchPolicy):
+    """SEARCH while ``best_mean_t < theta`` and ``K_t < c * T**alpha`` (Pre-registration 5).
+
+    Recruit until the best arm held is good enough, never beyond a per-horizon ceiling,
+    then refine. This is the rule `model_reads.py` found the k = 4 learned policy to be
+    reading: its top feature at every horizon is the best held arm's posterior mean.
+    ``theta >= 1`` never closes the gate and is the fixed-K schedule exactly.
+    """
+
+    name = "bestmean_K"
+
+    def __init__(
+        self,
+        theta: float = 0.65,
+        alpha: float = 0.5,
+        c: float = 4.0,
+        rng: np.random.Generator | None = None,
+    ) -> None:
+        super().__init__(rng)
+        self.theta = float(theta)
+        self.alpha = float(alpha)
+        self.c = float(c)
+
+    def ceiling(self, ctx: DecisionContext) -> float:
+        return self.c * float(max(ctx.horizon, 1)) ** self.alpha
+
+    def should_search(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        below_ceiling = state.Kt < self.ceiling(ctx)
+        return _force_first_arm(state, below_ceiling & (best_held_mean(state) < self.theta))
+
+
 @register("epsilon_schedule", kind="search_policy")
 class EpsilonSchedule(SearchPolicy):
     """A power schedule with epsilon-randomization.

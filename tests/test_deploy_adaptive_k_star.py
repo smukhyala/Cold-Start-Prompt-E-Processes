@@ -12,7 +12,7 @@ if str(DEPLOY) not in sys.path:
     sys.path.insert(0, str(DEPLOY))
 
 import policy_table as pt  # noqa: E402
-import select_adaptive_k as sa  # noqa: E402
+import select_rule as sr  # noqa: E402
 
 from cold_start.growing.search_policies import TailAdaptiveSchedule  # noqa: E402
 
@@ -48,18 +48,19 @@ def test_migration_carries_the_block():
 
 
 def test_grid_is_the_registered_fifty():
-    grid = sa.grid()
+    grid = sr.RULES["adaptive_K_star"].candidates()
     assert len(grid) == 50
-    assert {a for a, _, _ in grid} == {0.5, 0.75}
-    assert {c for _, c, _ in grid} == {1, 2, 3, 4, 6}
-    assert {b for _, _, b in grid} == {0, 1, 2, 4, 8}
+    assert {g["alpha"] for g in grid} == {0.5, 0.75}
+    assert {g["c"] for g in grid} == {1, 2, 3, 4, 6}
+    assert {g["b"] for g in grid} == {0, 1, 2, 4, 8}
 
 
 def test_selection_picks_one_triple_on_validation_and_writes_the_block(tmp_path):
     out = tmp_path / "deploy"
     (out / "tables").mkdir(parents=True)
     json.dump({"meta": {"cap": 64}, "p3_star": {}}, open(out / "baseline_params.json", "w"))
-    frame = sa.select(env_ids=(ENV,), horizons=(50,), candidates=((0.5, 1.0, 0.0), (0.5, 2.0, 2.0)),
+    frame = sr.select("adaptive_K_star", env_ids=(ENV,), horizons=(50,),
+                      candidates=({"alpha": 0.5, "c": 1.0, "b": 0.0}, {"alpha": 0.5, "c": 2.0, "b": 2.0}),
                       n_replicates=16, out_dir=out, workers=1)
     assert set(frame["split"]) == {"val"} and len(frame[frame["level"] == "pooled"]) == 2
     assert frame[frame["level"] == "pooled"]["is_argmin"].sum() == 1

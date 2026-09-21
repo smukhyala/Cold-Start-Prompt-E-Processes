@@ -735,6 +735,9 @@ SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA = "97704d2795f7"
 #: value above in its manifest line; only `adaptive_K_star` items carry this one, and the
 #: analyses that mix them run under `--allow-mixed-sim` with that diff as the reason.
 SIM_SURFACE_SHA_SINCE_ADAPTIVE_K = "2ad982bf77bb"
+#: ... and after Pre-registration 5 added `BestMeanGate` + `best_held_mean` and the
+#: `bestmean_K` kind, the same way (additive; 0 deleted lines against 9566202).
+SIM_SURFACE_SHA_SINCE_BESTMEAN = "05a8c821662f"
 
 
 def _sim_surface_closure() -> set[str]:
@@ -820,8 +823,9 @@ def test_sim_surface_sha_is_stable_deterministic_and_source_dependent(tmp_path, 
     # hashes to this same value, so nothing in the shipped tree was produced by a
     # different simulator. A legitimate change to a surface module moves it, and this
     # assertion is where that has to be acknowledged deliberately.
-    assert first == SIM_SURFACE_SHA_SINCE_ADAPTIVE_K
-    assert first != SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA, "the acknowledged move must be a move"
+    assert first == SIM_SURFACE_SHA_SINCE_BESTMEAN
+    assert len({first, SIM_SURFACE_SHA_SINCE_ADAPTIVE_K, SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA}) == 3, (
+        "each acknowledged move must be a move")
     assert len(first) == 12 and int(first, 16) >= 0
     rd.sim_surface_sha.cache_clear()
     assert rd.sim_surface_sha() == first

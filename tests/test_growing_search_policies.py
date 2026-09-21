@@ -163,7 +163,7 @@ def test_registry_round_trip(name: str, cls: type):
 # ---- the environment-adaptive schedule (DEPLOYMENT_PLAN.md, Pre-registration 4) --------------
 
 
-def _state_with_means(post_rows: list[list[float]], n_pulls: int = 10) -> GrowingState:
+def _state_with_means(post_rows: list[list[float]], n_pulls: int = 98) -> GrowingState:
     """A state whose held arms have the given posterior means (`(S+1)/(n+2)`), per replicate."""
     m = len(post_rows)
     k = len(post_rows[0])
@@ -175,7 +175,7 @@ def _state_with_means(post_rows: list[list[float]], n_pulls: int = 10) -> Growin
     for i, row in enumerate(post_rows):
         for j, post in enumerate(row):
             n[i, j] = n_pulls
-            S[i, j] = post * (n_pulls + 2) - 1  # (S+1)/(n+2) == post
+            S[i, j] = round(post * (n_pulls + 2) - 1)  # (S+1)/(n+2) == post, exact at n_pulls = 98
     return s
 
 
@@ -218,3 +218,32 @@ def test_adaptive_schedule_opens_with_no_arms_and_is_registered():
 
     assert TailAdaptiveSchedule(alpha=0.5, c=1.0, b=1.0).should_search(_state(0), _ctx()).all()
     assert get_registered("search_policy", "adaptive_K") is TailAdaptiveSchedule
+
+
+# ---- the best-mean gate (DEPLOYMENT_PLAN.md, Pre-registration 5) --------------------------
+
+
+def test_best_mean_gate_searches_while_the_best_is_below_theta_and_k_below_the_ceiling():
+    from cold_start.growing.search_policies import BestMeanGate, best_held_mean
+
+    low = [0.45, 0.40, 0.30]    # best 0.45 -> keep recruiting
+    high = [0.70, 0.40, 0.30]   # best 0.70 -> stop
+    s = _state_with_means([low, high])
+    assert best_held_mean(s).tolist() == pytest.approx([0.45, 0.70])
+    rule = BestMeanGate(theta=0.6, alpha=0.5, c=2.0)
+    ctx = _ctx(t=10, horizon=100)
+    assert rule.ceiling(ctx) == pytest.approx(20.0)
+    assert rule.should_search(s, ctx).tolist() == [True, False]
+    # The ceiling binds even when the best is poor: c * T^alpha = 2 arms here, both hold 3.
+    tight = BestMeanGate(theta=0.6, alpha=0.0, c=2.0)
+    assert tight.should_search(s, ctx).tolist() == [False, False]
+    # theta >= 1 is the fixed-K schedule: the gate never closes on its own.
+    fixed = BestMeanGate(theta=1.0, alpha=0.5, c=2.0)
+    assert fixed.should_search(s, ctx).tolist() == [True, True]
+
+
+def test_best_mean_gate_opens_with_no_arms_and_is_registered():
+    from cold_start.growing.search_policies import BestMeanGate
+
+    assert BestMeanGate(theta=0.6, alpha=0.5, c=2.0).should_search(_state(0), _ctx()).all()
+    assert get_registered("search_policy", "bestmean_K") is BestMeanGate

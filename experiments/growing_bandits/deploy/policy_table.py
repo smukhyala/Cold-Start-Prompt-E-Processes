@@ -84,6 +84,12 @@ _PLACEHOLDER_FIXED_K = int(rules.POLICY_SPECS["fixed_K16"]["K"])
 _PLACEHOLDER_ADAPTIVE_K = {
     k: float(rules.POLICY_SPECS["adaptive_K"][k]) for k in ("alpha", "c", "b")
 }
+#: Rules whose every constant is one validation-selected block in `baseline_params.json`
+#: (``kind -> (block name, parameter names)``); `resolve_params` fills them together.
+TUNED_RULE_BLOCKS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "adaptive_K": ("adaptive_K_star", ("alpha", "c", "b")),
+    "bestmean_K": ("bestmean_star", ("theta", "alpha", "c")),
+}
 
 # Which `rules.POLICY_SPECS` entry each kind is built through; `params` override the
 # rest, so only the kind of the registered entry matters here.
@@ -96,6 +102,7 @@ _SPEC_FOR_KIND: dict[str, str] = {
     "cp0": "cp0",
     "reservoir_rule": "reservoir_rule",
     "adaptive_K": "adaptive_K",
+    "bestmean_K": "bestmean_K",
     "model": "model",
 }
 
@@ -156,10 +163,18 @@ POLICIES: dict[str, dict[str, Any]] = {
         "requires": ["baseline_params"],
     },
     # Pre-registration 4's null model: K_target = c * T^alpha * (1 + b * (1 - q_t)), one
-    # (alpha, c, b) for every horizon, selected on validation (`select_adaptive_k.py`).
+    # (alpha, c, b) for every horizon, selected on validation (`select_rule.py`).
     "adaptive_K_star": {
         "kind": "adaptive_K",
         "params": {"alpha": None, "c": None, "b": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
+    # Pre-registration 5's null model: recruit until the best held arm's posterior mean
+    # reaches theta, never beyond c * T^alpha; (theta, alpha, c) selected on validation.
+    "bestmean_star": {
+        "kind": "bestmean_K",
+        "params": {"theta": None, "alpha": None, "c": None},
         "group": "baseline",
         "requires": ["baseline_params"],
     },
@@ -429,7 +444,9 @@ PROVENANCE_KEYS: tuple[str, ...] = ("tau_source", PARAMS_TUNED, PARAMS_FALLBACK,
 TUNING_CAP_KEY = "cap"
 BY_CAP_KEY = "by_cap"
 #: The blocks a per-cap retune would have to duplicate; everything else is metadata.
-TUNED_BLOCKS: tuple[str, ...] = ("power", "p3_star", "refine_after_init", "fixed_K_star", "adaptive_K_star")
+TUNED_BLOCKS: tuple[str, ...] = (
+    "power", "p3_star", "refine_after_init", "fixed_K_star", "adaptive_K_star", "bestmean_star",
+)
 
 
 def _tuned_c(
@@ -490,13 +507,19 @@ def _tuned_fixed_k(name: str, horizon: int, baseline_params: dict | None) -> tup
     return int(sel["K"]), None
 
 
-def _tuned_adaptive_k(name: str, baseline_params: dict | None) -> tuple[dict[str, float], dict | None]:
-    ph = dict(_PLACEHOLDER_ADAPTIVE_K)
-    sel = (baseline_params or {}).get("adaptive_K_star") or {}
-    if not all(k in sel for k in ("alpha", "c", "b")):
-        _warn_once(name, f"no validation-selected (alpha, c, b); placeholder {ph}")
+def _tuned_rule(name: str, kind: str, baseline_params: dict | None) -> tuple[dict[str, float], dict | None]:
+    """The validation-selected constants of a `TUNED_RULE_BLOCKS` rule, or its placeholder."""
+    block, keys = TUNED_RULE_BLOCKS[kind]
+    ph = {k: float(rules.POLICY_SPECS[kind][k]) for k in keys}
+    sel = (baseline_params or {}).get(block) or {}
+    if not all(k in sel for k in keys):
+        _warn_once(name, f"no validation-selected {keys}; placeholder {ph}")
         return ph, ph
-    return {k: float(sel[k]) for k in ("alpha", "c", "b")}, None
+    return {k: float(sel[k]) for k in keys}, None
+
+
+def _tuned_adaptive_k(name: str, baseline_params: dict | None) -> tuple[dict[str, float], dict | None]:
+    return _tuned_rule(name, "adaptive_K", baseline_params)
 
 
 def _stamp_untuned(params: dict[str, Any], fallback: dict | None) -> None:
@@ -540,7 +563,8 @@ def _reads_baseline_params(entry: dict[str, Any]) -> bool:
     return entry["kind"] in BASELINE_PARAM_KINDS or (
         entry["kind"] == "fixed_K" and entry["params"].get("K") is None
     ) or (
-        entry["kind"] == "adaptive_K" and entry["params"].get("alpha") is None
+        entry["kind"] in TUNED_RULE_BLOCKS
+        and entry["params"].get(TUNED_RULE_BLOCKS[entry["kind"]][1][0]) is None
     )
 
 
@@ -612,8 +636,8 @@ def baseline_is_tuned(
         return _tuned_k0(name, int(horizon), baseline_params)[1] is None
     elif kind == "fixed_K" and slots["K"] is None:
         return _tuned_fixed_k(name, int(horizon), baseline_params)[1] is None
-    elif kind == "adaptive_K" and slots["alpha"] is None:
-        return _tuned_adaptive_k(name, baseline_params)[1] is None
+    elif kind in TUNED_RULE_BLOCKS and slots[TUNED_RULE_BLOCKS[kind][1][0]] is None:
+        return _tuned_rule(name, kind, baseline_params)[1] is None
     return True
 
 
@@ -730,10 +754,10 @@ def resolve_params(
             params["K"], fallback = _tuned_fixed_k(name, horizon, baseline_params)
             _stamp_untuned(params, fallback)
             from_baseline = True
-    elif kind == "adaptive_K":
-        if params["alpha"] is None:  # adaptive_K_star
-            triple, fallback = _tuned_adaptive_k(name, baseline_params)
-            params.update(triple)
+    elif kind in TUNED_RULE_BLOCKS:
+        if params[TUNED_RULE_BLOCKS[kind][1][0]] is None:  # adaptive_K_star, bestmean_star
+            constants, fallback = _tuned_rule(name, kind, baseline_params)
+            params.update(constants)
             _stamp_untuned(params, fallback)
             from_baseline = True
     if from_baseline:

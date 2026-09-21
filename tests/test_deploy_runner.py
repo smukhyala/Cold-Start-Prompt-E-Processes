@@ -897,7 +897,9 @@ def test_a_finished_item_records_its_simulation_surface(tmp_path):
 #: the equality itself is no longer re-derivable -- these digests are what keeps the
 #: anchor checkable: any future edit to the file, or to what "the T=2000 keys" means,
 #: has to move one of them deliberately.
-BASELINE_PARAMS_SHA256 = "80fd3bb9f6713a9bc880e78fe5e9fe8b08c8f713043f4ea226d0e20e1546879b"
+BASELINE_PARAMS_SHA256 = "c330bd0b361dcfe251734b334b769e9ea44f083b2969d552d6d88c9426d5bffd"
+#: ... with the two `adaptive_K_star` keys (Pre-registration 4, 2026-09-20) stripped:
+BASELINE_PARAMS_PRE_ADAPTIVE_K_SHA256 = "80fd3bb9f6713a9bc880e78fe5e9fe8b08c8f713043f4ea226d0e20e1546879b"
 #: ... and with the two `fixed_K_star` keys (Pre-registration 3, 2026-09-20) stripped: the
 #: file as the M8fix re-review saw it.
 BASELINE_PARAMS_PRE_FIXED_K_SHA256 = "3f049fdbabf3d8fc5cce910000b00f508fba103d99375ab9e4e83dd360be444a"
@@ -906,6 +908,10 @@ BASELINE_PARAMS_NO_T2000_SHA256 = "df71174726d2231273a9f313cdb1c1dde712883b54803
 FIXED_K_STAR_KEYS: tuple[tuple[str, ...], ...] = (
     ("fixed_K_star",),
     ("meta", "fixed_K_star"),
+)
+ADAPTIVE_K_STAR_KEYS: tuple[tuple[str, ...], ...] = (
+    ("adaptive_K_star",),
+    ("meta", "adaptive_K_star"),
 )
 #: The six keys the T=2000 tuning added, by the path they sit at.
 T2000_KEYS: tuple[tuple[str, ...], ...] = (
@@ -953,6 +959,15 @@ def test_baseline_params_migration_is_reversible_and_keeps_the_t2000_anchor():
     # M8fix re-review saw; without the six T=2000 keys as well, it is that review's
     # pre-T=2000 state.
     stripped = json.loads(raw)
+    for path in ADAPTIVE_K_STAR_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_PRE_ADAPTIVE_K_SHA256
+    )
     for path in FIXED_K_STAR_KEYS:
         node = stripped
         for key in path[:-1]:

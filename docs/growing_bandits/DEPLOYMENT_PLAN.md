@@ -655,3 +655,55 @@ level of 0.60 scales the target by 0.67 and a level of 0.37 by 1.68 — the 2.5�
 Every null registered here is a rule the *learned policy* must beat, so adding registrations makes the
 claim "the model carries information a rule cannot" harder to sustain, not easier; the sequence 3 → 4 → 5
 → 6 is reported in full.
+
+---
+
+## Pre-registration 7 — the CRN-paired, per-cap-tuned cap sweep (registered 2026-09-21, before tuning or deployment)
+
+§4 of the results compares caps whose cells drew different seeds (Ruling 26) with constants tuned at cap 64
+only (Ruling 20), and §12.1 says the cap was mis-sized four-fold at T = 1000. This registers the sweep that
+replaces §4, and what will be read from it.
+
+### Design
+
+- **Cells:** the 8 main environments × T ∈ {200, 1000} × caps {32, 48, 64, 96, 128, 160, 200} at T = 200 and
+  {32, 48, 64, 96, 128, 192, 256, 384, 512, 1000} at T = 1000 (`run_deployment.CAPP_HORIZON_CAPS`), M = 2000,
+  test-split seeds. **Every cap of an (env, T) runs on that cell's cap-64 seed**
+  (`cells.make_matched_cell`), so `mu_star` is bit-identical across caps and `analyze_capp.py` refuses the
+  tree if it is not. Test id `capp`; never pooled with `--test cap`.
+- **Constants, selected at each cap before deployment** (roadmap 3.3, second half), on the tune / validation
+  splits at that cap and the sweep's horizons, M = 500 for every schedule so the three are selected alike:
+  `p3_star`'s (α, c) per horizon (`tune_baselines.py --cap X`), `fixed_K_star`'s K per horizon
+  (`select_fixed_k.py --cap X`), `level_star`'s (α, c, b) (`select_rule.py --rule level_star --cap X`), and
+  τ for `phi_k4` and `phi_k16` (`select_thresholds.py --cap X`). Each lands under `by_cap["X"]`; the
+  cap-64 blocks every shipped table used are untouched. A row of `capp_policies.csv` whose deployed
+  constant was *not* selected at its cap is stamped `params_tuned = False` and is not read.
+- **Policies:** `always_search`, `cp0`, `refine_after_init`, `p3_star`, `fixed_K_star`, `level_star`,
+  `phi_k4`, `phi_k16`.
+
+### What will be read (env-mean t on n = 8 throughout; nothing here is multiplicity-corrected, and nothing
+here is a claim about a policy beating another — those were Pre-registrations 2–6)
+
+1. **The cross-cap curve, paired for the first time** (`capp_crosscap.csv`): for each policy and T, regret
+   at cap X minus regret at cap 64 on the same episodes. The question §12.1 raised from the tune split —
+   does a larger cap help at T = 1000, and by how much — answered on the test split with each policy's
+   constants selected at that cap.
+2. **The schedules under a like-for-like cap** (`capp_contrasts.csv`): `level_star` − `p3_star` and
+   `level_star` − `fixed_K_star` at every cap. §12.6 established the level rule's edge at cap 64, T ≤ 200;
+   this reports whether it persists at T = 1000 and at caps where K\* is reachable, with τ and every
+   constant re-selected.
+3. **`phi_k4` − `level_star` at every cap.** Pre-registration 6 found them indistinguishable at cap 64,
+   T ≤ 200. A non-null here at a larger cap or T = 1000 would mean the model reads something the level
+   rule does not *when it has headroom*; a null everywhere closes that question too.
+4. **§4's withdrawn claims, re-measured:** `phi_k16` − `always_search` and `phi_k16` − `p3_star` at
+   cap 128 and cap = T, which the document declined to sign on unpaired seeds.
+
+### Run, in order
+
+```
+for X in 32 48 96 128: tune / select at X for horizons 200,1000; for X in 160 200: horizon 200;
+for X in 192 256 384 512 1000: horizon 1000   (tune_baselines, select_fixed_k, select_rule level_star,
+                                              select_thresholds for the two learned variants)
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test capp --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/analyze_capp.py
+```

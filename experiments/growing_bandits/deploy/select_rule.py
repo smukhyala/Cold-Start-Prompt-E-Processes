@@ -37,6 +37,7 @@ for _p in (ROOT / "src", HERE.parent, HERE):
 
 import cells  # noqa: E402
 import k_star_envelope as ks  # noqa: E402
+import policy_table as pt  # noqa: E402
 import run_deployment as rd  # noqa: E402
 
 from cold_start.growing.deploy.harness import CellSpec, run_cell  # noqa: E402
@@ -150,18 +151,22 @@ def select(
     n_replicates: int = N_REPLICATES,
     out_dir: Path = rd.DEFAULT_OUT_DIR,
     workers: int = 1,
+    cap: int = CAP,
 ) -> pd.DataFrame:
+    """Select the rule's constants at `cap`. At the file's tuning cap the block is written at
+    the top level; at any other cap under ``by_cap["<cap>"]`` (`policy_table.merge_cap_block`)."""
     rule = RULES[rule_name]
     out_dir = Path(out_dir)
+    cap = int(cap)
     candidates = tuple(candidates) if candidates is not None else rule.candidates()
     names = list(rule.param_names)
     items = [
-        Item(cells.make_cell(SPLIT, env_id, int(T), CAP, int(n_replicates)), rule.kind,
+        Item(cells.make_cell(SPLIT, env_id, int(T), cap, int(n_replicates)), rule.kind,
              tuple((k, float(cand[k])) for k in names))
         for env_id in env_ids for T in horizons for cand in candidates
     ]
     log.info("%s: %d items (%d envs x %d horizons x %d candidates), M=%d, split=%s, cap=%d",
-             rule_name, len(items), len(env_ids), len(horizons), len(candidates), n_replicates, SPLIT, CAP)
+             rule_name, len(items), len(env_ids), len(horizons), len(candidates), n_replicates, SPLIT, cap)
     t0 = time.time()
     results: list[dict] = []
     if int(workers) <= 1:
@@ -195,22 +200,19 @@ def select(
              {k: float(win[k]) for k in names}, win["regret"], len(env_ids) * len(horizons), time.time() - t0)
 
     path = out_dir / "baseline_params.json"
-    params = json.load(open(path)) if path.exists() else {}
-    params[rule.block] = {**{k: float(win[k]) for k in names}, "pooled_regret": float(win["regret"])}
-    params.setdefault("meta", {})[rule.block] = {
-        "select_split": SPLIT, "cap": CAP, "n_replicates": int(n_replicates),
+    params = json.load(open(path)) if path.exists() else {"meta": {"cap": cap}}
+    block = {**{k: float(win[k]) for k in names}, "pooled_regret": float(win["regret"])}
+    meta = {
+        "select_split": SPLIT, "cap": cap, "n_replicates": int(n_replicates),
         "horizons": [int(T) for T in horizons], "envs": list(env_ids),
         "grid": [dict(c) for c in candidates], "n_candidates": len(candidates),
         "pooling": "equal weight over envs of the cell mean regret", **rule.meta,
     }
-    tmp = path.with_suffix(".json.tmp")
-    with open(tmp, "w") as fh:
-        json.dump(params, fh, indent=2)
-        fh.write("\n")
-    tmp.replace(path)
+    pt.write_baseline_params(path, pt.merge_cap_block(params, cap, {rule.block: block, "meta": {rule.block: meta}}))
     tables = out_dir / "tables"
     tables.mkdir(parents=True, exist_ok=True)
-    frame.to_csv(tables / rule.table, index=False)
+    table = rule.table if cap == CAP else rule.table.replace(".csv", f"_cap{cap}.csv")
+    frame.to_csv(tables / table, index=False)
     return frame
 
 
@@ -220,9 +222,13 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--replicates", type=int, default=N_REPLICATES)
     ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR)
+    ap.add_argument("--cap", type=int, default=CAP)
+    ap.add_argument("--horizons", default=",".join(str(T) for T in HORIZONS))
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    return select(args.rule, n_replicates=args.replicates, out_dir=args.out_dir, workers=args.workers)
+    horizons = tuple(int(x) for x in args.horizons.split(",") if x.strip())
+    return select(args.rule, horizons=horizons, n_replicates=args.replicates, out_dir=args.out_dir,
+                  workers=args.workers, cap=args.cap)
 
 
 if __name__ == "__main__":

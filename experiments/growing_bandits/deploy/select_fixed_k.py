@@ -31,6 +31,7 @@ for _p in (ROOT / "src", HERE.parent, HERE):
 
 import cells  # noqa: E402
 import k_star_envelope as ks  # noqa: E402
+import policy_table as pt  # noqa: E402
 import run_deployment as rd  # noqa: E402
 
 log = logging.getLogger("deploy.select_fixed_k")
@@ -56,44 +57,45 @@ def select(
     n_replicates: int = N_REPLICATES,
     out_dir: Path = rd.DEFAULT_OUT_DIR,
     workers: int = 1,
+    cap: int = CAP,
 ) -> pd.DataFrame:
+    """Select K per horizon at `cap`. At the file's tuning cap the block is written at the
+    top level; at any other cap under ``by_cap["<cap>"]`` (`policy_table.merge_cap_block`)."""
     out_dir = Path(out_dir)
+    cap = int(cap)
     items = []
     for env_id in env_ids:
         for T in horizons:
-            spec = cells.make_cell(SPLIT, env_id, int(T), CAP, int(n_replicates))
-            for K in candidates(int(T), k_grid):
+            spec = cells.make_cell(SPLIT, env_id, int(T), cap, int(n_replicates))
+            for K in candidates(int(T), k_grid, cap):
                 items.append(ks.Item(split=SPLIT, spec=spec, K=int(K)))
     log.info("%d candidates: %d envs x %d horizons, <=%d K each, M=%d, split=%s, cap=%d",
-             len(items), len(env_ids), len(horizons), len(k_grid), n_replicates, SPLIT, CAP)
+             len(items), len(env_ids), len(horizons), len(k_grid), n_replicates, SPLIT, cap)
     frame = ks.run_items(items, workers=workers)
 
     path = out_dir / "baseline_params.json"
-    params = json.load(open(path)) if path.exists() else {}
+    params = json.load(open(path)) if path.exists() else {"meta": {"cap": cap}}
     block = {}
     pooled = frame[(frame["level"] == "pooled") & frame["is_argmin"]]
     for _, r in pooled.sort_values("horizon").iterrows():
         block[str(int(r["horizon"]))] = {"K": int(r["K"]), "pooled_regret": float(r["regret"])}
-        log.info("T=%-5d K*=%-3d pooled validation regret %.6f", r["horizon"], r["K"], r["regret"])
-    params[BLOCK] = {**params.get(BLOCK, {}), **block}
-    params.setdefault("meta", {})[BLOCK] = {
-        "select_split": SPLIT, "cap": CAP, "n_replicates": int(n_replicates),
+        log.info("cap=%d T=%-5d K*=%-3d pooled validation regret %.6f", cap, r["horizon"], r["K"], r["regret"])
+    existing_block = pt.baseline_params_for_cap(params, cap)[0].get(BLOCK, {})
+    tuned_cap = pt.tuning_cap(params)
+    if tuned_cap is not None and int(tuned_cap) != cap:
+        existing_block = ((params.get(pt.BY_CAP_KEY) or {}).get(str(cap)) or {}).get(BLOCK, {})
+    meta = {
+        "select_split": SPLIT, "cap": cap, "n_replicates": int(n_replicates),
         "k_grid": [int(k) for k in k_grid], "envs": list(env_ids), "horizons": [int(T) for T in horizons],
         "pooling": "equal weight over envs of the cell mean regret",
     }
-    # Serialized exactly as `tune_baselines.py` writes it (indent 2, trailing newline),
-    # existing keys in their existing order and the new block appended: the per-cap
-    # migration is only reversible while the tuned blocks are contiguous, and the audit
-    # anchor on this file (`test_deploy_runner.py`) is a byte hash.
-    tmp = path.with_suffix(".json.tmp")
-    with open(tmp, "w") as fh:
-        json.dump(params, fh, indent=2)
-        fh.write("\n")
-    tmp.replace(path)
+    params = pt.merge_cap_block(params, cap, {BLOCK: {**existing_block, **block}, "meta": {BLOCK: meta}})
+    pt.write_baseline_params(path, params)
     tables = out_dir / "tables"
     tables.mkdir(parents=True, exist_ok=True)
-    frame.to_csv(tables / "fixed_k_selection.csv", index=False)
-    log.info("wrote %s and %s[%s]", tables / "fixed_k_selection.csv", path.name, BLOCK)
+    table = tables / ("fixed_k_selection.csv" if cap == CAP else f"fixed_k_selection_cap{cap}.csv")
+    frame.to_csv(table, index=False)
+    log.info("wrote %s and %s[%s] at cap %d", table, path.name, BLOCK, cap)
     return frame
 
 
@@ -102,9 +104,13 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--replicates", type=int, default=N_REPLICATES)
     ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR)
+    ap.add_argument("--cap", type=int, default=CAP)
+    ap.add_argument("--horizons", default=",".join(str(T) for T in cells.HORIZONS))
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    return select(n_replicates=args.replicates, out_dir=args.out_dir, workers=args.workers)
+    horizons = tuple(int(x) for x in args.horizons.split(",") if x.strip())
+    return select(horizons=horizons, n_replicates=args.replicates, out_dir=args.out_dir,
+                  workers=args.workers, cap=args.cap)
 
 
 if __name__ == "__main__":

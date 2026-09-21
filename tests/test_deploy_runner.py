@@ -954,16 +954,22 @@ def _dump_baseline_params(params: dict) -> bytes:
 def test_baseline_params_migration_is_reversible_and_keeps_the_t2000_anchor():
     """The per-cap migration must not cost the audit anchor on the real file."""
     raw = pt.DEFAULT_BASELINE_PARAMS_PATH.read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == BASELINE_PARAMS_SHA256
-    params = json.loads(raw)
-    assert pt.tuning_cap(params) == 64
+    params_on_disk = json.loads(raw)
+    assert pt.tuning_cap(params_on_disk) == 64
+    # Per-cap constants (roadmap 3.3) live under `by_cap` beside the flat cap-64 blocks.
+    # They are tuning outputs that grow with every `--cap X` run, so the anchor is pinned
+    # on the file WITHOUT that key: the flat cap-64 blocks every shipped table was built
+    # from. The in-memory migration below is likewise defined on the flat form.
+    params = {k: v for k, v in params_on_disk.items() if k != pt.BY_CAP_KEY}
+    raw_flat = _dump_baseline_params(params)
+    assert hashlib.sha256(raw_flat).hexdigest() == BASELINE_PARAMS_SHA256
 
     # Reversible, byte for byte, on the file as shipped -- which is also why the file is
     # not rewritten: the migration is a pure in-memory view of it.
     migrated = pt.migrate_baseline_params(params)
     assert set(migrated[pt.BY_CAP_KEY]) == {"64"}
     assert not (set(migrated) & set(pt.TUNED_BLOCKS))
-    assert _dump_baseline_params(pt.unmigrate_baseline_params(migrated)) == raw
+    assert _dump_baseline_params(pt.unmigrate_baseline_params(migrated)) == raw_flat
     # Migrating twice, or unmigrating an unmigrated file, is an error, not a silent no-op.
     with pytest.raises(ValueError):
         pt.migrate_baseline_params(migrated)
@@ -977,7 +983,7 @@ def test_baseline_params_migration_is_reversible_and_keeps_the_t2000_anchor():
     # The anchor, in two links. Without the two fixed_K_star keys the file is the one the
     # M8fix re-review saw; without the six T=2000 keys as well, it is that review's
     # pre-T=2000 state.
-    stripped = json.loads(raw)
+    stripped = json.loads(raw_flat)
     for path in LEVEL_STAR_KEYS:
         node = stripped
         for key in path[:-1]:

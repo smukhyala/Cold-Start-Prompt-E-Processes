@@ -392,6 +392,81 @@ def unmigrate_baseline_params(baseline_params: dict) -> dict:
     return out
 
 
+def merge_cap_block(params: dict, cap: int, block: dict) -> dict:
+    """`params` with `block`'s constants stored for `cap` (pure; key order preserved).
+
+    At the file's tuning cap (``meta.cap``) the block's keys go at the top level, as every
+    writer always put them; at any other cap they go under ``by_cap["<cap>"]``, where
+    `baseline_params_for_cap` reads them, and the cap-64 blocks are not touched. A
+    ``meta`` key in `block` merges into the corresponding ``meta`` rather than replacing it.
+    The roadmap's per-cap schema (3.3), on the writer side.
+    """
+    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in params.items()}
+    tuning = tuning_cap(out)
+    if tuning is not None and int(cap) == int(tuning):
+        for key, value in block.items():
+            if key == "meta":
+                out.setdefault("meta", {}).update(value)
+            else:
+                out[key] = value
+        return out
+    by_cap = dict(out.get(BY_CAP_KEY) or {})
+    entry = dict(by_cap.get(str(int(cap))) or {})
+    for key, value in block.items():
+        if key == "meta":
+            entry["meta"] = {**(entry.get("meta") or {}), **value}
+        else:
+            entry[key] = value
+    by_cap[str(int(cap))] = entry
+    out[BY_CAP_KEY] = by_cap
+    return out
+
+
+def write_baseline_params(path: str | Path, params: dict) -> None:
+    """Serialize as `tune_baselines.py` does (indent 2, trailing newline), key order kept."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(params, indent=2) + "\n")
+    tmp.replace(path)
+
+
+def merge_thresholds_block(thresholds: dict, cap: int, entries: dict, tuning_cap_: int = 64) -> dict:
+    """`thresholds.json` with `entries` stored for `cap`: top level at the tuning cap, else
+    under ``by_cap["<cap>"]`` (pure)."""
+    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in thresholds.items()}
+    if int(cap) == int(tuning_cap_):
+        out.update(entries)
+        return out
+    by_cap = dict(out.get(BY_CAP_KEY) or {})
+    by_cap[str(int(cap))] = {**(by_cap.get(str(int(cap))) or {}), **entries}
+    out[BY_CAP_KEY] = by_cap
+    return out
+
+
+def tau_for_cap(
+    name: str, variant: str, thresholds: dict | None, *, cap: int | None,
+    fallback: float | None = None, fallback_source: str = "artifact_tau",
+    horizon_holdout: bool = False, tuning_cap_: int = 64,
+) -> tuple[float | None, str, int | None]:
+    """``(tau, source, tau_cap)``: the threshold selected at `cap` when `thresholds.json`
+    holds one under ``by_cap``, else the flat (cap-``tuning_cap_``) entry.
+
+    ``tau_cap`` is the cap the returned tau was selected at (``None`` when it did not come
+    from the file); a caller deploying at a different cap stamps the mismatch.
+    """
+    if thresholds and cap is not None:
+        block = (thresholds.get(BY_CAP_KEY) or {}).get(str(int(cap)))
+        if block and block.get(variant):
+            tau, source = _tuned_tau(name, variant, block, fallback, fallback_source,
+                                     horizon_holdout=horizon_holdout)
+            if source != fallback_source:
+                return tau, source, int(cap)
+    tau, source = _tuned_tau(name, variant, thresholds, fallback, fallback_source,
+                             horizon_holdout=horizon_holdout)
+    return tau, source, (int(tuning_cap_) if source != fallback_source else None)
+
+
 def _lookup_by_number(table: dict, key: float, tol: float = 1e-6):
     """Fetch ``table[key]`` where the JSON keys are stringified numbers."""
     for k, v in table.items():
@@ -445,8 +520,10 @@ PARAMS_FALLBACK = "params_fallback"
 #: and `run_deployment.stale_reason` -- are byte-identical to what every earlier run
 #: wrote.
 PARAMS_CAP = "params_cap"
+#: The cap a learned policy's tau was selected at, when it is not the cap it deploys at.
+TAU_CAP = "tau_cap"
 #: Provenance recorded in the params that is not a policy constructor argument.
-PROVENANCE_KEYS: tuple[str, ...] = ("tau_source", PARAMS_TUNED, PARAMS_FALLBACK, PARAMS_CAP)
+PROVENANCE_KEYS: tuple[str, ...] = ("tau_source", PARAMS_TUNED, PARAMS_FALLBACK, PARAMS_CAP, TAU_CAP)
 
 #: The cap `baseline_params.json` records its tuning under, and the optional per-cap
 #: block a future retune would add (`baseline_params_for_cap`).
@@ -785,14 +862,15 @@ def resolve_params(
         if params["tau"] is None:
             if artifact is None:
                 artifact = load_model(path)
-            params["tau"], params["tau_source"] = _tuned_tau(
-                name,
-                variant,
-                thresholds,
-                artifact.get("tau"),
-                "artifact_tau",
-                horizon_holdout=bool(heldout_horizons(artifact)),
+            params["tau"], params["tau_source"], tau_cap = tau_for_cap(
+                name, variant, thresholds, cap=cap, fallback=artifact.get("tau"),
+                fallback_source="artifact_tau", horizon_holdout=bool(heldout_horizons(artifact)),
             )
+            if cap is not None and tau_cap is not None and int(tau_cap) != int(cap):
+                # Ruling 20's asymmetry, now recorded: a tau selected at one cap deployed at another.
+                _warn_once(name, f"tau selected at cap {tau_cap} but deploying at cap {cap}")
+                params[TAU_CAP] = int(tau_cap)
+                params[PARAMS_TUNED] = False
         else:
             params["tau_source"] = "fixed"
         params["artifact"] = str(path)

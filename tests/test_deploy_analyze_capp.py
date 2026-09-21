@@ -19,7 +19,11 @@ import analyze_capp as ac  # noqa: E402
 
 ENVS = [f"e{i}" for i in range(5)]
 CAPS = (32, 64, 128)
-POLICIES = {"always_search": 0.0, "p3_star": -0.002, "level_star": -0.006, "phi_k4": -0.006}
+POLICIES = {"always_search": 0.0, "p3_star": -0.002, "level_star": -0.006, "phi_fake": -0.006}
+#: What the fixture's tuning files say each policy deploys at each cap (constructor params).
+P3 = {"alpha": 0.5, "c": 3.0}
+P3_128 = {"alpha": 0.5, "c": 1.2}
+LEVEL = {"alpha": 0.5, "c": 2.0, "b": 2.0}
 
 
 def _write(root: Path, env: str, T: int, cap: int, seed: int, n: int = 40, break_pairing: bool = False) -> None:
@@ -40,15 +44,26 @@ def _write(root: Path, env: str, T: int, cap: int, seed: int, n: int = 40, break
         }).to_parquet(path, index=False)
 
 
-def _manifest(root: Path, tuned: dict[tuple[str, int], bool]) -> None:
+def _manifest(root: Path) -> None:
+    """Records as the runner writes them: p3_star at cap 32 deployed the cap-64 constants (no cap-32 block
+    exists), at cap 128 its own; level_star the same block everywhere; phi_k4 is not a registered policy
+    of this fixture's table and carries whatever it carried."""
     lines = []
     for cell_dir in (root / "episodes" / "capp").iterdir():
         cap = int(cell_dir.name.split("_cap")[-1])
         for pq in cell_dir.glob("*.parquet"):
-            params = {} if tuned.get((pq.stem, cap), True) else {"params_tuned": False, "params_cap": 64}
+            if pq.stem == "p3_star":
+                params = dict(P3_128) if cap == 128 else {**P3, **({"params_tuned": False, "params_cap": 64} if cap == 32 else {})}
+            elif pq.stem == "level_star":
+                params = dict(LEVEL)
+            else:
+                params = {}
             lines.append(json.dumps({"kind": "completion", "test": "capp", "cell": cell_dir.name,
                                      "policy": pq.stem, "params": params}))
     (root / "manifest_capp.jsonl").write_text("\n".join(lines) + "\n")
+    json.dump({"meta": {"cap": 64}, "p3_star": {"200": P3}, "level_star": LEVEL,
+               "by_cap": {"128": {"p3_star": {"200": P3_128}, "level_star": LEVEL}}},
+              open(root / "baseline_params.json", "w"))
 
 
 @pytest.fixture
@@ -58,7 +73,7 @@ def run(tmp_path):
         for T in (200,):
             for cap in CAPS:
                 _write(root, env, T, cap, seed=100 + i)  # same seed for every cap: paired
-    _manifest(root, {("p3_star", 32): False})
+    _manifest(root)
     return root
 
 
@@ -75,13 +90,18 @@ def test_policy_table_and_within_cap_contrasts(run):
     pol = out["policies"]
     assert set(pol["policy"]) == set(POLICIES) and set(pol["cap"]) == set(CAPS)
     row = pol[(pol["policy"] == "p3_star") & (pol["cap"] == 32)].iloc[0]
-    assert row["n_envs"] == 5 and row["params_tuned"] is False or row["params_tuned"] == False  # noqa: E712
+    assert row["n_envs"] == 5 and not row["params_tuned"], "cap-64 constants deployed at cap 32"
     assert pol[(pol["policy"] == "p3_star") & (pol["cap"] == 64)].iloc[0]["params_tuned"]
+    assert pol[(pol["policy"] == "p3_star") & (pol["cap"] == 128)].iloc[0]["params_tuned"]
+    assert pol[(pol["policy"] == "level_star") & (pol["cap"] == 32)].iloc[0]["params_tuned"] == False  # noqa: E712
+    assert pol[(pol["policy"] == "level_star") & (pol["cap"] == 128)].iloc[0]["params_tuned"]
     con = out["contrasts"]
-    pair = con[(con["policy"] == "phi_k4") & (con["reference"] == "level_star") & (con["cap"] == 64)].iloc[0]
-    assert abs(pair["delta"]) < 0.002 and pair["n_envs"] == 5 and pair["cluster_method"] == "env_mean_t"
+    assert set(con["policy"]).isdisjoint({"phi_fake"}), "only registered pairs are computed"
     pair = con[(con["policy"] == "level_star") & (con["reference"] == "p3_star") & (con["cap"] == 64)].iloc[0]
     assert pair["delta"] == pytest.approx(-0.004, abs=0.001)
+    assert pair["n_envs"] == 5 and pair["cluster_method"] == "env_mean_t"
+    pair = con[(con["policy"] == "level_star") & (con["reference"] == "fixed_K_star")]
+    assert pair.empty, "a pair whose reference was not deployed is skipped, not fabricated"
 
 
 def test_cross_cap_rows_are_paired_against_cap_64(run):

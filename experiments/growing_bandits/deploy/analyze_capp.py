@@ -108,6 +108,27 @@ def tuned_flags(out_dir: Path) -> dict[tuple[str, str], dict]:
     return out
 
 
+def tuned_now(record_params: dict, policy: str, horizon: int, cap: int, *, baseline_params, thresholds) -> bool:
+    """Whether the item's constants are the ones this table would select at `cap` today.
+
+    Re-derived rather than read from the manifest stamp, as `mark_untuned_baselines` does
+    for the main tables: a stamp written before a per-cap selection existed says
+    ``tau_cap = 64`` even when the cap-64 tau happens to equal the cap's own selection --
+    the episodes are then exactly the tuned ones, and the stamp is the only stale thing.
+    """
+    if policy not in rd.pt.POLICIES:
+        return True
+    entry = rd.pt.POLICIES[policy]
+    artifact = None
+    if entry["kind"] == "model":
+        artifact = rd._artifact(str(rd.pt.artifact_path(entry["params"]["artifact"], rd.pt.DEFAULT_MODELS_DIR)))
+    fresh = rd.pt.resolve_params(policy, int(horizon), cap=int(cap), baseline_params=baseline_params,
+                                 thresholds=thresholds, models_dir=rd.pt.DEFAULT_MODELS_DIR, artifact=artifact)
+    if not rd.pt.params_are_tuned(fresh):
+        return False
+    return rd.pt.constructor_params(fresh) == rd.pt.constructor_params(record_params or {})
+
+
 def _stratum(diffs: dict[str, np.ndarray], env_of: dict[str, str], *, n_boot: int, seed: int) -> dict:
     sp = stats.stratified_pooled(diffs, n_boot=n_boot, seed=seed)
     cm = pd.DataFrame({"env_id": [env_of[c] for c in diffs], "value": [sp["cell_means"][c] for c in diffs]})
@@ -125,13 +146,18 @@ def analyze(out_dir: Path, *, n_boot: int = 10_000) -> dict[str, pd.DataFrame]:
     frame = load_episodes(out_dir)
     assert_paired(frame)
     flags = tuned_flags(out_dir)
+    baseline_params = rd.pt.load_baseline_params(out_dir / "baseline_params.json")
+    thresholds = rd.pt.load_thresholds(out_dir / "thresholds.json")
 
     policies_rows: list[dict] = []
     for (T, cap, policy), sub in frame.groupby(["horizon", "cap", "policy"]):
         per_cell = sub.groupby("cell").agg(regret=(REGRET, "mean"), k_final=("k_final", "mean"),
                                            search_frac=("search_frac", "mean"), env_id=("env_id", "first"))
         params = [flags.get((c, policy), {}) for c in per_cell.index]
-        tuned = all(p.get(rd.pt.PARAMS_TUNED, True) for p in params) if params else True
+        tuned = all(
+            tuned_now(p, policy, int(T), int(cap), baseline_params=baseline_params, thresholds=thresholds)
+            for p in params
+        ) if params else True
         policies_rows.append({
             "test": TEST, "horizon": int(T), "cap": int(cap), "policy": policy,
             "regret": float(per_cell["regret"].mean()),

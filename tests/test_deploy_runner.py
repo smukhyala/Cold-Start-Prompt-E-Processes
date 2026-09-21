@@ -728,6 +728,13 @@ def test_worker_init_records_the_pool_parent_for_every_pooled_run(tmp_path):
 #: constant only because the registry (`SIM_SURFACE_EXCLUDED`) is out: `policy_table.py`
 #: is the one file that moved across those revisions.
 SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA = "97704d2795f7"
+#: The surface after Pre-registration 4 (2026-09-20) added the tail-adaptive schedule:
+#: `TailAdaptiveSchedule` + `frac_within_of_best` in `search_policies.py` and the
+#: `adaptive_K` kind in `deploy/rules.py` -- 52 + 8 inserted lines, 0 deleted, no existing
+#: line touched (git diff against ce3820a). Every episode produced before it carries the
+#: value above in its manifest line; only `adaptive_K_star` items carry this one, and the
+#: analyses that mix them run under `--allow-mixed-sim` with that diff as the reason.
+SIM_SURFACE_SHA_SINCE_ADAPTIVE_K = "2ad982bf77bb"
 
 
 def _sim_surface_closure() -> set[str]:
@@ -813,7 +820,8 @@ def test_sim_surface_sha_is_stable_deterministic_and_source_dependent(tmp_path, 
     # hashes to this same value, so nothing in the shipped tree was produced by a
     # different simulator. A legitimate change to a surface module moves it, and this
     # assertion is where that has to be acknowledged deliberately.
-    assert first == SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA
+    assert first == SIM_SURFACE_SHA_SINCE_ADAPTIVE_K
+    assert first != SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA, "the acknowledged move must be a move"
     assert len(first) == 12 and int(first, 16) >= 0
     rd.sim_surface_sha.cache_clear()
     assert rd.sim_surface_sha() == first

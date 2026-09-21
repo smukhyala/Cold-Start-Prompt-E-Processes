@@ -81,6 +81,9 @@ _PLACEHOLDER_P3_STAR = {
 }
 _PLACEHOLDER_RULE_TAU = float(rules.POLICY_SPECS["reservoir_rule"]["tau"])
 _PLACEHOLDER_FIXED_K = int(rules.POLICY_SPECS["fixed_K16"]["K"])
+_PLACEHOLDER_ADAPTIVE_K = {
+    k: float(rules.POLICY_SPECS["adaptive_K"][k]) for k in ("alpha", "c", "b")
+}
 
 # Which `rules.POLICY_SPECS` entry each kind is built through; `params` override the
 # rest, so only the kind of the registered entry matters here.
@@ -92,6 +95,7 @@ _SPEC_FOR_KIND: dict[str, str] = {
     "power": "power_sqrt",
     "cp0": "cp0",
     "reservoir_rule": "reservoir_rule",
+    "adaptive_K": "adaptive_K",
     "model": "model",
 }
 
@@ -148,6 +152,14 @@ POLICIES: dict[str, dict[str, Any]] = {
     "fixed_K_star": {
         "kind": "fixed_K",
         "params": {"K": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
+    # Pre-registration 4's null model: K_target = c * T^alpha * (1 + b * (1 - q_t)), one
+    # (alpha, c, b) for every horizon, selected on validation (`select_adaptive_k.py`).
+    "adaptive_K_star": {
+        "kind": "adaptive_K",
+        "params": {"alpha": None, "c": None, "b": None},
         "group": "baseline",
         "requires": ["baseline_params"],
     },
@@ -417,7 +429,7 @@ PROVENANCE_KEYS: tuple[str, ...] = ("tau_source", PARAMS_TUNED, PARAMS_FALLBACK,
 TUNING_CAP_KEY = "cap"
 BY_CAP_KEY = "by_cap"
 #: The blocks a per-cap retune would have to duplicate; everything else is metadata.
-TUNED_BLOCKS: tuple[str, ...] = ("power", "p3_star", "refine_after_init", "fixed_K_star")
+TUNED_BLOCKS: tuple[str, ...] = ("power", "p3_star", "refine_after_init", "fixed_K_star", "adaptive_K_star")
 
 
 def _tuned_c(
@@ -478,6 +490,15 @@ def _tuned_fixed_k(name: str, horizon: int, baseline_params: dict | None) -> tup
     return int(sel["K"]), None
 
 
+def _tuned_adaptive_k(name: str, baseline_params: dict | None) -> tuple[dict[str, float], dict | None]:
+    ph = dict(_PLACEHOLDER_ADAPTIVE_K)
+    sel = (baseline_params or {}).get("adaptive_K_star") or {}
+    if not all(k in sel for k in ("alpha", "c", "b")):
+        _warn_once(name, f"no validation-selected (alpha, c, b); placeholder {ph}")
+        return ph, ph
+    return {k: float(sel[k]) for k in ("alpha", "c", "b")}, None
+
+
 def _stamp_untuned(params: dict[str, Any], fallback: dict | None) -> None:
     """Record a placeholder substitution in the params it was substituted into."""
     if fallback is None:
@@ -518,6 +539,8 @@ def _reads_baseline_params(entry: dict[str, Any]) -> bool:
     one `fixed_K` whose K is a ``None`` slot (a fixed integer like `fixed_K16` is not)."""
     return entry["kind"] in BASELINE_PARAM_KINDS or (
         entry["kind"] == "fixed_K" and entry["params"].get("K") is None
+    ) or (
+        entry["kind"] == "adaptive_K" and entry["params"].get("alpha") is None
     )
 
 
@@ -589,6 +612,8 @@ def baseline_is_tuned(
         return _tuned_k0(name, int(horizon), baseline_params)[1] is None
     elif kind == "fixed_K" and slots["K"] is None:
         return _tuned_fixed_k(name, int(horizon), baseline_params)[1] is None
+    elif kind == "adaptive_K" and slots["alpha"] is None:
+        return _tuned_adaptive_k(name, baseline_params)[1] is None
     return True
 
 
@@ -703,6 +728,12 @@ def resolve_params(
     elif kind == "fixed_K":
         if params["K"] is None:  # fixed_K_star
             params["K"], fallback = _tuned_fixed_k(name, horizon, baseline_params)
+            _stamp_untuned(params, fallback)
+            from_baseline = True
+    elif kind == "adaptive_K":
+        if params["alpha"] is None:  # adaptive_K_star
+            triple, fallback = _tuned_adaptive_k(name, baseline_params)
+            params.update(triple)
             _stamp_untuned(params, fallback)
             from_baseline = True
     if from_baseline:

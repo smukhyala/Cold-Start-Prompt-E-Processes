@@ -38,6 +38,7 @@ from cold_start.growing.search_policies import (
     EvidenceGatedSchedule,
     PowerSchedule,
     SearchPolicy,
+    TailAdaptiveSchedule,
     UniformRandom,
 )
 from cold_start.growing.state import GrowingState
@@ -65,6 +66,8 @@ POLICY_SPECS: dict[str, dict[str, Any]] = {
     "bracket": {"kind": "bracket", "base_width": 4},
     # P11 hand rule; `tau` selected on validation seeds.
     "reservoir_rule": {"kind": "reservoir_rule", "tau": 1.0},
+    # Pre-registration 4's null model: K_target = c * T^alpha * (1 + b * (1 - q_t)).
+    "adaptive_K": {"kind": "adaptive_K", "alpha": 0.5, "c": 2.0, "b": 0.0},
     # Learned (P4-P10, P12): `artifact` (path or loaded dict) must come from `params`.
     "model": {"kind": "model"},
 }
@@ -77,6 +80,7 @@ KINDS: tuple[str, ...] = (
     "power",
     "cp0",
     "bracket",
+    "adaptive_K",
     "model",
     "reservoir_rule",
 )
@@ -233,6 +237,10 @@ def make_policy(
         return BracketExpansion(base_width=int(spec.get("base_width", 4)), rng=rng)
     if kind == "reservoir_rule":
         return ReservoirRule(tau=float(spec.get("tau", 1.0)), rng=rng)
+    if kind == "adaptive_K":
+        return TailAdaptiveSchedule(
+            alpha=float(spec["alpha"]), c=float(spec["c"]), b=float(spec.get("b", 0.0)), rng=rng
+        )
     # kind == "model"
     artifact = _resolve_artifact(spec.get("artifact"), artifact_dir)
     return ModelPolicy(

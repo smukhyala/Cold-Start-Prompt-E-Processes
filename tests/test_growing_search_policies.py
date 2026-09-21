@@ -158,3 +158,63 @@ def test_mixture_has_ten_distinct_policies():
 )
 def test_registry_round_trip(name: str, cls: type):
     assert get_registered("search_policy", name) is cls
+
+
+# ---- the environment-adaptive schedule (DEPLOYMENT_PLAN.md, Pre-registration 4) --------------
+
+
+def _state_with_means(post_rows: list[list[float]], n_pulls: int = 10) -> GrowingState:
+    """A state whose held arms have the given posterior means (`(S+1)/(n+2)`), per replicate."""
+    m = len(post_rows)
+    k = len(post_rows[0])
+    s = GrowingState(n_replicates=m, capacity=k, horizon=200, base_seed=5)
+    for j in range(k):
+        s.add_arms(np.full(m, 0.5, dtype=np.float32), np.full(m, j, dtype=np.int32))
+    n = s.view(s.n)
+    S = s.view(s.S)
+    for i, row in enumerate(post_rows):
+        for j, post in enumerate(row):
+            n[i, j] = n_pulls
+            S[i, j] = post * (n_pulls + 2) - 1  # (S+1)/(n+2) == post
+    return s
+
+
+def test_adaptive_schedule_reads_the_fraction_of_arms_near_the_best():
+    from cold_start.growing.search_policies import TailAdaptiveSchedule, frac_within_of_best
+
+    thin = [0.70, 0.69, 0.68, 0.67]   # every arm within 0.05 of the best -> q = 1
+    heavy = [0.70, 0.40, 0.30, 0.20]  # only the best itself -> q = 0.25
+    s = _state_with_means([thin, heavy])
+    q = frac_within_of_best(s, 0.05)
+    assert q.tolist() == pytest.approx([1.0, 0.25])
+    # b = 0: a plain c * T^alpha schedule, identical for both replicates.
+    plain = TailAdaptiveSchedule(alpha=0.5, c=1.0, b=0.0)
+    ctx = _ctx(t=10, horizon=100)
+    assert plain.target(s, ctx).tolist() == pytest.approx([10.0, 10.0])
+    # b > 0: the heavy-tailed replicate's target grows by (1 + b * (1 - q)); the thin one's does not.
+    adaptive = TailAdaptiveSchedule(alpha=0.5, c=1.0, b=2.0)
+    assert adaptive.target(s, ctx).tolist() == pytest.approx([10.0, 10.0 * (1 + 2 * 0.75)])
+    # And the decision is K_t < target: both hold 4 arms, so both search here...
+    assert adaptive.should_search(s, ctx).tolist() == [True, True]
+    # ...but at c = 0.4 (target 4 vs 10) only the heavy-tailed replicate keeps recruiting.
+    tight = TailAdaptiveSchedule(alpha=0.5, c=0.4, b=2.0)
+    assert tight.target(s, ctx).tolist() == pytest.approx([4.0, 10.0])
+    assert tight.should_search(s, ctx).tolist() == [False, True]
+
+
+def test_adaptive_schedule_target_depends_on_the_horizon_not_the_clock():
+    """K_target = c * T^alpha * (...): a *fixed-K-per-horizon* rule, reached as fast as possible."""
+    from cold_start.growing.search_policies import TailAdaptiveSchedule
+
+    s = _state_with_means([[0.7, 0.69, 0.68]])
+    rule = TailAdaptiveSchedule(alpha=0.5, c=2.0, b=0.0)
+    assert rule.target(s, _ctx(t=3, horizon=100)).tolist() == pytest.approx([20.0])
+    assert rule.target(s, _ctx(t=90, horizon=100)).tolist() == pytest.approx([20.0])
+    assert rule.target(s, _ctx(t=3, horizon=400)).tolist() == pytest.approx([40.0])
+
+
+def test_adaptive_schedule_opens_with_no_arms_and_is_registered():
+    from cold_start.growing.search_policies import TailAdaptiveSchedule
+
+    assert TailAdaptiveSchedule(alpha=0.5, c=1.0, b=1.0).should_search(_state(0), _ctx()).all()
+    assert get_registered("search_policy", "adaptive_K") is TailAdaptiveSchedule

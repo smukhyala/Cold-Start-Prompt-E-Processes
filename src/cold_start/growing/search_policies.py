@@ -112,6 +112,58 @@ class PowerSchedule(SearchPolicy):
         return _force_first_arm(state, state.Kt < target)
 
 
+def frac_within_of_best(state: GrowingState, band: float) -> np.ndarray:
+    """Per replicate, the fraction of held arms whose posterior mean is within `band` of
+    the best held arm's -- `est_frac_arms_within_5pct_of_best` at ``band=0.05``, computed
+    from ``(S+1)/(n+2)`` alone. 1.0 when a replicate holds no arms."""
+    post = state.view(state.empirical_mean())
+    held = np.arange(post.shape[1])[None, :] < state.Kt[:, None]
+    k = np.maximum(state.Kt, 1).astype(np.float64)
+    best = np.where(held, post, -np.inf).max(axis=1)
+    near = (held & (post >= (best - band)[:, None])).sum(axis=1)
+    return np.where(state.Kt > 0, near / k, 1.0)
+
+
+@register("adaptive_K", kind="search_policy")
+class TailAdaptiveSchedule(SearchPolicy):
+    """SEARCH while ``K_t < c * T**alpha * (1 + b * (1 - q_t))`` (Pre-registration 4).
+
+    A fixed-K-per-horizon schedule -- recruit to the target as fast as possible, then
+    refine -- whose target grows when the held arms say the reservoir is heavy-tailed:
+    ``q_t`` is the fraction of held arms within `band` of the best held arm's posterior
+    mean. In a thin-tailed reservoir ``q_t`` is near 1 and the target is the plain
+    ``c * T**alpha``; in a heavy-tailed one it is near 0 and the target is up to
+    ``1 + b`` times larger. ``b = 0`` is the fixed-K schedule exactly. Three scalars,
+    one QUALITY statistic, no confidence sequence and no e-process.
+    """
+
+    name = "adaptive_K"
+
+    def __init__(
+        self,
+        alpha: float = 0.5,
+        c: float = 2.0,
+        b: float = 0.0,
+        band: float = 0.05,
+        rng: np.random.Generator | None = None,
+    ) -> None:
+        super().__init__(rng)
+        self.alpha = float(alpha)
+        self.c = float(c)
+        self.b = float(b)
+        self.band = float(band)
+
+    def target(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        base = self.c * float(max(ctx.horizon, 1)) ** self.alpha
+        if self.b == 0.0:
+            return np.full(state.M, base, dtype=np.float64)
+        q = frac_within_of_best(state, self.band)
+        return base * (1.0 + self.b * (1.0 - q))
+
+    def should_search(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        return _force_first_arm(state, state.Kt < self.target(state, ctx))
+
+
 @register("epsilon_schedule", kind="search_policy")
 class EpsilonSchedule(SearchPolicy):
     """A power schedule with epsilon-randomization.

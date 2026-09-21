@@ -723,22 +723,22 @@ those mixtures. This registers that statement.
   each cell on its Test-C cap-64 seed (`cells.make_matched_cell`) so it is CRN-paired with §7.2's cells.
   Test id `capc`. Policies: the eight of `--test capp`, every constant the cap-T one selected on the
   **corpus** environments in Pre-registration 7 — the mixtures never voted on any constant.
-- **Inference at n_envs = 3.** No environment-level interval exists below `CLUSTER_MIN_ENVS`. The primary
-  statistic is therefore the cell-stratified **paired** CI over the six cells with the three-environment
-  range reported beside it, and the decision rule is stated for that: *supported* iff the paired CI excludes
-  zero in the claimed direction, |Δ| ≥ MEI, and all three environment means share the sign; *refuted* iff
-  Δ has the wrong sign or the paired CI lies inside (−MEI, +MEI); otherwise *inconclusive*. MEI = 0.002.
-  This is weaker than every other registration and is labelled so wherever quoted.
+- **Inference at n_envs = 3.** No environment-level interval exists below `CLUSTER_MIN_ENVS`. Every rule
+  below is stated on the cell-stratified **paired** CI over the six cells, with the three-environment range
+  reported beside it. This is weaker than every other registration and is labelled so wherever quoted.
+  MEI = 0.002 throughout.
 
 ### The registered contrasts
 
-1. **Primary — the schedule generalizes:** `p3_star` (corpus-tuned, cap-T constants) − `pooled_K`, where
-   `pooled_K` is `fixed_K_star`'s corpus-selected K(T) at cap = T. Direction: Δ ≤ 0 (the schedule is at
-   least as good as the one-number rule off-family). The claim being *supported* means a corpus-tuned
-   schedule loses nothing off-family relative to the best single K.
-2. **Secondary — the signals do not help off-family:** `level_star` − `p3_star` and `phi_k4` − `p3_star`,
-   direction Δ ≥ 0 expected (the learned policy and the level rule are *not* better off-family than the
-   schedule). Reported, not corrected.
+1. **Primary — the schedule generalizes (a non-inferiority claim):** Δ = `p3_star` (corpus-tuned, cap-T
+   constants) − `fixed_K_star` (its corpus-selected K(T) at cap = T; "the best single K"). *Supported* iff the
+   paired CI's upper bound is below +MEI — the schedule is not worse off-family than the best single K by
+   more than the minimum effect of interest; *refuted* iff the paired CI's lower bound is at or above +MEI;
+   otherwise *inconclusive*.
+2. **Secondary — the signals do not help off-family (not-better claims):** Δ = `level_star` − `p3_star` and
+   Δ = `phi_k4` − `p3_star`. *Supported* iff the paired CI's lower bound is above −MEI — the level rule /
+   the learned policy is not better off-family than the schedule by more than the MEI; *refuted* iff the
+   paired CI's upper bound is at or below −MEI; otherwise *inconclusive*. Reported, not corrected.
 3. **Descriptive:** each rule's gap to the per-environment ceiling (`fixed_K` at the mixture's own K\*(T)
    from `k_star_envelope_all33.csv`, a tune-split argmin, never a deployable policy).
 

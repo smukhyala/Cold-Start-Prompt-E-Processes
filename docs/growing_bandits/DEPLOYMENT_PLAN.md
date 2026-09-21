@@ -707,3 +707,46 @@ for X in 192 256 384 512 1000: horizon 1000   (tune_baselines, select_fixed_k, s
 .venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test capp --workers 12
 .venv/bin/python experiments/growing_bandits/deploy/analyze_capp.py
 ```
+
+---
+
+## Pre-registration 8 — the held-out family with the cap lifted (registered 2026-09-21, before any run)
+
+Test C (§7.2) is the study's only held-out environment family, and it ran under the 64-arm cap that §12.7
+shows makes every policy the same policy at T ≥ 200. The probe of §12.8 (unregistered, M = 1000) suggested
+that with the cap lifted a schedule tuned on the corpus is within 0.001 of the per-environment ceiling on
+those mixtures. This registers that statement.
+
+### Design
+
+- **Cells:** the 3 mixture environments × T ∈ {200, 1000} × cap = T (uncapped), M = 2000, test-split seeds,
+  each cell on its Test-C cap-64 seed (`cells.make_matched_cell`) so it is CRN-paired with §7.2's cells.
+  Test id `capc`. Policies: the eight of `--test capp`, every constant the cap-T one selected on the
+  **corpus** environments in Pre-registration 7 — the mixtures never voted on any constant.
+- **Inference at n_envs = 3.** No environment-level interval exists below `CLUSTER_MIN_ENVS`. The primary
+  statistic is therefore the cell-stratified **paired** CI over the six cells with the three-environment
+  range reported beside it, and the decision rule is stated for that: *supported* iff the paired CI excludes
+  zero in the claimed direction, |Δ| ≥ MEI, and all three environment means share the sign; *refuted* iff
+  Δ has the wrong sign or the paired CI lies inside (−MEI, +MEI); otherwise *inconclusive*. MEI = 0.002.
+  This is weaker than every other registration and is labelled so wherever quoted.
+
+### The registered contrasts
+
+1. **Primary — the schedule generalizes:** `p3_star` (corpus-tuned, cap-T constants) − `pooled_K`, where
+   `pooled_K` is `fixed_K_star`'s corpus-selected K(T) at cap = T. Direction: Δ ≤ 0 (the schedule is at
+   least as good as the one-number rule off-family). The claim being *supported* means a corpus-tuned
+   schedule loses nothing off-family relative to the best single K.
+2. **Secondary — the signals do not help off-family:** `level_star` − `p3_star` and `phi_k4` − `p3_star`,
+   direction Δ ≥ 0 expected (the learned policy and the level rule are *not* better off-family than the
+   schedule). Reported, not corrected.
+3. **Descriptive:** each rule's gap to the per-environment ceiling (`fixed_K` at the mixture's own K\*(T)
+   from `k_star_envelope_all33.csv`, a tune-split argmin, never a deployable policy).
+
+### Run
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test capc --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration capc_primary
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration capc_level
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration capc_phi
+```

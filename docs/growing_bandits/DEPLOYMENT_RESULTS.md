@@ -68,8 +68,11 @@ defined against, and does **not** lower it against a validation-tuned growth sch
 64-arm cap threw away 0.0217 of regret at T = 1000 — 16× the H1b effect (§12.1). Given the *same* final
 arm count, no learned policy beats front-loaded search; the pre-registered Φ and the tuned schedule are both
 *worse* than it (§12.2). And the one contrast registered after the fact — the k = 4 model vs the schedule on
-30 environments at T ≤ 200 — is **supported**, Δ = −0.005050, t [−0.006603, −0.003497], p = 3e−7, though
-§12.2 says why that is a better arm count reached earlier, not a state-dependent rule (§12.3).
+30 environments at T ≤ 200 — is **supported**, Δ = −0.005050, t [−0.006603, −0.003497], p = 3e−7 (§12.3).
+A fourth, registered next, says what that is: the k = 4 model also beats the best **fixed K per horizon**
+selected on validation (Δ = −0.004701, p = 1e−6, §12.4), and that fixed K does not beat the schedule. The
+learned model's value is not the timing of SEARCH (§12.2) but **sizing K to the environment** — 14–15 arms
+in the thin-tailed reservoirs, 33–36 in the heavy-tailed ones, where a schedule can only hold 24.
 
 The mechanism is the 64-arm cap: P3\* is already a cap-filling policy at T ≥ 200 (k_final = 64.0 at
 T = 200/500/1000), and Φ joins it only at T = 1000 (k_final 44.2 at T=200, 57.7 at T=500, 64.0 at T=1000;
@@ -1081,11 +1084,57 @@ What it does *not* establish is a state-dependent rule, and §12.2 is why. On th
 `phi_k4` and `p3_star` hold almost the same number of arms (22.5 vs 21.0, `main_robust_primary.csv`,
 level=horizon) yet differ by 0.0087 in regret; §12.2 shows `phi_k4` merely *matches* front-loaded search
 at its own K while P3\* *loses* to it by 0.0015 at T = 50. The power schedule spreads its recruiting over
-the horizon; the k = 4 model recruits early and stops, which is what the crudest policy does. So H1b′'s
-effect is "reach a sensible K quickly, then refine" — the same lesson as §12.1 from the other side — and
-the learned classifier is one way of arriving at it that a two-parameter schedule tuned for early
-recruitment would presumably match. That comparison (roadmap §3.4, the 3-parameter rule family as the null
-model) has not been run and is the natural next one.
+the horizon; the k = 4 model recruits early and stops, which is what the crudest policy does. So at the
+level of *timing*, H1b′'s effect is "reach K quickly, then refine". Whether the classifier's choice of K is
+itself worth anything over a schedule's is a separate question, and §12.4 registers and answers it: it is.
+
+### 12.4 H1b″: the learned model against the best fixed K — supported, and the mechanism
+
+`DEPLOYMENT_PLAN.md`, "Pre-registration 3", written before its constants were selected: the null model is
+`fixed_K_star` — recruit to K(T) immediately, then refine only, with K(T) the validation argmin per horizon
+over ≤ 17 candidates (the protocol P3\* was selected under). The functional form was chosen after reading
+§12.1–12.2 and is declared as a researcher degree of freedom. Selection gave **K = 24 / 36 / 64 / 64 / 64**
+at T = 50 / 100 / 200 / 500 / 1000 (`fixed_k_selection.csv`; `baseline_params.json["fixed_K_star"]`),
+consistent with the tune-split envelope of §12.1 and pinned at the cap from T = 200. It was deployed on the
+robustness panel, Test A and Test C (`main_robust_primary.csv` gains 18 rows, nothing else moves), and the
+two registered contrasts computed (`registered_contrast.py --registration h1b_null` /
+`h1b_null_secondary`; `h1b_null.csv`, `h1b_null_secondary.csv`):
+
+| contrast | T | Δ | paired CI | t-cluster (n = 30) | p | Holm | verdict |
+|---|---|---|---|---|---|---|---|
+| **`phi_k4` − `fixed_K_star`** (primary) | 50–200 | **−0.004701** | [−0.005445, −0.003958] | **[−0.006284, −0.003118]** | 1.3e−6 | — | **supported** |
+| | 50 | −0.008543 | | [−0.011138, −0.005948] | 2e−9 | 1e−6 | |
+| | 100 | −0.005166 | | [−0.008005, −0.002327] | 8.5e−4 | 1.7e−3 | |
+| | 200 | −0.000394 | | [−0.000740, −0.000048] | 0.027 | 0.027 | |
+| **`fixed_K_star` − `p3_star`** (secondary) | 50–200 | −0.000349 | [−0.000836, +0.000146] | [−0.001007, +0.000309] | 0.29 | — | **refuted** |
+| | 50 / 100 / 200 | −0.000131 / −0.000916 / 0.000000 | | | 0.89 / 3e−5 / 0.33 | 0.89 / 8e−5 / 0.65 | |
+
+**The learned model beats the best fixed K per horizon by 2.4× the minimum effect of interest, and that
+fixed K does not beat the tuned schedule.** H1b′'s effect is therefore not available without the
+classifier: front-loading alone (`fixed_K_star` vs P3\*, both holding ~the same K) is worth 0.0003 pooled,
+0.0009 at T = 100 and nothing elsewhere — the timing effect §12.2 measured, now bounded from the other side.
+Reconciled with §12.2, which found `phi_k4` unable to beat front-loaded search *at its own K*, the two
+results identify what the model does: **it sizes K to the environment.** At T = 50 the validation-selected
+fixed K is 24; `phi_k4` holds 14–15 arms in the thin-tailed reservoirs (`beta_good_common`,
+`tail_b0.5_*`, `tail_b1.0_*`) and 33–36 in the heavy-tailed ones (`beta_skewed`, `beta_rare_excellent`,
+`tail_b8.0_*`), and its gain over the fixed K grows with that departure — Spearman(|K_φ − K_fixed|, gain)
+= −0.31 / −0.25 / −0.67 at T = 50 / 100 / 200, gain negative in 67 of 90 cells
+(`cells_robust_primary.csv`, `k_final` and `regret` of the two policies). §12.1 said per-environment K\*
+spans 12–32 at T = 50; a per-horizon rule cannot use that, and a classifier that reads the reservoir's
+shape can. That is the state-dependence the study set out to find, located: not in when to search, but
+in **how many arms this environment is worth**.
+
+What this does and does not establish, in the registration's own terms. It establishes that a k = 4
+commitment model trained on oracle labels carries information a validation-selected fixed K per horizon
+does not, on the training corpus's 30 environments at T ≤ 200 (non-claim 11: in-distribution). It does
+not establish generalization — Test C (§7.2) is still against the pre-registered Φ, and `fixed_K_star`'s
+Test-C rows are deployed but no contrast on them is registered. It does not rescue the pre-registered
+`phi_k16`, which §12.2 shows is *worse* than front-loaded search at its own K. And it is one registered
+positive after two registrations; §3.5's arithmetic on chance findings applies to registrations too.
+The null model that would close this cleanly is a **schedule whose K depends on the environment through
+something the harness already observes** — the reservoir's empirical tail, say — with two or three
+parameters; if that matches `phi_k4`, the 62-feature classifier is a lookup table with extra steps. That
+comparison is the natural next registration.
 
 ---
 

@@ -904,7 +904,9 @@ def test_a_finished_item_records_its_simulation_surface(tmp_path):
 #: the equality itself is no longer re-derivable -- these digests are what keeps the
 #: anchor checkable: any future edit to the file, or to what "the T=2000 keys" means,
 #: has to move one of them deliberately.
-BASELINE_PARAMS_SHA256 = "f3805cfd3d112943086735388e07ee8710fdec1e2f3f95b436982a2a79efc6c0"
+BASELINE_PARAMS_SHA256 = "671f377e18b462b35af2ae212f7d0ff0159644970cb67c9d580cfd6341482103"
+#: ... with the two `level_star` keys (Pre-registration 6) stripped:
+BASELINE_PARAMS_PRE_LEVEL_SHA256 = "f3805cfd3d112943086735388e07ee8710fdec1e2f3f95b436982a2a79efc6c0"
 #: ... with the two `bestmean_star` keys (Pre-registration 5) stripped:
 BASELINE_PARAMS_PRE_BESTMEAN_SHA256 = "c330bd0b361dcfe251734b334b769e9ea44f083b2969d552d6d88c9426d5bffd"
 #: ... with the two `adaptive_K_star` keys (Pre-registration 4, 2026-09-20) stripped:
@@ -925,6 +927,10 @@ ADAPTIVE_K_STAR_KEYS: tuple[tuple[str, ...], ...] = (
 BESTMEAN_STAR_KEYS: tuple[tuple[str, ...], ...] = (
     ("bestmean_star",),
     ("meta", "bestmean_star"),
+)
+LEVEL_STAR_KEYS: tuple[tuple[str, ...], ...] = (
+    ("level_star",),
+    ("meta", "level_star"),
 )
 #: The six keys the T=2000 tuning added, by the path they sit at.
 T2000_KEYS: tuple[tuple[str, ...], ...] = (
@@ -972,6 +978,15 @@ def test_baseline_params_migration_is_reversible_and_keeps_the_t2000_anchor():
     # M8fix re-review saw; without the six T=2000 keys as well, it is that review's
     # pre-T=2000 state.
     stripped = json.loads(raw)
+    for path in LEVEL_STAR_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_PRE_LEVEL_SHA256
+    )
     for path in BESTMEAN_STAR_KEYS:
         node = stripped
         for key in path[:-1]:

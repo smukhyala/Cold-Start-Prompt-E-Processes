@@ -1131,10 +1131,40 @@ not establish generalization — Test C (§7.2) is still against the pre-registe
 Test-C rows are deployed but no contrast on them is registered. It does not rescue the pre-registered
 `phi_k16`, which §12.2 shows is *worse* than front-loaded search at its own K. And it is one registered
 positive after two registrations; §3.5's arithmetic on chance findings applies to registrations too.
-The null model that would close this cleanly is a **schedule whose K depends on the environment through
-something the harness already observes** — the reservoir's empirical tail, say — with two or three
-parameters; if that matches `phi_k4`, the 62-feature classifier is a lookup table with extra steps. That
-comparison is the natural next registration.
+The null model that would close this is a **schedule whose K depends on the environment through
+something the harness already observes**; §12.5 registers one.
+
+### 12.5 H1b‴: the learned model against an environment-adaptive schedule — supported, and what the schedule could not see
+
+`DEPLOYMENT_PLAN.md`, "Pre-registration 4", written before the rule existed: `adaptive_K_star` recruits
+while K_t < c · T^α · (1 + b · (1 − q_t)), where q_t is the fraction of held arms whose posterior mean is
+within 0.05 of the best held arm's — `est_frac_arms_within_5pct_of_best`, one QUALITY statistic the
+classifier also sees, and the one that should say "thin-tailed, stop" versus "heavy-tailed, keep going".
+Three scalars; b = 0 is a fixed schedule, so the null nests §12.4's. The simulation surface moved for it
+(`97704d2795f7` → `2ad982bf77bb`; 60 inserted lines, 0 deleted; every earlier item keeps the old sha).
+
+**Selection chose not to use the statistic.** Over the registered 50-candidate grid on the validation
+split (`adaptive_k_selection.csv`), the argmin is α = 0.75, c = 1.0, **b = 0** — K = 19 / 32 / 53 at
+T = 50 / 100 / 200, a plain fixed schedule. The best candidate with b > 0 (α = 0.5, c = 1, b = 2) trails it
+by 0.0008, about 1.5 selection standard errors; b = 4 and b = 8 are 0.004 and 0.03 worse. Reading the
+5%-band was never an improvement anywhere on the grid.
+
+| contrast | T | Δ | t-cluster (n = 30) | p | Holm | verdict |
+|---|---|---|---|---|---|---|
+| **`phi_k4` − `adaptive_K_star`** (primary) | 50–200 | **−0.003941** | **[−0.005730, −0.002152]** | 1.0e−4 | — | **supported** |
+| | 50 / 100 / 200 | −0.006859 / −0.005391 / +0.000428 | | 1e−5 / 2e−3 / 0.49 | 4e−5 / 3e−3 / 0.49 | |
+| **`adaptive_K_star` − `fixed_K_star`** (secondary) | 50–200 | −0.000760 | [−0.001913, +0.000392] | 0.19 | — | **refuted** |
+
+(`h1b_adaptive.csv`, `h1b_adaptive_secondary.csv`.) Two fixed schedules selected two different ways are
+indistinguishable from each other and each loses to the learned model by 0.004–0.005 at T ≤ 200, all of
+it at T = 50 and T = 100. So the programme's closing statement is narrower and firmer than §12.4's: **the
+k = 4 model sizes K to the environment (§12.4), and it does not do so by counting how many held arms sit
+near the best — the obvious one-number summary of the tail carries none of it on validation.** What it
+reads instead is not identified here; the 35-column QUALITY group minus this one column, or the
+posterior spread `f_sd_of_means`, are the next candidates, and a rule built on the classifier's own top
+feature by permutation importance would be the honest way to choose one. Three registrations, three
+positives for `phi_k4` on this panel, every one in-distribution at T ≤ 200 and none touching the
+pre-registered `phi_k16`; §12.2 still says the *timing* of its search is worth nothing.
 
 ---
 

@@ -77,6 +77,11 @@ the model what it reads (§12.6) gave the answer, and the sixth registration clo
 learned policy is a three-number rule.** Recruit to `1.0 · T^0.75 · exp(4 · (0.5 − level))` arms and then
 refine, where *level* is the mean posterior of the arms held; `phi_k4` − that rule is −0.000018
 (p = 0.96, n = 30), and the rule beats the fixed K by the model's own margin (−0.004683, p = 8e−6).
+Finally, a cap sweep with paired seeds and every constant re-tuned at each cap (§12.7) shows that at cap
+64 every policy in this study is the same policy to four decimals, that the cap cost 0.021 at T = 1000,
+and that given headroom the learned policies over-recruit to 380–527 arms for regret of 0.14–0.15 where
+the level rule holds 161 for 0.076 — most of the learned policy's measured advantage was the advantage of
+not filling a too-small cap.
 
 The mechanism is the 64-arm cap: P3\* is already a cap-filling policy at T ≥ 200 (k_final = 64.0 at
 T = 200/500/1000), and Φ joins it only at T = 1000 (k_final 44.2 at T=200, 57.7 at T=500, 64.0 at T=1000;
@@ -777,13 +782,15 @@ live at long horizons.
   not a test-split number.
 - **That Φ beats a tuned schedule.** H1b's pooled cluster CI includes zero, no stratum is
   cluster-significant, at T=500 the schedule wins, and at T ≥ 200 P3\* is itself a cap-filling policy, so the
-  comparison there is "Φ vs fill-the-cap", not "Φ vs a schedule".
+  comparison there is "Φ vs fill-the-cap", not "Φ vs a schedule". §12.7 makes that literal: at cap 64 and
+  T = 1000 every policy in the study scores 0.0973.
 - **That the policy generalizes.** On the one genuinely held-out environment family, the pre-registered Φ is
   worse than the schedule.
-- **That a bigger cap is better, or that Φ's extrapolation beyond K = 64 is beneficial.** P3\*'s `c` and Φ's
-  τ are both tuned at cap 64 only (Ruling 20 and §4), so the cap-128 column is not like-for-like — and the cap
-  axis is not CRN-paired (§4), so cross-cap differences carry a seed-noise floor of 0.005909 pooled and
-  0.018652 per environment, measured on the two cap-independent policies.
+- ~~**That a bigger cap is better, or that Φ's extrapolation beyond K = 64 is beneficial.**~~ Resolved by
+  §12.7 on paired seeds with every constant re-tuned per cap: a bigger cap *is* better, by 0.021 at T = 1000
+  for every tuned schedule (flat from cap 256), and Φ's extrapolation is *harmful* — +0.078 against the
+  level rule uncapped (p = 0.012), recruiting 380–527 arms. §4's unpaired, untuned columns stand only as
+  the record of why the sweep had to be redone.
 - **Any claim about T = 2000 beyond "the tuned schedule and the learned policies are the same policy there"**.
 
 ### 9.3 Every ruling taken during this study, with its cost if wrong
@@ -921,7 +928,10 @@ is stated anywhere above, in any paraphrase.
    because more arms genuinely help up to 128." At T=1000 the −0.010749 is bit-identical to `always_search`'s
    and rests on a P3\* constant its own selection objective cannot identify; and at T=200 cap 128 is worse
    than cap 64 for `always_search` (+0.016010) and P3\* (+0.017858), though Φ's own +0.006344 sits inside the
-   0.005909 unpaired-seed floor, so "every policy" is not claimed either (§4).
+   0.005909 unpaired-seed floor, so "every policy" is not claimed either (§4). *Resolved by §12.7 on paired
+   seeds with constants re-tuned per cap: at T = 1000 more arms help every tuned schedule up to cap 256 (by
+   0.02), and Φ's extrapolation beyond the cap it was trained under is harmful, not beneficial; at T = 200
+   cap 128 is 0.0118 worse than cap 64 for `always_search` and 0.0000 for the re-tuned P3\*.*
 5. **Not claimed:** "Φ′(union)'s cluster CI excludes zero." It does not on the t interval (p = 0.10); only
    `phi_k4` and `phi_k1` do, and those are exploratory and uncorrected, not confirmatory.
 6. **Not claimed:** "Test D: T=200 `noT200` −0.0019." That is `noT1000`'s number. `noT200` is −0.001542 and
@@ -1227,6 +1237,84 @@ sensible infinite-armed heuristic from data — and that its k = 16 version, the
 not (§12.2). What this does not say: whether `level_star` generalizes (Test C rows are deployed, no contrast
 registered), and whether the level is the right statistic at caps where §12.1's K\* is reachable; the
 cap re-tune is next.
+
+### 12.7 The cap, paired and re-tuned: the sweep §4 should have been
+
+`DEPLOYMENT_PLAN.md`, "Pre-registration 7", committed before any tuning run. Two defects made §4's cap
+sweep unreadable — its caps drew different seeds (Ruling 26), and every constant in it was tuned at cap
+64 (Ruling 20). This sweep removes both: the eight main environments × T ∈ {200, 1000} × the cap ladders
+{32, 48, 64, 96, 128, 160, 200} and {32, 48, 64, 96, 128, 192, 256, 384, 512, 1000}, M = 2000, **every cap of
+an (env, T) on that cell's cap-64 seed** (`analyze_capp.py` refuses the tree unless `mu_star` is
+bit-identical across caps; it was), and **every constant selected at the cap it deploys at** — P3\*'s
+(α, c), the fixed K, the level rule's (α, c, b) and τ for both learned policies, on the tune / validation
+splits at that cap, stored under `by_cap` beside the untouched cap-64 blocks. No row of
+`capp_policies.csv` deployed a constant selected elsewhere. Tables: `capp_policies.csv`,
+`capp_contrasts.csv` (within-cap paired contrasts, env-mean t on n = 8), `capp_crosscap.csv` (regret at
+cap X minus regret at cap 64, paired by episode). Nothing here is multiplicity-corrected; the claims about
+policies were Pre-registrations 2–6, and this section reports what they look like under a cap that is
+neither wrong nor confounded.
+
+**Pooled regret over the eight environments, T = 1000** (`capp_policies.csv`):
+
+| cap | `always_search` | P3\* (re-tuned) | fixed K\* | `level_star` | `phi_k4` | `phi_k16` |
+|---|---|---|---|---|---|---|
+| 32 | 0.1257 | 0.1257 | 0.1257 | 0.1257 | 0.1257 | 0.1257 |
+| 48 | 0.1082 | 0.1082 | 0.1082 | 0.1082 | 0.1082 | 0.1082 |
+| **64 (the study)** | **0.0973** | **0.0973** | **0.0973** | **0.0973** | **0.0973** | **0.0973** |
+| 96 | 0.0861 | 0.0861 | 0.0861 | 0.0861 | 0.0868 | 0.0861 |
+| 128 | 0.0809 | 0.0809 | 0.0809 | 0.0808 | 0.0818 | 0.0809 |
+| 192 | 0.0783 | 0.0783 | 0.0783 | 0.0778 | 0.0783 | 0.0785 |
+| 256 | 0.0780 | 0.0772 | 0.0783 | **0.0759** | 0.0782 | 0.0777 |
+| 384 | 0.0815 | 0.0772 | 0.0783 | **0.0759** | 0.0810 | 0.0803 |
+| 512 | 0.0912 | 0.0772 | 0.0783 | **0.0759** | 0.0900 | 0.0878 |
+| 1000 | 0.3460 | 0.0774 | 0.0780 | **0.0759** | **0.1535** | **0.1417** |
+
+Four things this table says that §4 could not.
+
+1. **At cap 64 every policy is the same policy.** Six columns agree to four decimals at every cap ≤ 64 and
+   at cap 96–192 to within 0.001: below K\* the cap is the policy, and the whole of §3's H1b, at every
+   horizon ≥ 200, compared identical objects. The study's design question was answered by its cap.
+2. **The cap cost 0.021 at T = 1000, paired and re-tuned.** P3\*'s cross-cap curve
+   (`capp_crosscap.csv`, paired against cap 64): +0.0284 [+0.0072, +0.0497] at cap 32, −0.0112
+   [−0.0217, −0.0007] at cap 96, −0.0164 at 128, −0.0200 [−0.0454, +0.0054] from cap 256 up — flat once
+   the cap clears K\*. §12.1's tune-split 0.0217 was right to three decimals. The interval at n = 8
+   includes zero above cap 128 (the between-environment spread of the *gain* is large: environments where
+   K\* is 400 gain 0.05, those where it is 48 gain nothing), so "the cap cost 0.02" is a pooled point
+   estimate with a wide environment-level band, not a cluster-significant one.
+3. **The fixed K comes interior at cap 256.** K\* = 32 / 48 / 64 / 96 / 128 / 192 at caps 32–192 (pinned),
+   then **192** at caps 256–512 and **256** uncapped; P3\*'s re-tuned c falls from the grid's edge at cap
+   128 to an interior value from cap 256 (K_T = 216). The validation-split optimum at T = 1000 is
+   192–256 arms; the study ran at 64.
+4. **The learned policies fail with headroom.** Given a cap they cannot fill, `phi_k4` recruits to 315 arms
+   at cap 384, 410 at cap 512 and 380 uncapped, and `phi_k16` to 527 uncapped, for regret 0.0810 / 0.0900 /
+   **0.1535** and **0.1417** — against the level rule's 0.0759 holding 161 arms at every cap ≥ 256. The
+   corpus held no state above 64 arms (`CORPUS_MAX_LIVE_ARMS`); neither model ever saw "enough", and
+   neither learned it. `phi_k4` − `level_star` at T = 1000 is null at every cap ≤ 384 (|Δ| ≤ 0.005, p ≥ 0.2),
+   +0.0141 [−0.0056, +0.0338] at cap 512 and **+0.0777 [+0.0232, +0.1321], p = 0.012, uncapped**;
+   `phi_k16` − P3\* likewise **+0.0643 [+0.0105, +0.1181], p = 0.025**. §4's "Φ has no 'enough arms'
+   notion" and §9.2's abstention on Φ's extrapolation beyond 64 are both resolved, against the models, on
+   paired seeds with τ re-selected at each cap (τ itself moves from 0.3 at cap 32 to 0.7 uncapped — the
+   selector compensates, but not enough).
+
+**T = 200.** Flat from cap 96 up for every tuned schedule (P3\* 0.1063–0.1078, fixed K 0.1063, the level rule
+0.1021–0.1050), because K\*(200) ≈ 48–64 was reachable at the study's cap; the learned policies sit within
+±0.004 of the level rule at every cap (`phi_k4` − `level_star` between −0.0016 and +0.0036, none with
+p < 0.08), and `always_search` degrades as the cap loosens (0.1063 → 0.3029 uncapped) exactly as at T = 1000.
+
+**The level rule under headroom.** `level_star` − P3\* is −0.0014 [−0.0045, +0.0017] (p = 0.33) at every
+cap ≥ 256 at T = 1000 and −0.0017 to −0.0055 at caps ≥ 96 at T = 200, none cluster-significant at n = 8;
+`level_star` − fixed K is −0.0024 [−0.0055, +0.0006] (p = 0.10) at caps ≥ 256. The rule's edge over a
+re-tuned schedule with room to work is real in sign at every cap but small — a fifth of what it was at cap
+64 on T ≤ 200 (§12.6), where the schedules were pinned and it was not. The honest statement is that
+**most of what §12.3–12.6 measured as the learned policy's advantage was the advantage of *not filling a
+too-small cap*; the residual, on a cap that fits, is about 0.001–0.002 and not cluster-significant on eight
+environments.**
+
+What this section replaces: §4's cap paragraphs (unpaired, untuned; kept for the record, superseded here),
+§9.2's second and fourth bullets ("that Φ beats a tuned schedule" — at cap 64 they are the same policy;
+"that a bigger cap is better, or that Φ's extrapolation beyond K = 64 is beneficial" — a bigger cap is
+better by 0.02 at T = 1000 for every tuned schedule, and Φ's extrapolation is harmful), and non-claim 4
+of §9.4. What it does not touch: every Test-A number, which is what it says it is, at cap 64.
 
 ---
 

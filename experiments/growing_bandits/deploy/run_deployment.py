@@ -89,7 +89,7 @@ log = logging.getLogger("deploy.run")
 
 DEFAULT_OUT_DIR = ROOT / "results" / "growing_bandits" / "deploy"
 
-TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch")
+TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch", "capp")
 REFERENCES: tuple[str, ...] = ("cp0", "p3_star")
 
 #: Episodes per cell by test (DEPLOYMENT_PLAN.md "Environments / horizons / episodes").
@@ -102,6 +102,7 @@ DEFAULT_REPLICATES: dict[str, int] = {
     "cap": 1000,
     "smoke": 100,
     "capmatch": 2000,
+    "capp": 2000,
 }
 DEFAULT_CAP = 64
 D_HORIZONS: tuple[int, ...] = (200, 1000)
@@ -119,6 +120,16 @@ CAP_SWEEP_ENVS: tuple[str, ...] = (
 )
 CAP_SWEEP_HORIZONS: tuple[int, ...] = (200, 1000)
 CAP_SWEEP_CAPS: tuple[int | str, ...] = (32, 64, "T")
+#: The CRN-paired cap sweep (roadmap 3.3; ``--test capp``): every cap of an (env, T) runs
+#: on the cap-64 cell's seed (`cells.make_matched_cell`), so mu_star is bit-identical
+#: across caps and a cross-cap difference is a paired difference. The eight main
+#: environments, so no stratum is below CLUSTER_MIN_ENVS, and the roadmap's denser cap
+#: ladders, which fill the 8x hole between cap 128 and cap = T at T = 1000. Never pooled
+#: with ``--test cap``, whose cells draw a fresh seed per cap.
+CAPP_HORIZON_CAPS: dict[int, tuple[int, ...]] = {
+    200: (32, 48, 64, 96, 128, 160, 200),
+    1000: (32, 48, 64, 96, 128, 192, 256, 384, 512, 1000),
+}
 SMOKE_ENVS: tuple[str, ...] = ("beta_good_common", "tail_b2.0_mu1.0_c1.0")
 #: The K-matched control (NEXT-STEPS 2.4): horizons where a learned policy and the tuned
 #: schedule can differ at all (at T >= 500 the 64-arm cap makes them the same policy), and
@@ -225,9 +236,16 @@ def _cell_grid(test: str, cells_mod) -> list[tuple[str, int, int, int | None]]:
                     grid.append((e, T, T if cap == "T" else int(cap), None))
     elif test == "smoke":
         grid = [(e, SMOKE_HORIZON, DEFAULT_CAP, None) for e in SMOKE_ENVS]
+    elif test == "capp":
+        grid = [(e, T, int(cap), None) for e in main_envs for T, caps in CAPP_HORIZON_CAPS.items() for cap in caps]
     else:
         raise ValueError(f"unknown test {test!r}; tests={TESTS}")
     return grid
+
+
+def seeds_may_repeat(test: str) -> bool:
+    """Whether cells of `test` may share a base_seed: only the paired cap sweep, by design."""
+    return test == "capp"
 
 
 def matched_grid(
@@ -320,6 +338,18 @@ def build_cells(
             raise RuntimeError(f"duplicate matched cells for {match}: {names}")
         return specs
     grid = overrides if overrides is not None else _cell_grid(test, cells_mod)
+    if test == "capp":
+        if cells_mod is None:
+            raise RuntimeError("--test capp needs cells.py for the Test-A seeds")
+        m = int(n_replicates) if n_replicates is not None else DEFAULT_REPLICATES[test]
+        specs = [
+            cells_mod.make_matched_cell(TEST_SPLIT, env_id, int(horizon), int(cap), m, seed_cap=DEFAULT_CAP)
+            for env_id, horizon, cap, _ in grid
+        ]
+        names = [cell_name(s) for s in specs]
+        if len(set(names)) != len(names):
+            raise RuntimeError(f"duplicate cells in test {test!r}: {names}")
+        return specs
     if cells_mod is None and test != "smoke":
         raise RuntimeError(
             f"test {test!r} needs experiments/growing_bandits/deploy/cells.py (M5) for its "
@@ -1345,7 +1375,7 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     elif args.n_replicates is not None:
         cells = [replace(c, n_replicates=int(args.n_replicates)) for c in cells]
     seeds = [int(c.base_seed) for c in cells]
-    if len(set(seeds)) != len(seeds):
+    if len(set(seeds)) != len(seeds) and not seeds_may_repeat(test):
         raise SystemExit(f"cells share a base_seed: {seeds}")
     if cells_mod is not None:
         cells_mod.assert_seed_disjointness(seeds)

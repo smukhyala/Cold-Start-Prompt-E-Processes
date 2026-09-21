@@ -288,6 +288,10 @@ TEST_POLICIES: dict[str, tuple[str, ...]] = {
     "smoke": CORPUS_POLICIES,
     # The K-matched control deploys these plus the ``--match`` policy (run_deployment.py).
     "capmatch": ("always_search", "uniform"),
+    # The CRN-paired cap sweep: the three references / baselines, the two schedules the
+    # follow-ups selected, and the two learned policies the document compares.
+    "capp": ("always_search", "cp0", "refine_after_init", "p3_star", "fixed_K_star", "level_star",
+             "phi_k4", "phi_k16"),
 }
 
 

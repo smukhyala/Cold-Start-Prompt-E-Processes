@@ -39,7 +39,11 @@ log = logging.getLogger("deploy.select_fixed_k")
 SPLIT = "val"
 CAP = rd.DEFAULT_CAP
 N_REPLICATES = 2000
-K_GRID: tuple[int, ...] = (4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64)
+#: Pre-registration 3's grid up to the study's cap, then the paired sweep's cap ladder
+#: above it (Pre-registration 7). `candidates` clips to min(T, cap), so at cap 64 the
+#: candidate set is exactly Pre-registration 3's.
+K_GRID: tuple[int, ...] = (4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64,
+                           80, 96, 128, 160, 192, 256, 384, 512, 768, 1000)
 BLOCK = "fixed_K_star"
 
 

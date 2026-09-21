@@ -247,3 +247,32 @@ def test_best_mean_gate_opens_with_no_arms_and_is_registered():
 
     assert BestMeanGate(theta=0.6, alpha=0.5, c=2.0).should_search(_state(0), _ctx()).all()
     assert get_registered("search_policy", "bestmean_K") is BestMeanGate
+
+
+# ---- the level-scaled schedule (DEPLOYMENT_PLAN.md, Pre-registration 6) --------------------
+
+
+def test_level_scaled_schedule_scales_its_target_by_the_observed_level():
+    from cold_start.growing.search_policies import LevelScaledSchedule, held_level
+
+    thin = [0.70, 0.60, 0.50]    # level 0.60
+    heavy = [0.50, 0.30, 0.31]   # level 0.37
+    s = _state_with_means([thin, heavy])
+    assert held_level(s).tolist() == pytest.approx([0.6, 0.37])
+    ctx = _ctx(t=10, horizon=100)
+    plain = LevelScaledSchedule(alpha=0.5, c=2.0, b=0.0)
+    assert plain.target(s, ctx).tolist() == pytest.approx([20.0, 20.0])
+    scaled = LevelScaledSchedule(alpha=0.5, c=2.0, b=4.0)
+    import math
+    assert scaled.target(s, ctx).tolist() == pytest.approx([20 * math.exp(4 * (0.5 - 0.6)), 20 * math.exp(4 * (0.5 - 0.37))])
+    # Both hold 3 arms: the thin replicate's target (13.4) and the heavy one's (33.6) both exceed 3.
+    assert scaled.should_search(s, ctx).tolist() == [True, True]
+    tight = LevelScaledSchedule(alpha=0.0, c=3.5, b=4.0)  # targets 2.3 and 5.9
+    assert tight.should_search(s, ctx).tolist() == [False, True]
+
+
+def test_level_scaled_schedule_opens_with_no_arms_and_is_registered():
+    from cold_start.growing.search_policies import LevelScaledSchedule
+
+    assert LevelScaledSchedule(alpha=0.5, c=1.0, b=2.0).should_search(_state(0), _ctx()).all()
+    assert get_registered("search_policy", "level_K") is LevelScaledSchedule

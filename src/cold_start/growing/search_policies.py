@@ -204,6 +204,49 @@ class BestMeanGate(SearchPolicy):
         return _force_first_arm(state, below_ceiling & (best_held_mean(state) < self.theta))
 
 
+def held_level(state: GrowingState) -> np.ndarray:
+    """Per replicate, the mean posterior mean ``(S+1)/(n+2)`` over held arms; 0.5 with none."""
+    post = state.view(state.empirical_mean())
+    held = np.arange(post.shape[1])[None, :] < state.Kt[:, None]
+    total = np.where(held, post, 0.0).sum(axis=1)
+    return np.where(state.Kt > 0, total / np.maximum(state.Kt, 1), 0.5)
+
+
+@register("level_K", kind="search_policy")
+class LevelScaledSchedule(SearchPolicy):
+    """SEARCH while ``K_t < c * T**alpha * exp(b * (0.5 - level_t))`` (Pre-registration 6).
+
+    A fixed-K-per-horizon schedule whose target is scaled by the observed reservoir
+    level -- the mean posterior mean over held arms. A high level (thin-tailed reservoir,
+    the best arm near the typical one) shrinks the target; a low level (heavy-tailed,
+    rare excellent arms far above typical) grows it. `model_reads.py` found this to be
+    what the k = 4 learned policy effectively reads. ``b = 0`` is the fixed-K schedule.
+    """
+
+    name = "level_K"
+
+    def __init__(
+        self,
+        alpha: float = 0.5,
+        c: float = 2.0,
+        b: float = 0.0,
+        rng: np.random.Generator | None = None,
+    ) -> None:
+        super().__init__(rng)
+        self.alpha = float(alpha)
+        self.c = float(c)
+        self.b = float(b)
+
+    def target(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        base = self.c * float(max(ctx.horizon, 1)) ** self.alpha
+        if self.b == 0.0:
+            return np.full(state.M, base, dtype=np.float64)
+        return base * np.exp(self.b * (0.5 - held_level(state)))
+
+    def should_search(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        return _force_first_arm(state, state.Kt < self.target(state, ctx))
+
+
 @register("epsilon_schedule", kind="search_policy")
 class EpsilonSchedule(SearchPolicy):
     """A power schedule with epsilon-randomization.

@@ -64,6 +64,10 @@ REGISTRATIONS: dict[str, dict] = {
                      "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_bestmean.csv"},
     "h1b_bestmean_secondary": {"policy": "bestmean_star", "reference": "fixed_K_star", "test": "robust",
                                "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_bestmean_secondary.csv"},
+    "h1b_level": {"policy": "phi_k4", "reference": "level_star", "test": "robust",
+                  "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_level.csv"},
+    "h1b_level_secondary": {"policy": "level_star", "reference": "fixed_K_star", "test": "robust",
+                            "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_level_secondary.csv"},
 }
 REGISTERED = REGISTRATIONS["h1b_prime"]
 ALL_HORIZONS: tuple[int, ...] = (50, 100, 200, 500, 1000)

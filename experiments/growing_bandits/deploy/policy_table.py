@@ -89,6 +89,7 @@ _PLACEHOLDER_ADAPTIVE_K = {
 TUNED_RULE_BLOCKS: dict[str, tuple[str, tuple[str, ...]]] = {
     "adaptive_K": ("adaptive_K_star", ("alpha", "c", "b")),
     "bestmean_K": ("bestmean_star", ("theta", "alpha", "c")),
+    "level_K": ("level_star", ("alpha", "c", "b")),
 }
 
 # Which `rules.POLICY_SPECS` entry each kind is built through; `params` override the
@@ -103,6 +104,7 @@ _SPEC_FOR_KIND: dict[str, str] = {
     "reservoir_rule": "reservoir_rule",
     "adaptive_K": "adaptive_K",
     "bestmean_K": "bestmean_K",
+    "level_K": "level_K",
     "model": "model",
 }
 
@@ -175,6 +177,13 @@ POLICIES: dict[str, dict[str, Any]] = {
     "bestmean_star": {
         "kind": "bestmean_K",
         "params": {"theta": None, "alpha": None, "c": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
+    # Pre-registration 6's null model: a fixed-K schedule scaled by the observed reservoir level.
+    "level_star": {
+        "kind": "level_K",
+        "params": {"alpha": None, "c": None, "b": None},
         "group": "baseline",
         "requires": ["baseline_params"],
     },
@@ -446,6 +455,7 @@ BY_CAP_KEY = "by_cap"
 #: The blocks a per-cap retune would have to duplicate; everything else is metadata.
 TUNED_BLOCKS: tuple[str, ...] = (
     "power", "p3_star", "refine_after_init", "fixed_K_star", "adaptive_K_star", "bestmean_star",
+    "level_star",
 )
 
 

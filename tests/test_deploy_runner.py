@@ -738,6 +738,9 @@ SIM_SURFACE_SHA_SINCE_ADAPTIVE_K = "2ad982bf77bb"
 #: ... and after Pre-registration 5 added `BestMeanGate` + `best_held_mean` and the
 #: `bestmean_K` kind, the same way (additive; 0 deleted lines against 9566202).
 SIM_SURFACE_SHA_SINCE_BESTMEAN = "05a8c821662f"
+#: ... and after Pre-registration 6 added `LevelScaledSchedule` + `held_level` and the
+#: `level_K` kind (additive; 0 deleted lines against 7acd100).
+SIM_SURFACE_SHA_SINCE_LEVEL = "b9b537b56ffa"
 
 
 def _sim_surface_closure() -> set[str]:
@@ -823,9 +826,9 @@ def test_sim_surface_sha_is_stable_deterministic_and_source_dependent(tmp_path, 
     # hashes to this same value, so nothing in the shipped tree was produced by a
     # different simulator. A legitimate change to a surface module moves it, and this
     # assertion is where that has to be acknowledged deliberately.
-    assert first == SIM_SURFACE_SHA_SINCE_BESTMEAN
-    assert len({first, SIM_SURFACE_SHA_SINCE_ADAPTIVE_K, SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA}) == 3, (
-        "each acknowledged move must be a move")
+    assert first == SIM_SURFACE_SHA_SINCE_LEVEL
+    assert len({first, SIM_SURFACE_SHA_SINCE_BESTMEAN, SIM_SURFACE_SHA_SINCE_ADAPTIVE_K,
+                SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA}) == 4, "each acknowledged move must be a move"
     assert len(first) == 12 and int(first, 16) >= 0
     rd.sim_surface_sha.cache_clear()
     assert rd.sim_surface_sha() == first
@@ -901,7 +904,9 @@ def test_a_finished_item_records_its_simulation_surface(tmp_path):
 #: the equality itself is no longer re-derivable -- these digests are what keeps the
 #: anchor checkable: any future edit to the file, or to what "the T=2000 keys" means,
 #: has to move one of them deliberately.
-BASELINE_PARAMS_SHA256 = "c330bd0b361dcfe251734b334b769e9ea44f083b2969d552d6d88c9426d5bffd"
+BASELINE_PARAMS_SHA256 = "f3805cfd3d112943086735388e07ee8710fdec1e2f3f95b436982a2a79efc6c0"
+#: ... with the two `bestmean_star` keys (Pre-registration 5) stripped:
+BASELINE_PARAMS_PRE_BESTMEAN_SHA256 = "c330bd0b361dcfe251734b334b769e9ea44f083b2969d552d6d88c9426d5bffd"
 #: ... with the two `adaptive_K_star` keys (Pre-registration 4, 2026-09-20) stripped:
 BASELINE_PARAMS_PRE_ADAPTIVE_K_SHA256 = "80fd3bb9f6713a9bc880e78fe5e9fe8b08c8f713043f4ea226d0e20e1546879b"
 #: ... and with the two `fixed_K_star` keys (Pre-registration 3, 2026-09-20) stripped: the
@@ -916,6 +921,10 @@ FIXED_K_STAR_KEYS: tuple[tuple[str, ...], ...] = (
 ADAPTIVE_K_STAR_KEYS: tuple[tuple[str, ...], ...] = (
     ("adaptive_K_star",),
     ("meta", "adaptive_K_star"),
+)
+BESTMEAN_STAR_KEYS: tuple[tuple[str, ...], ...] = (
+    ("bestmean_star",),
+    ("meta", "bestmean_star"),
 )
 #: The six keys the T=2000 tuning added, by the path they sit at.
 T2000_KEYS: tuple[tuple[str, ...], ...] = (
@@ -963,6 +972,15 @@ def test_baseline_params_migration_is_reversible_and_keeps_the_t2000_anchor():
     # M8fix re-review saw; without the six T=2000 keys as well, it is that review's
     # pre-T=2000 state.
     stripped = json.loads(raw)
+    for path in BESTMEAN_STAR_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_PRE_BESTMEAN_SHA256
+    )
     for path in ADAPTIVE_K_STAR_KEYS:
         node = stripped
         for key in path[:-1]:

@@ -102,6 +102,18 @@ RULES: dict[str, Rule] = {
         ),
         meta={},
     ),
+    # Pre-registration 6: K_target = c * T^alpha * exp(b * (0.5 - level_t)).
+    "level_star": Rule(
+        block="level_star", kind="level_K", param_names=("alpha", "c", "b"),
+        table="level_selection.csv",
+        grid=tuple(
+            {"alpha": float(a), "c": float(c), "b": float(b)}
+            for (a, c) in ((0.5, 3.0), (0.5, 4.0), (0.5, 6.0), (0.5, 8.0),
+                           (0.75, 1.0), (0.75, 1.5), (0.75, 2.0), (0.75, 3.0))
+            for b in (0.0, 2.0, 4.0, 6.0, 8.0)
+        ),
+        meta={},
+    ),
 }
 
 

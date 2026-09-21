@@ -619,3 +619,39 @@ mean `(S+1)/(n+2)` over held arms, computed by the rule itself (no evidence pass
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_bestmean
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_bestmean_secondary
 ```
+
+---
+
+## Pre-registration 6 — the level-scaled schedule (registered 2026-09-20, before code, selection or run)
+
+Pre-registration 5's gate was inert: on the validation split every θ ≤ 0.65 closed it on a single lucky
+first pull (a 1-pull success has posterior mean 0.667) after ~2.5 arms, and selection escaped to a θ the
+best mean never reaches before the ceiling. What `model_reads.py` actually shows is that the k = 4 model
+stops while every arm has 1–3 pulls — where "the best posterior mean" is no more than *whether first pulls
+succeeded*, i.e. an estimate of the **reservoir's mean level**. `f_mean_of_means` tracks the per-environment
+K at ρ = −0.96 / −0.98 / −0.93 exactly as `est_quantile_0.99` does. High level (thin-tailed reservoir, the
+best is near the typical arm) → few arms; low level (heavy-tailed, excellent arms are rare and far above
+typical) → many. This registers that as the null model.
+
+### The null model (a declared researcher degree of freedom, chosen from `model_reads.py` and §12.6)
+
+**`level_star`: SEARCH while K_t < c · T^α · exp(b · (0.5 − level_t))**, where level_t is the mean posterior
+mean `(S+1)/(n+2)` over held arms. Three scalars (α, c, b); b = 0 is the fixed-K schedule. At b = 4 a
+level of 0.60 scales the target by 0.67 and a level of 0.37 by 1.68 — the 2.5× contrast between
+`phi_k4`'s 14 arms in `beta_good_common` and 36 in `tail_b8.0_mu1.0_c1.0` at T = 50.
+
+- **Selection:** as Pre-registrations 4–5 (8 main environments × T ∈ {50, 100, 200}, validation split, cap 64,
+  M = 2000), grid (α, c) ∈ {(0.5, 3), (0.5, 4), (0.5, 6), (0.5, 8), (0.75, 1), (0.75, 1.5), (0.75, 2), (0.75, 3)} ×
+  b ∈ {0, 2, 4, 6, 8} — 40 candidates (`select_rule.py --rule level_star`).
+- **Deployment:** robustness panel, Test A, Test C.
+
+### The registered contrasts (robustness panel, T ∈ {50, 100, 200}, env-mean t on n = 30, MEI 0.002)
+
+- **Primary — H1b⁵:** `phi_k4` − `level_star`; the same rule as before. *Refuted* means the model is a
+  level-scaled schedule and the programme's result is three numbers. *Supported* means it reads more than
+  the level.
+- **Secondary:** `level_star` − `fixed_K_star` (does scaling by the level deliver §12.4's environment sizing?).
+
+Every null registered here is a rule the *learned policy* must beat, so adding registrations makes the
+claim "the model carries information a rule cannot" harder to sustain, not easier; the sequence 3 → 4 → 5
+→ 6 is reported in full.

@@ -47,14 +47,17 @@ from cold_start.growing.deploy.recommenders import PRIMARY_RECOMMENDER  # noqa: 
 
 log = logging.getLogger("deploy.registered")
 
-#: The registration, verbatim (DEPLOYMENT_PLAN.md, Pre-registration 2).
-REGISTERED = {
-    "policy": "phi_k4",
-    "reference": "p3_star",
-    "test": "robust",
-    "horizons": (50, 100, 200),
-    "mei": 0.002,
+#: The registrations, verbatim (DEPLOYMENT_PLAN.md, Pre-registrations 2 and 3). Each is one
+#: primary contrast; the secondary of registration 3 is listed under its own name.
+REGISTRATIONS: dict[str, dict] = {
+    "h1b_prime": {"policy": "phi_k4", "reference": "p3_star", "test": "robust",
+                  "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_prime.csv"},
+    "h1b_null": {"policy": "phi_k4", "reference": "fixed_K_star", "test": "robust",
+                 "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_null.csv"},
+    "h1b_null_secondary": {"policy": "fixed_K_star", "reference": "p3_star", "test": "robust",
+                           "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_null_secondary.csv"},
 }
+REGISTERED = REGISTRATIONS["h1b_prime"]
 ALL_HORIZONS: tuple[int, ...] = (50, 100, 200, 500, 1000)
 
 COLUMNS: tuple[str, ...] = (
@@ -135,9 +138,10 @@ def registered_contrast(
 ) -> pd.DataFrame:
     out_dir = Path(out_dir)
     horizons = tuple(int(h) for h in horizons)
-    as_registered = (policy, reference, test, horizons, float(mei)) == (
-        REGISTERED["policy"], REGISTERED["reference"], REGISTERED["test"],
-        tuple(REGISTERED["horizons"]), float(REGISTERED["mei"]),
+    as_registered = any(
+        (policy, reference, test, horizons, float(mei)) == (
+            r["policy"], r["reference"], r["test"], tuple(r["horizons"]), float(r["mei"]))
+        for r in REGISTRATIONS.values()
     )
     if not as_registered:
         log.warning("NOT the registered contrast: %s vs %s on %s at %s, mei %s",
@@ -179,26 +183,33 @@ def registered_contrast(
 
 def main(argv: list[str] | None = None) -> pd.DataFrame:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--policy", default=REGISTERED["policy"])
-    ap.add_argument("--reference", default=REGISTERED["reference"])
-    ap.add_argument("--test", default=REGISTERED["test"])
-    ap.add_argument("--horizons", default=",".join(str(h) for h in REGISTERED["horizons"]))
-    ap.add_argument("--mei", type=float, default=REGISTERED["mei"])
+    ap.add_argument("--registration", default="h1b_prime", choices=sorted(REGISTRATIONS),
+                    help="which pre-registered contrast to compute (its defaults fill the rest)")
+    ap.add_argument("--policy", default=None)
+    ap.add_argument("--reference", default=None)
+    ap.add_argument("--test", default=None)
+    ap.add_argument("--horizons", default=None)
+    ap.add_argument("--mei", type=float, default=None)
     ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR)
     ap.add_argument("--n-boot", type=int, default=10_000)
-    ap.add_argument("--out", type=Path, default=None, help="default: <out-dir>/tables/h1b_prime.csv")
+    ap.add_argument("--out", type=Path, default=None, help="default: <out-dir>/tables/<registration>.csv")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    horizons = tuple(int(x) for x in args.horizons.split(",") if x.strip())
+    reg = REGISTRATIONS[args.registration]
+    for key in ("policy", "reference", "test", "mei"):
+        if getattr(args, key) is None:
+            setattr(args, key, reg[key])
+    horizons = (tuple(int(x) for x in args.horizons.split(",") if x.strip())
+                if args.horizons else tuple(reg["horizons"]))
     out = registered_contrast(args.policy, args.reference, test=args.test, horizons=horizons,
                               mei=args.mei, out_dir=args.out_dir, n_boot=args.n_boot)
-    path = args.out or (args.out_dir / "tables" / "h1b_prime.csv")
+    path = args.out or (args.out_dir / "tables" / reg["out"])
     path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(path, index=False)
     p = out[out["row"] == "primary"].iloc[0]
-    log.info("H1b' %s vs %s on %s at T in %s: delta=%+.6f paired [%+.6f, %+.6f] cluster t [%+.6f, %+.6f] "
+    log.info("%s: %s vs %s on %s at T in %s: delta=%+.6f paired [%+.6f, %+.6f] cluster t [%+.6f, %+.6f] "
              "p=%.3g sign p=%s n_envs=%d n_cells=%d  ->  %s",
-             args.policy, args.reference, args.test, horizons, p["delta"], p["lo"], p["hi"],
+             args.registration, args.policy, args.reference, args.test, horizons, p["delta"], p["lo"], p["hi"],
              p["cluster_lo"], p["cluster_hi"], p["cluster_p"], p["cluster_p_sign"], p["n_envs"], p["n_cells"],
              p["verdict"].upper())
     for _, r in out[out["row"] != "primary"].iterrows():

@@ -162,7 +162,7 @@ def _pool_over_envs(env_rows: pd.DataFrame) -> pd.DataFrame:
             "env_id": "all",
             "family": "all",
             "horizon": int(T),
-            "cap": int(T),
+            "cap": int(sub["cap"].iloc[0]),
             "base_seed": -1,
             "K": int(K),
             "n_envs": int(sub["env_id"].nunique()),
@@ -189,6 +189,11 @@ def run_envelope(
     items = make_items(tuple(env_ids), tuple(horizons), tuple(k_grid), n_replicates, split)
     log.info("%d items: %d envs x %d horizons x <=%d K, M=%d, split=%s",
              len(items), len(env_ids), len(horizons), len(k_grid), n_replicates, split)
+    return run_items(items, workers=workers)
+
+
+def run_items(items: list[Item], *, workers: int = 1) -> pd.DataFrame:
+    """Run every item, pool over environments, mark the argmins; `COLUMNS` order."""
     t0 = time.time()
     results: list[dict] = []
     if int(workers) <= 1:

@@ -80,6 +80,7 @@ _PLACEHOLDER_P3_STAR = {
     "c": float(rules.POLICY_SPECS["power_sqrt"]["c"]),
 }
 _PLACEHOLDER_RULE_TAU = float(rules.POLICY_SPECS["reservoir_rule"]["tau"])
+_PLACEHOLDER_FIXED_K = int(rules.POLICY_SPECS["fixed_K16"]["K"])
 
 # Which `rules.POLICY_SPECS` entry each kind is built through; `params` override the
 # rest, so only the kind of the registered entry matters here.
@@ -142,6 +143,14 @@ POLICIES: dict[str, dict[str, Any]] = {
     },
     "uniform": {"kind": "uniform", "params": {}, "group": "baseline", "requires": []},
     "fixed_K16": {"kind": "fixed_K", "params": {"K": 16}, "group": "baseline", "requires": []},
+    # Pre-registration 3's null model: recruit to K(T) immediately, then refine; K(T) the
+    # validation argmin per horizon (`select_fixed_k.py`, `baseline_params.json["fixed_K_star"]`).
+    "fixed_K_star": {
+        "kind": "fixed_K",
+        "params": {"K": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
     "power_a0.25": _power("0.25"),
     "power_a0.33": _power("0.33"),
     "power_a0.5": _power("0.5"),
@@ -408,7 +417,7 @@ PROVENANCE_KEYS: tuple[str, ...] = ("tau_source", PARAMS_TUNED, PARAMS_FALLBACK,
 TUNING_CAP_KEY = "cap"
 BY_CAP_KEY = "by_cap"
 #: The blocks a per-cap retune would have to duplicate; everything else is metadata.
-TUNED_BLOCKS: tuple[str, ...] = ("power", "p3_star", "refine_after_init")
+TUNED_BLOCKS: tuple[str, ...] = ("power", "p3_star", "refine_after_init", "fixed_K_star")
 
 
 def _tuned_c(
@@ -457,6 +466,18 @@ def _tuned_p3_star(
     return (float(sel["alpha"]), float(sel["c"])), None
 
 
+def _tuned_fixed_k(name: str, horizon: int, baseline_params: dict | None) -> tuple[int, dict | None]:
+    ph = {"K": _PLACEHOLDER_FIXED_K}
+    if baseline_params is None:
+        _warn_once(name, f"no baseline_params; using placeholder K={_PLACEHOLDER_FIXED_K}")
+        return _PLACEHOLDER_FIXED_K, ph
+    sel = _lookup_by_number(baseline_params.get("fixed_K_star", {}), horizon)
+    if not sel or "K" not in sel:
+        _warn_once(name, f"no validation-selected K for T={horizon}; placeholder {_PLACEHOLDER_FIXED_K}")
+        return _PLACEHOLDER_FIXED_K, ph
+    return int(sel["K"]), None
+
+
 def _stamp_untuned(params: dict[str, Any], fallback: dict | None) -> None:
     """Record a placeholder substitution in the params it was substituted into."""
     if fallback is None:
@@ -491,6 +512,15 @@ def params_are_tuned(params: dict[str, Any] | None) -> bool:
 BASELINE_PARAM_KINDS: frozenset[str] = frozenset({"power", "refine_after_init"})
 
 
+def _reads_baseline_params(entry: dict[str, Any]) -> bool:
+    """Whether a table entry fills a slot from `baseline_params.json` (and so can be
+    untuned or mis-capped): every `BASELINE_PARAM_KINDS` entry, plus `fixed_K_star`, the
+    one `fixed_K` whose K is a ``None`` slot (a fixed integer like `fixed_K16` is not)."""
+    return entry["kind"] in BASELINE_PARAM_KINDS or (
+        entry["kind"] == "fixed_K" and entry["params"].get("K") is None
+    )
+
+
 def constructor_params(params: dict | None) -> dict:
     """`params` without the provenance keys: what actually reaches the policy constructor.
 
@@ -518,7 +548,7 @@ def deployed_params_are_current(
     (finding B1). Kinds outside `BASELINE_PARAM_KINDS` are not judged here and return True.
     """
     entry = POLICIES.get(name)
-    if entry is None or entry["kind"] not in BASELINE_PARAM_KINDS or recorded is None:
+    if entry is None or not _reads_baseline_params(entry) or recorded is None:
         return True
     fresh = constructor_params(resolve_params(name, horizon, cap=cap, baseline_params=baseline_params))
     have = constructor_params(recorded)
@@ -545,7 +575,7 @@ def baseline_is_tuned(
     if entry is None:
         return True
     kind, slots = entry["kind"], entry["params"]
-    if kind in BASELINE_PARAM_KINDS and cap is not None:
+    if _reads_baseline_params(entry) and cap is not None:
         _, tuned_cap = baseline_params_for_cap(baseline_params, cap)
         if tuned_cap is not None and int(tuned_cap) != int(cap):
             return False
@@ -557,6 +587,8 @@ def baseline_is_tuned(
             return _tuned_c(name, float(slots["alpha"]), int(horizon), baseline_params)[1] is None
     elif kind == "refine_after_init" and slots["K0"] is None:
         return _tuned_k0(name, int(horizon), baseline_params)[1] is None
+    elif kind == "fixed_K" and slots["K"] is None:
+        return _tuned_fixed_k(name, int(horizon), baseline_params)[1] is None
     return True
 
 
@@ -666,6 +698,11 @@ def resolve_params(
     elif kind == "refine_after_init":
         if params["K0"] is None:
             params["K0"], fallback = _tuned_k0(name, horizon, baseline_params)
+            _stamp_untuned(params, fallback)
+            from_baseline = True
+    elif kind == "fixed_K":
+        if params["K"] is None:  # fixed_K_star
+            params["K"], fallback = _tuned_fixed_k(name, horizon, baseline_params)
             _stamp_untuned(params, fallback)
             from_baseline = True
     if from_baseline:

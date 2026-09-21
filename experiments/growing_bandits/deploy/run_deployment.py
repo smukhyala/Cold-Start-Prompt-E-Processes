@@ -43,7 +43,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import functools
 import hashlib
+import importlib
+import importlib.metadata
 import json
 import logging
 import multiprocessing as mp
@@ -86,7 +89,7 @@ log = logging.getLogger("deploy.run")
 
 DEFAULT_OUT_DIR = ROOT / "results" / "growing_bandits" / "deploy"
 
-TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke")
+TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch", "capp")
 REFERENCES: tuple[str, ...] = ("cp0", "p3_star")
 
 #: Episodes per cell by test (DEPLOYMENT_PLAN.md "Environments / horizons / episodes").
@@ -98,6 +101,8 @@ DEFAULT_REPLICATES: dict[str, int] = {
     "robust": 500,
     "cap": 1000,
     "smoke": 100,
+    "capmatch": 2000,
+    "capp": 2000,
 }
 DEFAULT_CAP = 64
 D_HORIZONS: tuple[int, ...] = (200, 1000)
@@ -115,7 +120,25 @@ CAP_SWEEP_ENVS: tuple[str, ...] = (
 )
 CAP_SWEEP_HORIZONS: tuple[int, ...] = (200, 1000)
 CAP_SWEEP_CAPS: tuple[int | str, ...] = (32, 64, "T")
+#: The CRN-paired cap sweep (roadmap 3.3; ``--test capp``): every cap of an (env, T) runs
+#: on the cap-64 cell's seed (`cells.make_matched_cell`), so mu_star is bit-identical
+#: across caps and a cross-cap difference is a paired difference. The eight main
+#: environments, so no stratum is below CLUSTER_MIN_ENVS, and the roadmap's denser cap
+#: ladders, which fill the 8x hole between cap 128 and cap = T at T = 1000. Never pooled
+#: with ``--test cap``, whose cells draw a fresh seed per cap.
+CAPP_HORIZON_CAPS: dict[int, tuple[int, ...]] = {
+    200: (32, 48, 64, 96, 128, 160, 200),
+    1000: (32, 48, 64, 96, 128, 192, 256, 384, 512, 1000),
+}
 SMOKE_ENVS: tuple[str, ...] = ("beta_good_common", "tail_b2.0_mu1.0_c1.0")
+#: The K-matched control (NEXT-STEPS 2.4): horizons where a learned policy and the tuned
+#: schedule can differ at all (at T >= 500 the 64-arm cap makes them the same policy), and
+#: the two comparators deployed at each learned policy's own realised K_final. Every cell
+#: at K = DEFAULT_CAP already exists in Test A / C and is read from there by
+#: `analyze_capmatch.py`; only the K < DEFAULT_CAP cells are run.
+CAPMATCH_HORIZONS: tuple[int, ...] = (50, 100, 200)
+CAPMATCH_COMPARATORS: tuple[str, ...] = ("always_search", "uniform")
+CAPMATCH_SOURCE_TESTS: tuple[str, ...] = ("A", "C")
 SMOKE_HORIZON = 100
 
 #: Smoke runs draw validation seeds: no effect size is ever quoted from test seeds
@@ -213,8 +236,53 @@ def _cell_grid(test: str, cells_mod) -> list[tuple[str, int, int, int | None]]:
                     grid.append((e, T, T if cap == "T" else int(cap), None))
     elif test == "smoke":
         grid = [(e, SMOKE_HORIZON, DEFAULT_CAP, None) for e in SMOKE_ENVS]
+    elif test == "capp":
+        grid = [(e, T, int(cap), None) for e in main_envs for T, caps in CAPP_HORIZON_CAPS.items() for cap in caps]
     else:
         raise ValueError(f"unknown test {test!r}; tests={TESTS}")
+    return grid
+
+
+def seeds_may_repeat(test: str) -> bool:
+    """Whether cells of `test` may share a base_seed: only the paired cap sweep, by design."""
+    return test == "capp"
+
+
+def matched_grid(
+    match: str,
+    *,
+    tables_dir: Path,
+    horizons: tuple[int, ...] = CAPMATCH_HORIZONS,
+    include_at_cap: bool = False,
+) -> list[tuple[str, str, int, int]]:
+    """``(source_test, env_id, horizon, K)`` for every Test-A / Test-C cell `match` ran in.
+
+    ``K = round(k_final)`` of `match` in that cell (`cells_<test>_primary.csv`). Cells whose
+    K equals `DEFAULT_CAP` are the deployed cells themselves and are left out unless
+    `include_at_cap`; the analysis reads those from Test A / C directly.
+    """
+    grid: list[tuple[str, str, int, int]] = []
+    seen_policy = False
+    for test in CAPMATCH_SOURCE_TESTS:
+        path = Path(tables_dir) / f"cells_{test}_primary.csv"
+        if not path.exists():
+            continue
+        frame = pd.read_csv(path)
+        frame = frame[frame["policy"] == match]
+        if len(frame):
+            seen_policy = True
+        for row in frame.itertuples(index=False):
+            if int(row.horizon) not in horizons:
+                continue
+            k = int(round(float(row.k_final)))
+            if k >= DEFAULT_CAP and not include_at_cap:
+                continue
+            grid.append((test, str(row.env_id), int(row.horizon), min(k, DEFAULT_CAP)))
+    if not seen_policy:
+        raise RuntimeError(
+            f"{match} has no rows in cells_A_primary.csv / cells_C_primary.csv under {tables_dir}; "
+            "the K-matched control needs the deployed K_final to match"
+        )
     return grid
 
 
@@ -238,14 +306,50 @@ def build_cells(
     n_replicates: int | None,
     cells_mod,
     overrides: list[tuple[str, int, int, int | None]] | None = None,
+    match: str | None = None,
+    tables_dir: Path | None = None,
 ) -> list[CellSpec]:
     """The `CellSpec` list for `test`, seeded by `cells.make_cell` on the test split
     (the validation split for the smoke test, see `SMOKE_SPLIT`).
 
     Without `cells.py` only the smoke test may run, on stand-in seeds -- a real test
     on ad-hoc seeds would not be the pre-registered study.
+
+    ``test == "capmatch"`` takes `match` (the learned policy whose K_final sets each
+    cell's cap) and builds `cells.make_matched_cell` cells: the Test-A / C seed, the
+    matched cap, so the control is CRN-paired with the deployed episodes.
     """
+    if test == "capmatch":
+        if not match:
+            raise RuntimeError("--test capmatch needs --match <learned policy>")
+        if cells_mod is None:
+            raise RuntimeError("--test capmatch needs cells.py for the Test-A / C seeds")
+        m = int(n_replicates) if n_replicates is not None else DEFAULT_REPLICATES[test]
+        specs = [
+            cells_mod.make_matched_cell(TEST_SPLIT, env_id, horizon, k, m, seed_cap=DEFAULT_CAP)
+            for _, env_id, horizon, k in matched_grid(
+                match, tables_dir=Path(tables_dir) if tables_dir else DEFAULT_OUT_DIR / "tables",
+            )
+        ]
+        if not specs:
+            raise RuntimeError(f"every cell of {match} is at K = {DEFAULT_CAP}; nothing to run")
+        names = [cell_name(s) for s in specs]
+        if len(set(names)) != len(names):
+            raise RuntimeError(f"duplicate matched cells for {match}: {names}")
+        return specs
     grid = overrides if overrides is not None else _cell_grid(test, cells_mod)
+    if test == "capp":
+        if cells_mod is None:
+            raise RuntimeError("--test capp needs cells.py for the Test-A seeds")
+        m = int(n_replicates) if n_replicates is not None else DEFAULT_REPLICATES[test]
+        specs = [
+            cells_mod.make_matched_cell(TEST_SPLIT, env_id, int(horizon), int(cap), m, seed_cap=DEFAULT_CAP)
+            for env_id, horizon, cap, _ in grid
+        ]
+        names = [cell_name(s) for s in specs]
+        if len(set(names)) != len(names):
+            raise RuntimeError(f"duplicate cells in test {test!r}: {names}")
+        return specs
     if cells_mod is None and test != "smoke":
         raise RuntimeError(
             f"test {test!r} needs experiments/growing_bandits/deploy/cells.py (M5) for its "
@@ -376,6 +480,8 @@ class WorkItem:
     snapshots_path: str | None
     git_sha: str
     artifact_sha: str | None = None
+    #: `sim_surface_sha` of the code that will produce this episode.
+    sim_sha: str = ""
 
 
 def _git_sha() -> str:
@@ -398,17 +504,146 @@ def file_sha256(path: str | Path) -> str:
     return h.hexdigest()
 
 
-def stale_reason(record: dict, item: WorkItem) -> str | None:
+#: Every module whose bytes can change an episode: the transitive closure, over the
+#: project's own code, of `harness.run_cell`, `policy_table` (which resolves the
+#: constants and builds the policy object) and `pairwise_table` (the log-e evidence the
+#: runner hands to a policy), minus `SIM_SURFACE_EXCLUDED`.
+#: `test_sim_surface_covers_everything_reachable_from_run_cell` asserts the two lists
+#: *partition* that closure, so a new module cannot join the simulation surface without
+#: joining the fingerprint.
+#:
+#: The three package ``__init__.py`` shells are docstring-only and deliberately out of
+#: scope; the same test holds them to that.
+SIM_SURFACE_MODULES: tuple[str, ...] = (
+    "cold_start.growing.deploy.artifacts",
+    "cold_start.growing.deploy.comparators",
+    "cold_start.growing.deploy.feature_groups",
+    "cold_start.growing.deploy.features_vec",
+    "cold_start.growing.deploy.harness",
+    "cold_start.growing.deploy.history_vec",
+    "cold_start.growing.deploy.model_policy",
+    "cold_start.growing.deploy.pairwise_table",
+    "cold_start.growing.deploy.recommenders",
+    "cold_start.growing.deploy.rules",
+    "cold_start.growing.allocation",
+    "cold_start.growing.evidence",
+    "cold_start.growing.features",
+    "cold_start.growing.labeling",
+    "cold_start.growing.recommend",
+    "cold_start.growing.reservoirs",
+    "cold_start.growing.rng",
+    "cold_start.growing.schema",
+    "cold_start.growing.search_policies",
+    "cold_start.growing.simulator",
+    "cold_start.growing.state",
+    "cold_start.growing.tables",
+    "cold_start.registry",
+)
+
+#: Reachable from `harness.run_cell` and deliberately NOT fingerprinted: `policy_table`
+#: is the study's *registry*, not the simulator.
+#:
+#: Appending a policy to it, or a cap block, cannot change an episode that some other
+#: policy already ran -- but a byte hash cannot know that, so including it made the
+#: commonest edit to the file invalidate every finished item on the next ``--resume``.
+#: `da41273` is the proof: it appended ``EXTRA_CAPS=(128,)`` and registered the two M9
+#: variants, nothing else, and it would have made all 1,360 shipped Test-A items stale.
+#: An unescapable guard with a cost that large is one that gets deleted.
+#:
+#: What `policy_table` contributes to an episode is not lost: the resolved constructor
+#: parameters travel in the manifest and are checked by `stale_reason`, the artifact's
+#: bytes by ``artifact_sha``, and every module `policy_table` *builds from* (`rules`,
+#: `model_policy`, `features_vec`, `history_vec`) is on the surface above. Measured over
+#: all five shas that produced shipped episodes, the surface below is constant at
+#: ``97704d2795f7``; with `policy_table` in, the same tree spanned three values.
+SIM_SURFACE_EXCLUDED: tuple[str, ...] = ("policy_table",)
+
+#: Third-party packages whose version is recorded beside `sim_surface_sha`. The
+#: fingerprint hashes *source only*: a numpy or scipy upgrade changes an episode without
+#: changing a byte of this repo, so the versions are stamped rather than pretended away.
+SIM_SURFACE_PACKAGES: tuple[str, ...] = ("numpy", "scipy", "scikit-learn", "pandas", "pyarrow")
+
+
+def sim_surface_files() -> dict[str, Path]:
+    """``module name -> source file`` for `SIM_SURFACE_MODULES`."""
+    out: dict[str, Path] = {}
+    for name in SIM_SURFACE_MODULES:
+        module = importlib.import_module(name)
+        path = getattr(module, "__file__", None)
+        if path is None:
+            raise RuntimeError(f"{name} has no source file; it cannot be fingerprinted")
+        out[name] = Path(path)
+    return out
+
+
+@functools.lru_cache(maxsize=1)
+def sim_surface_sha() -> str:
+    """A 12-hex fingerprint of the simulation surface's source.
+
+    `stale_reason` checks the resolved params, the seed and replicate count, the
+    horizon/cap and the model artifact's bytes -- but never the code, and the manifest's
+    ``sha`` (the repo HEAD) is not a substitute: it moves for every unrelated commit and
+    the analysis never reads it. The shipped episode sets are in fact mixed across code
+    versions (``manifest_A`` is 1360 items at one sha plus 80 at another), which only a
+    surface fingerprint can judge. With this stamped, a ``--resume`` cannot silently keep
+    episodes produced by different code, and `analyze_deployment.load_cells` refuses a
+    test that spans more than one surface.
+
+    It covers the simulator, not the registry: see `SIM_SURFACE_EXCLUDED` for why
+    `policy_table` is out, and what carries its contribution instead.
+
+    Keyed on module name, not path, so the value does not depend on where the checkout
+    lives.
+    """
+    h = hashlib.sha256()
+    for name, path in sorted(sim_surface_files().items()):
+        h.update(name.encode("utf-8"))
+        h.update(b"\0")
+        h.update(file_sha256(path).encode("ascii"))
+        h.update(b"\n")
+    return h.hexdigest()[:12]
+
+
+def sim_surface_versions() -> dict[str, str]:
+    """The resolved versions of the numerical stack `sim_surface_sha` cannot hash."""
+    out = {"python": ".".join(str(v) for v in sys.version_info[:3])}
+    for name in SIM_SURFACE_PACKAGES:
+        try:
+            out[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            out[name] = "absent"
+    return out
+
+
+def stale_reason(record: dict, item: WorkItem, *, ignore_sim_sha: bool = False) -> str | None:
     """Why a manifest `record` no longer describes `item`, or ``None`` if it still does.
 
     The checks are the inputs that change an item's *result*: its resolved
     parameters (a tau or schedule constant that arrived with the tuning outputs),
-    its seed and replicate count, the artifact's bytes, and whether snapshots were
-    requested but never logged. Dynamics grid changes are not tracked.
+    its seed and replicate count, the artifact's bytes, the simulation surface's source
+    (`sim_surface_sha`), and whether snapshots were requested but never logged. Dynamics
+    grid changes are not tracked.
+
+    Only the *constructor* parameters are compared (`policy_table.constructor_params`):
+    provenance keys are a description of how a constant was chosen, not the constant, and
+    an item whose params gained a ``params_cap`` stamp would otherwise be re-run to
+    produce bit-identical episodes.
+
+    A record written before the surface was fingerprinted carries no ``sim_sha`` and is
+    *not* called stale on that ground: the whole shipped tree predates the stamp, and
+    turning 3,510 items stale would guarantee the flag gets routed around. Those records
+    are surfaced instead, by `analyze_deployment.load_cells`, at analysis time.
+
+    `ignore_sim_sha` (``--allow-stale-sim``) is the deliberate escape for the common
+    benign case: `policy_table` is on the surface, so *registering a new policy* moves
+    the fingerprint although no existing policy's episode can change. Without an escape
+    that case costs a full re-run, and an unescapable guard is the kind that gets
+    deleted. The item keeps the ``sim_sha`` it was produced under, so the analysis still
+    sees -- and still refuses -- the mixed set.
     """
     if not record.get("parquet") or not Path(record["parquet"]).exists():
         return "parquet missing"
-    if record.get("params") != item.params:
+    if pt.constructor_params(record.get("params")) != pt.constructor_params(item.params):
         return f"params changed {record.get('params')} -> {item.params}"
     if int(record.get("n_replicates", -1)) != int(item.spec.n_replicates):
         return f"n_replicates {record.get('n_replicates')} -> {item.spec.n_replicates}"
@@ -418,6 +653,9 @@ def stale_reason(record: dict, item: WorkItem) -> str | None:
         return "horizon/cap changed"
     if item.artifact_sha is not None and record.get("artifact_sha") != item.artifact_sha:
         return f"artifact bytes changed ({record.get('artifact_sha')} -> {item.artifact_sha})"
+    recorded_sim = record.get("sim_sha")
+    if not ignore_sim_sha and recorded_sim and item.sim_sha and recorded_sim != item.sim_sha:
+        return f"simulation surface changed ({recorded_sim} -> {item.sim_sha})"
     if item.snapshots_path is not None and not record.get("snapshots"):
         return "snapshots requested but not logged before"
     return None
@@ -452,12 +690,19 @@ def build_work(
     artifacts: dict[str, dict] | None = None,
     log_policies: set[str] | None = None,
     artifact_shas: dict[str, str] | None = None,
+    excluded: dict[tuple[str, str, str], dict] | None = None,
+    force_policies: set[str] | None = None,
+    allow_stale_sim: bool = False,
 ) -> list[WorkItem]:
     """Resolve every (cell, policy) into a `WorkItem`, skipping those `done` describes.
 
     `done` maps an item key to its latest manifest record; the item is skipped only
     if `stale_reason` finds nothing changed, otherwise it is re-run and the reason
-    logged. Parameters are resolved here, in the parent, so every placeholder warning
+    logged. `excluded` (`active_exclusions`) is honoured on *every* run, not only
+    ``--resume``: a deliberately dropped item stays dropped until ``--force-policies``
+    names its policy, which is what nothing on disk recorded when ruling 19 rescheduled
+    nine T=2000 log-e items that ruling 16 had dropped on purpose.
+    Parameters are resolved here, in the parent, so every placeholder warning
     is printed once and the manifest can carry the values actually deployed.
     `artifacts` (variant -> loaded model) saves re-reading each joblib once per cell;
     `artifact_shas` (variant -> sha256 of the file) is stamped on every learned item.
@@ -467,15 +712,32 @@ def build_work(
     comparators_dir = out_dir / "comparators"
     artifacts = artifacts or {}
     artifact_shas = artifact_shas or {}
+    excluded = excluded or {}
+    force_policies = force_policies or set()
+    sim_sha = sim_surface_sha()
     items: list[WorkItem] = []
     for spec in cells:
         name = cell_name(spec)
         candidates: list[WorkItem] = []
         for policy in policies:
+            exclusion = excluded.get((test, name, policy))
+            if exclusion is not None:
+                if policy not in force_policies:
+                    log.info(
+                        "%s/%s: skipped by an active manifest exclusion (%s); "
+                        "--force-policies %s to run it anyway",
+                        name, policy, exclusion.get("reason"), policy,
+                    )
+                    continue
+                log.warning(
+                    "%s/%s: --force-policies overrides the active exclusion (%s)",
+                    name, policy, exclusion.get("reason"),
+                )
             variant = pt.variant_of(policy)
             params = pt.resolve_params(
                 policy,
                 spec.horizon,
+                cap=spec.cap,
                 baseline_params=baseline_params,
                 thresholds=thresholds,
                 models_dir=models_dir,
@@ -503,10 +765,11 @@ def build_work(
                 snapshots_path=str(snapshots) if logged else None,
                 git_sha=git_sha,
                 artifact_sha=artifact_shas.get(variant) if variant is not None else None,
+                sim_sha=sim_sha,
             )
             record = done.get((test, name, policy))
             if record is not None:
-                reason = stale_reason(record, item)
+                reason = stale_reason(record, item, ignore_sim_sha=allow_stale_sim)
                 if reason is None:
                     continue
                 log.warning("resume: re-running %s/%s: %s", name, policy, reason)
@@ -526,12 +789,37 @@ _TABLES: dict[tuple[int, float], CSTable] = {}
 _PAIRWISE: dict[int, object] = {}
 _ARTIFACTS: dict[str, dict] = {}
 _THREAD_LIMITS = None
+#: The pid of the process that started this worker's pool, or ``None`` when the item is
+#: running inline in the parent. See `OrphanedWorker`.
+_PARENT_PID: int | None = None
 
 
-def _worker_init(log_level: int) -> None:
+class OrphanedWorker(RuntimeError):
+    """The pool parent died while this worker was still running an item.
+
+    The parquet write happens in the worker and the manifest append in the parent
+    (`run_items`), so a worker that outlives a killed parent writes a *complete*
+    episode file that no manifest line will ever mention. Twice now (ledger rulings 17
+    and 22) that left orphan T=2000 files behind a killed ``--resume``, and the next
+    analysis would have silently pooled them: nine files lifted Test D's common support
+    from 16 policies to 19, undoing a deliberate exclusion and moving a published
+    headline. `analyze_deployment.reconcile_episodes` stops such a file from entering a
+    number; this stops it from existing.
+
+    The check is advisory. A worker already inside ``to_parquet`` when the parent dies
+    still leaves a stray ``*.parquet.tmp``, which the reconciler ignores.
+    """
+
+
+def _worker_init(log_level: int, parent_pid: int | None = None) -> None:
     """Per-process setup: logging (spawned children start with none) and one BLAS /
-    OpenMP thread each, since the parallelism is across items."""
-    global _THREAD_LIMITS
+    OpenMP thread each, since the parallelism is across items.
+
+    `parent_pid` is the pool owner's pid, recorded so every output write can check that
+    it is still this process's parent (`OrphanedWorker`).
+    """
+    global _THREAD_LIMITS, _PARENT_PID
+    _PARENT_PID = None if parent_pid is None else int(parent_pid)
     logging.basicConfig(
         level=log_level, format="%(asctime)s %(levelname)s %(processName)s %(name)s: %(message)s"
     )
@@ -563,7 +851,29 @@ def _artifact(path: str) -> dict:
     return _ARTIFACTS[path]
 
 
+def _parent_is_alive() -> bool:
+    """Whether the process that started this worker's pool is still this worker's parent.
+
+    A killed parent leaves the worker reparented (to init, or to a subreaper), so
+    ``os.getppid()`` no longer matches the pid recorded at `_worker_init`. Inline runs
+    (``--workers 1``) never set it and are always "alive".
+    """
+    return _PARENT_PID is None or os.getppid() == _PARENT_PID
+
+
 def _atomic_replace(tmp: Path, final: Path) -> None:
+    """Publish `tmp` as `final`, unless this worker has been orphaned.
+
+    The guard sits here rather than at the three call sites so no future output can be
+    added without it. On a mismatch the temporary file is removed and nothing is
+    published: an orphan that never lands is an orphan no analysis can pool.
+    """
+    if not _parent_is_alive():
+        tmp.unlink(missing_ok=True)
+        raise OrphanedWorker(
+            f"parent {_PARENT_PID} is gone (ppid is now {os.getppid()}); "
+            f"refusing to write {final}"
+        )
     final.parent.mkdir(parents=True, exist_ok=True)
     os.replace(tmp, final)
 
@@ -656,6 +966,8 @@ def run_item(item: WorkItem) -> dict:
         "n": int(res.n_episodes),
         "seconds": round(time.perf_counter() - t0, 3),
         "sha": item.git_sha,
+        "sim_sha": item.sim_sha,
+        "sim_versions": sim_surface_versions(),
         "env_id": spec.env_id,
         "family": family_of(spec.env_spec),
         "horizon": int(spec.horizon),
@@ -711,6 +1023,58 @@ def read_manifest(path: Path) -> list[dict]:
     return records
 
 
+#: Manifest record kinds. Every line written before exclusions existed carries no
+#: ``kind`` at all and is a completion, so the field is always read through
+#: `record_kind` rather than ``record["kind"]``.
+KIND_COMPLETION = "completion"
+KIND_EXCLUSION = "exclusion"
+
+
+def record_kind(record: dict) -> str:
+    """`KIND_COMPLETION` (the default for an unmarked line) or `KIND_EXCLUSION`."""
+    return str(record.get("kind") or KIND_COMPLETION)
+
+
+def exclusion_record(test: str, cell: str, policy: str, reason: str, sha: str) -> dict:
+    """A manifest line recording that (cell, policy) is *deliberately* not run.
+
+    Ruling 16 dropped three log-e policies from Test D's T=2000 cells because the exact
+    chunked pairwise evaluator costs hours per item there. Nothing on disk said so, so
+    the next ``--resume`` scheduled all nine again (ruling 19) and the workers that
+    outlived the killed parent left nine orphan parquets behind (ruling 22). An
+    exclusion line is the durable form of that decision: `latest_records` is
+    latest-line-wins keyed on (test, cell, policy), so it supersedes any completion
+    before it, `build_work` skips the item, and `analyze_deployment.reconcile_episodes`
+    treats an excluded item that nonetheless has a file on disk as an orphan.
+
+    `reason` is required and non-empty by the CLI, so an exclusion cannot quietly make a
+    number look better: `analyze_deployment` surfaces every active one in
+    ``strata_coverage_<test>.csv``.
+    """
+    reason = str(reason).strip()
+    if not reason:
+        raise ValueError("an exclusion needs a non-empty reason")
+    return {
+        "kind": KIND_EXCLUSION,
+        "test": test,
+        "cell": cell,
+        "policy": policy,
+        "reason": reason,
+        "sha": sha,
+        "at": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
+    }
+
+
+def append_records(manifest: Path, records: list[dict]) -> None:
+    """Append manifest lines, the same way `run_items` appends completions."""
+    if not records:
+        return
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    with open(manifest, "a") as fh:
+        for rec in records:
+            fh.write(json.dumps(rec) + "\n")
+
+
 def latest_records(records: list[dict]) -> dict[tuple[str, str, str], dict]:
     """The last manifest line per (test, cell, policy): a rerun supersedes its predecessor."""
     latest: dict[tuple[str, str, str], dict] = {}
@@ -719,12 +1083,31 @@ def latest_records(records: list[dict]) -> dict[tuple[str, str, str], dict]:
     return latest
 
 
-def completed_records(records: list[dict]) -> dict[tuple[str, str, str], dict]:
-    """Latest manifest line per item, for those whose parquet is still on disk."""
+def active_exclusions(records: list[dict]) -> dict[tuple[str, str, str], dict]:
+    """The items whose *latest* line is an exclusion, keyed like `latest_records`.
+
+    A later completion (from ``--force-policies``) supersedes the exclusion, so an
+    exclusion is active only while it is the last word on that item.
+    """
     return {
         key: rec for key, rec in latest_records(records).items()
-        if rec.get("parquet") and Path(rec["parquet"]).exists()
+        if record_kind(rec) == KIND_EXCLUSION
     }
+
+
+def completed_records(records: list[dict]) -> dict[tuple[str, str, str], dict]:
+    """Latest manifest line per item, for those whose parquet is still on disk.
+
+    An active exclusion counts as done-with-no-file: ``--resume`` must not reschedule an
+    item that was deliberately dropped just because no parquet exists for it.
+    """
+    out: dict[tuple[str, str, str], dict] = {}
+    for key, rec in latest_records(records).items():
+        if record_kind(rec) == KIND_EXCLUSION:
+            out[key] = rec
+        elif rec.get("parquet") and Path(rec["parquet"]).exists():
+            out[key] = rec
+    return out
 
 
 def _format_eta(seconds: float) -> str:
@@ -773,7 +1156,7 @@ def run_items(items: list[WorkItem], *, workers: int, manifest: Path) -> tuple[i
     with ctx.Pool(
         processes=int(workers),
         initializer=_worker_init,
-        initargs=(logging.getLogger().level or logging.INFO,),
+        initargs=(logging.getLogger().level or logging.INFO, os.getpid()),
         maxtasksperchild=MAX_TASKS_PER_CHILD,
     ) as pool:
         for rec in pool.imap_unordered(_run_item_safe, items, chunksize=1):
@@ -903,6 +1286,13 @@ def write_summary(out_dir: Path, test: str, records: list[dict], *, n_boot: int)
 # ---- CLI --------------------------------------------------------------------------------------
 
 
+def _policy_list(spec: str | None) -> list[str]:
+    """A comma-separated CLI policy list, empty when the option was not given."""
+    if not spec:
+        return []
+    return [p.strip() for p in spec.split(",") if p.strip()]
+
+
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--test", required=True, choices=TESTS)
@@ -910,12 +1300,28 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--workers", type=int, default=12)
     p.add_argument("--policies", default=None, help="comma-separated subset of policy_table.POLICIES")
     p.add_argument("--cells", default=None, help="manual cell list env:T:cap,... (overrides the test's grid)")
+    p.add_argument("--match", default=None,
+                   help="--test capmatch only: the learned policy whose per-cell K_final sets the cap; "
+                        "it is deployed alongside CAPMATCH_COMPARATORS in every matched cell")
     p.add_argument("--dynamics-grid", type=int, default=50)
     p.add_argument("--log-states", action="store_true", help="log on-policy snapshots for learned policies")
     p.add_argument("--log-policies", default=None,
                    help="comma-separated subset of the learned/rule policies to log under --log-states "
                         "(default: all of them; ~7 GB of pickles for the whole Test-A table)")
     p.add_argument("--resume", action="store_true", help="skip items already in the manifest")
+    p.add_argument("--exclude-policies", default=None,
+                   help="comma-separated policies to record as DELIBERATELY not run on this "
+                        "run's cells: one 'exclusion' manifest line each, which every later "
+                        "run and the analysis honour. Requires --exclusion-reason.")
+    p.add_argument("--exclusion-reason", default=None,
+                   help="why the --exclude-policies items are dropped; recorded in the manifest "
+                        "and surfaced in strata_coverage_<test>.csv")
+    p.add_argument("--force-policies", default=None,
+                   help="comma-separated policies to run even though an exclusion line is active")
+    p.add_argument("--allow-stale-sim", action="store_true",
+                   help="do not re-run an item just because sim_surface_sha() moved (e.g. a new "
+                        "policy was registered); the item keeps the surface it was produced "
+                        "under, so analyze_deployment still refuses the mixed set")
     p.add_argument("--n-boot", type=int, default=2000, help="paired-bootstrap resamples in the summary")
     p.add_argument("--skip-summary", action="store_true")
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
@@ -942,7 +1348,13 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     models_dir = Path(args.models_dir)
     t_run = time.time()
 
-    policies = list(pt.TEST_POLICIES[test])
+    if test == "capmatch":
+        if not args.match:
+            raise SystemExit("--test capmatch needs --match <learned policy>")
+        pt.check_policies([args.match])
+        policies = [args.match, *CAPMATCH_COMPARATORS]
+    else:
+        policies = list(pt.TEST_POLICIES[test])
     if args.policies:
         policies = [p.strip() for p in args.policies.split(",") if p.strip()]
         pt.check_policies(policies)
@@ -958,11 +1370,12 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     cells_mod = import_cells_module()
     if cells is None:
         overrides = parse_cell_overrides(args.cells) if args.cells else None
-        cells = build_cells(test, n_replicates=args.n_replicates, cells_mod=cells_mod, overrides=overrides)
+        cells = build_cells(test, n_replicates=args.n_replicates, cells_mod=cells_mod, overrides=overrides,
+                            match=args.match, tables_dir=out_dir / "tables")
     elif args.n_replicates is not None:
         cells = [replace(c, n_replicates=int(args.n_replicates)) for c in cells]
     seeds = [int(c.base_seed) for c in cells]
-    if len(set(seeds)) != len(seeds):
+    if len(set(seeds)) != len(seeds) and not seeds_may_repeat(test):
         raise SystemExit(f"cells share a base_seed: {seeds}")
     if cells_mod is not None:
         cells_mod.assert_seed_disjointness(seeds)
@@ -974,9 +1387,39 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     thresholds = pt.load_thresholds(args.thresholds or out_dir / "thresholds.json")
 
     manifest = manifest_path(out_dir, test)
+    git_sha = _git_sha()
+
+    exclude_policies = _policy_list(args.exclude_policies)
+    force_policies = set(_policy_list(args.force_policies))
+    if exclude_policies:
+        if not (args.exclusion_reason or "").strip():
+            raise SystemExit("--exclude-policies requires a non-empty --exclusion-reason")
+        pt.check_policies(exclude_policies)
+        overlap = sorted(force_policies.intersection(exclude_policies))
+        if overlap:
+            raise SystemExit(f"--exclude-policies and --force-policies both name {overlap}")
+        lines = [
+            exclusion_record(test, cell_name(spec), policy, args.exclusion_reason, git_sha)
+            for spec in cells
+            for policy in exclude_policies
+        ]
+        append_records(manifest, lines)
+        log.warning(
+            "recorded %d exclusion lines in %s (%s): %s",
+            len(lines), manifest.name, args.exclusion_reason, ", ".join(exclude_policies),
+        )
+    elif (args.exclusion_reason or "").strip():
+        raise SystemExit("--exclusion-reason without --exclude-policies")
+    if force_policies:
+        pt.check_policies(sorted(force_policies))
+
+    records_now = read_manifest(manifest)
+    excluded = active_exclusions(records_now)
+    if excluded:
+        log.info("%d active exclusion(s) in %s", len(excluded), manifest.name)
     done: dict[tuple[str, str, str], dict] = {}
     if args.resume:
-        done = completed_records(read_manifest(manifest))
+        done = completed_records(records_now)
         log.info("resume: %d items recorded complete in %s", len(done), manifest)
     elif manifest.exists():
         log.info("appending to existing %s; requested items are redone", manifest)
@@ -988,7 +1431,6 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
     variants = {pt.variant_of(p) for p in policies} - {None}
     artifacts = {v: load_model(pt.artifact_path(v, models_dir)) for v in variants}
     artifact_shas = {v: file_sha256(pt.artifact_path(v, models_dir)) for v in variants}
-    git_sha = _git_sha()
     items = build_work(
         test,
         cells,
@@ -1004,12 +1446,17 @@ def main(argv: list[str] | None = None, *, cells: list[CellSpec] | None = None) 
         artifacts=artifacts,
         log_policies=log_policies,
         artifact_shas=artifact_shas,
+        excluded=excluded,
+        force_policies=force_policies,
+        allow_stale_sim=bool(args.allow_stale_sim),
     )
     n_total = len(cells) * len(policies)
     n_skipped = n_total - len(items)
     log.info(
-        "test %s: %d cells x %d policies = %d items, %d to run (%d workers, git %s)",
+        "test %s: %d cells x %d policies = %d items, %d to run (%d workers, git %s, "
+        "sim surface %s)",
         test, len(cells), len(policies), n_total, len(items), args.workers, git_sha,
+        sim_surface_sha(),
     )
 
     # Every shared, memory-mapped table is built here, before any worker exists.

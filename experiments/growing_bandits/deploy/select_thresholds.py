@@ -58,11 +58,12 @@ for _p in (ROOT / "src", HERE.parent, HERE):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+import policy_table as pt  # noqa: E402
 from cells import (  # noqa: E402
     HORIZONS,
     assert_seed_disjointness,
+    cell_at_cap,
     env_ids_for,
-    make_cell,
 )
 from tune_baselines import (  # noqa: E402
     check_splits,
@@ -182,7 +183,7 @@ class ThresholdItem:
 
     @property
     def spec(self) -> CellSpec:
-        return make_cell(self.split, self.env_id, self.horizon, self.cap, self.n_replicates)
+        return cell_at_cap(self.split, self.env_id, self.horizon, self.cap, self.n_replicates)
 
 
 def row_key(row) -> tuple:
@@ -443,8 +444,13 @@ def build_thresholds(
     split: str = SELECT_SPLIT,
     n_replicates: int | None = None,
     fingerprints: Mapping[str, str] | None = None,
+    cap: int | None = None,
 ) -> dict[str, dict]:
     """``{variant: {"tau_val", "curve", ...}}`` for every variant with a complete curve.
+
+    `cap` restricts the rows to those selected at that cap: `threshold_selection.csv`
+    accumulates every cap's runs (roadmap 3.3), and a curve mixing two caps' rows is not
+    a curve (it has two rows per cell and was refused as incomplete).
 
     `artifacts` maps variant -> loaded artifact (``None`` for the rule); `taus` maps
     variant -> its grid. With `fingerprints`, only rows produced by the artifact on disk
@@ -462,6 +468,8 @@ def build_thresholds(
         sub = df[(df["variant"] == variant) & (df["split"] == split)]
         if n_replicates is not None:
             sub = sub[sub["n_replicates"] == int(n_replicates)]
+        if cap is not None and "cap" in sub.columns:
+            sub = sub[sub["cap"] == int(cap)]
         if fingerprints is not None:
             sub = sub[sub["fingerprint"] == fingerprints[variant]]
         grid = [float(t) for t in taus[variant]]
@@ -496,6 +504,36 @@ def build_thresholds(
 
 
 # ---- CLI ---------------------------------------------------------------------------------------
+
+
+def merge_thresholds(previous: dict, thresholds: dict, cap: int, protocol: dict, current: dict) -> dict:
+    """`thresholds.json` after this run: entries selected at `cap` replace the kept ones.
+
+    A cap-`DEFAULT_CAP` run writes at the top level, as always; any other cap writes under
+    ``by_cap["<cap>"]`` (roadmap 3.3), and neither touches the other's entries. Within the
+    block being written, an earlier entry survives only under the same protocol and for
+    the artifact still on disk -- the rule the flat file always had.
+    """
+    def keep(entries: dict) -> dict:
+        return {
+            name: entry for name, entry in entries.items()
+            if isinstance(entry, dict) and "tau_val" in entry
+            and all(entry.get(key) == value for key, value in protocol.items())
+            and entry.get("fingerprint") == current.get(name)
+        }
+    by_cap = dict(previous.get(pt.BY_CAP_KEY) or {})
+    flat = {k: v for k, v in previous.items() if k != pt.BY_CAP_KEY}
+    if int(cap) == int(DEFAULT_CAP):
+        merged = keep(flat)
+        merged.update(thresholds)
+    else:
+        merged = dict(flat)
+        block = keep(by_cap.get(str(int(cap))) or {})
+        block.update(thresholds)
+        by_cap[str(int(cap))] = block
+    if by_cap:
+        merged[pt.BY_CAP_KEY] = by_cap
+    return merged
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -560,7 +598,7 @@ def main(argv: list[str] | None = None) -> None:
     env_ids = env_ids_for(args.envs)
     horizons = [int(h) for h in args.horizons]
     seeds = [
-        make_cell(args.split, env_id, horizon, args.cap, args.n_replicates).base_seed
+        cell_at_cap(args.split, env_id, horizon, args.cap, args.n_replicates).base_seed
         for env_id in env_ids
         for horizon in horizons
     ]
@@ -612,7 +650,7 @@ def main(argv: list[str] | None = None) -> None:
                   f"{el:.0f}s elapsed  ETA {eta:.0f}s")
 
     thresholds = build_thresholds(
-        df, artifacts, env_ids, horizons, grids, args.split, args.n_replicates, fingerprints
+        df, artifacts, env_ids, horizons, grids, args.split, args.n_replicates, fingerprints, cap=args.cap
     )
     # Entries written by an earlier run under the same protocol (a `--variants` subset,
     # say) are kept only while the artifact they were selected for is still the one on
@@ -623,12 +661,7 @@ def main(argv: list[str] | None = None) -> None:
     previous = json.loads(json_path.read_text()) if json_path.exists() else {}
     protocol = {"split": args.split, "n_replicates": int(args.n_replicates),
                 "envs": list(env_ids), "horizons": horizons}
-    merged = {
-        name: entry for name, entry in previous.items()
-        if all(entry.get(key) == value for key, value in protocol.items())
-        and entry.get("fingerprint") == current.get(name)
-    }
-    merged.update(thresholds)
+    merged = merge_thresholds(previous, thresholds, args.cap, protocol, current)
     write_json_atomic(merged, json_path)
     for variant, entry in thresholds.items():
         extra = ""

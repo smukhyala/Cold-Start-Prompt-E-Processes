@@ -10,9 +10,15 @@ strictly inside (0, 1), snapshots logged, counters recorded). No simulator mocks
 
 from __future__ import annotations
 
+import hashlib
+import importlib
 import json
+import logging
+import os
 import pickle
 import sys
+import time
+import warnings
 from dataclasses import replace as rd_replace
 from pathlib import Path
 
@@ -569,3 +575,533 @@ def test_learned_policy_smoke_logs_states_and_counters(tmp_path):
     )
     retrained = rd.main([a if a != "16" else "8" for a in argv] + ["--resume"], cells=cells)
     assert retrained["n_run"] == 2 and retrained["n_skipped"] == 2
+
+
+# ---- the orphan-parquet class (ledger rulings 17, 19, 22) ------------------------------------
+
+
+def test_exclusions_are_durable_skips_that_only_force_policies_overrides(tmp_path):
+    """Ruling 19's durable fix, end to end through the CLI.
+
+    Ruling 16 dropped three policies from Test D's T=2000 cells on purpose; nothing on
+    disk recorded that, so the next ``--resume`` scheduled all nine again and the
+    workers that outlived the killed parent left nine orphan parquets (ruling 22). An
+    exclusion line survives a resume, survives a plain re-run, and yields only to
+    ``--force-policies``.
+    """
+    out = tmp_path / "out"
+    cells = _cells(horizon=40, n_replicates=8)
+    manifest = out / "manifest_smoke.jsonl"
+    argv = [
+        "--test", "smoke", "--n-replicates", "8", "--workers", "1",
+        "--policies", "cp0,always_search", "--out-dir", str(out), "--skip-summary",
+        "--models-dir", str(tmp_path / "no-models"),
+    ]
+
+    # A reason is mandatory in both directions: neither half is usable alone.
+    with pytest.raises(SystemExit, match="exclusion-reason"):
+        rd.main(argv + ["--exclude-policies", "always_search"], cells=cells)
+    with pytest.raises(SystemExit, match="exclusion-reason"):
+        rd.main(argv + ["--exclude-policies", "always_search", "--exclusion-reason", "  "],
+                cells=cells)
+    with pytest.raises(SystemExit, match="without --exclude-policies"):
+        rd.main(argv + ["--exclusion-reason", "why"], cells=cells)
+    assert not manifest.exists()
+
+    reason = "costs hours per item through the exact chunked evaluator"
+    first = rd.main(argv + ["--exclude-policies", "always_search",
+                            "--exclusion-reason", reason], cells=cells)
+    assert first["n_run"] == 2 and first["n_skipped"] == 2  # cp0 on both cells only
+    records = _read_manifest(manifest)
+    exclusions = [r for r in records if rd.record_kind(r) == rd.KIND_EXCLUSION]
+    assert len(exclusions) == 2
+    assert {r["cell"] for r in exclusions} == {rd.cell_name(c) for c in cells}
+    for rec in exclusions:
+        assert rec["policy"] == "always_search" and rec["reason"] == reason
+        assert rec["sha"] and rec["at"]
+    assert not list((out / "episodes" / "smoke").rglob("always_search.parquet"))
+
+    # The exclusion is active for every later run, with or without --resume, and
+    # `completed_records` counts it as done-with-no-file.
+    active = rd.active_exclusions(_read_manifest(manifest))
+    assert set(active) == {("smoke", rd.cell_name(c), "always_search") for c in cells}
+    assert set(rd.completed_records(_read_manifest(manifest))) == {
+        ("smoke", rd.cell_name(c), p) for c in cells for p in ("cp0", "always_search")
+    }
+    for extra in ([], ["--resume"]):
+        again = rd.main(argv + extra, cells=cells)
+        assert again["n_skipped"] >= 2
+        assert not list((out / "episodes" / "smoke").rglob("always_search.parquet"))
+
+    # --force-policies overrides it, and the completion supersedes the exclusion.
+    forced = rd.main(argv + ["--resume", "--force-policies", "always_search"], cells=cells)
+    assert forced["n_run"] == 2
+    assert len(list((out / "episodes" / "smoke").rglob("always_search.parquet"))) == 2
+    assert rd.active_exclusions(_read_manifest(manifest)) == {}
+    # ... and the two cannot be asked for at once.
+    with pytest.raises(SystemExit, match="both name"):
+        rd.main(argv + ["--exclude-policies", "always_search", "--exclusion-reason", reason,
+                        "--force-policies", "always_search"], cells=cells)
+
+
+def _fork_quietly() -> int:
+    """`os.fork` without CPython's multi-threaded-process DeprecationWarning.
+
+    pytest is multi-threaded, so every fork from it warns; the fork is the point of the
+    test below and the project keeps test output free of warnings.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return os.fork()
+
+
+def test_an_orphaned_worker_writes_nothing_into_episodes(tmp_path):
+    """Close the write side: a worker whose pool parent is gone publishes no episode.
+
+    Forks a child, forks a grandchild from it, kills the child, and lets the reparented
+    grandchild try to publish a parquet exactly as `run_item` would. Nothing may land in
+    ``episodes/`` -- the file that lands there is the one rulings 17 and 22 had to
+    quarantine by hand.
+    """
+    final = tmp_path / "episodes" / "smoke" / "cell" / "phi_k16.parquet"
+    final.parent.mkdir(parents=True)
+    tmp = final.with_suffix(".parquet.tmp")
+    tmp.write_bytes(b"episode bytes")
+    marker = tmp_path / "outcome.txt"
+
+    child = _fork_quietly()
+    if child == 0:  # the "pool parent"
+        parent_pid = os.getpid()
+        if _fork_quietly() == 0:  # the worker
+            try:
+                rd._worker_init(logging.WARNING, parent_pid)
+                deadline = time.time() + 10.0
+                while os.getppid() == parent_pid and time.time() < deadline:
+                    time.sleep(0.01)
+                try:
+                    rd._atomic_replace(tmp, final)
+                    marker.write_text("WROTE")
+                except rd.OrphanedWorker as exc:
+                    marker.write_text(f"REFUSED {exc}")
+            except BaseException as exc:  # noqa: BLE001 - reported through the marker
+                marker.write_text(f"ERROR {type(exc).__name__}: {exc}")
+            finally:
+                os._exit(0)
+        os._exit(0)  # the parent dies while the worker is still running
+    os.waitpid(child, 0)
+
+    deadline = time.time() + 15.0
+    while not marker.exists() and time.time() < deadline:
+        time.sleep(0.02)
+    assert marker.exists(), "the forked worker never reported"
+    outcome = marker.read_text()
+    assert outcome.startswith("REFUSED"), outcome
+    assert not final.exists(), "an orphaned worker published an episode file"
+    assert not tmp.exists(), "the orphaned worker left its temporary file behind"
+    # The same call from a live parent still publishes normally.
+    rd._PARENT_PID = None
+    tmp.write_bytes(b"episode bytes")
+    rd._atomic_replace(tmp, final)
+    assert final.exists()
+
+
+def test_worker_init_records_the_pool_parent_for_every_pooled_run(tmp_path):
+    """The guard is only armed if `run_items` hands the pool its own pid."""
+    import inspect
+
+    source = inspect.getsource(rd.run_items)
+    assert "initargs=(logging.getLogger().level or logging.INFO, os.getpid())" in source
+    rd._worker_init(logging.WARNING, 4242)
+    assert rd._PARENT_PID == 4242
+    assert rd._parent_is_alive() is (os.getppid() == 4242)
+    rd._worker_init(logging.WARNING, None)
+    assert rd._PARENT_PID is None and rd._parent_is_alive() is True
+
+
+# ---- the simulation-surface fingerprint ------------------------------------------------------
+
+
+#: `run_deployment.sim_surface_sha()` at every sha that produced a shipped episode, and
+#: at HEAD: 08f0f2c (smoke), 2469bb0 (Test A), bf4719c (B/C/D/robust/cap), da41273 and
+#: 5460638. Recomputed from `git show` over the same module list; the value is constant,
+#: which is what "nothing shipped was produced by a different simulator" means. It is
+#: constant only because the registry (`SIM_SURFACE_EXCLUDED`) is out: `policy_table.py`
+#: is the one file that moved across those revisions.
+SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA = "97704d2795f7"
+#: The surface after Pre-registration 4 (2026-09-20) added the tail-adaptive schedule:
+#: `TailAdaptiveSchedule` + `frac_within_of_best` in `search_policies.py` and the
+#: `adaptive_K` kind in `deploy/rules.py` -- 52 + 8 inserted lines, 0 deleted, no existing
+#: line touched (git diff against ce3820a). Every episode produced before it carries the
+#: value above in its manifest line; only `adaptive_K_star` items carry this one, and the
+#: analyses that mix them run under `--allow-mixed-sim` with that diff as the reason.
+SIM_SURFACE_SHA_SINCE_ADAPTIVE_K = "2ad982bf77bb"
+#: ... and after Pre-registration 5 added `BestMeanGate` + `best_held_mean` and the
+#: `bestmean_K` kind, the same way (additive; 0 deleted lines against 9566202).
+SIM_SURFACE_SHA_SINCE_BESTMEAN = "05a8c821662f"
+#: ... and after Pre-registration 6 added `LevelScaledSchedule` + `held_level` and the
+#: `level_K` kind (additive; 0 deleted lines against 7acd100).
+SIM_SURFACE_SHA_SINCE_LEVEL = "b9b537b56ffa"
+
+
+def _sim_surface_closure() -> set[str]:
+    """Every project module reachable from the three entry points that make an episode.
+
+    `harness.run_cell` runs it, `policy_table` resolves the constants and builds the
+    policy object, and `pairwise_table` is the log-e evidence the runner hands in. The
+    walk follows module objects *and* the defining module of every imported name, so
+    ``from x import y`` is followed as well as ``import x``.
+    """
+    import types
+
+    import cold_start.growing.deploy.harness as harness
+    import cold_start.growing.deploy.pairwise_table as pairwise_table
+
+    seen: set[str] = set()
+    stack = [harness, pairwise_table, pt]
+    while stack:
+        module = stack.pop()
+        if module.__name__ in seen:
+            continue
+        seen.add(module.__name__)
+        for value in vars(module).values():
+            if isinstance(value, types.ModuleType):
+                name, found = value.__name__, value
+            else:
+                name = getattr(value, "__module__", None)
+                found = sys.modules.get(name) if name else None
+            if not name or found is None or name in seen:
+                continue
+            if name.startswith("cold_start") or name == "policy_table":
+                stack.append(found)
+    return seen
+
+
+def test_sim_surface_covers_everything_reachable_from_run_cell():
+    """Fingerprinted and deliberately-excluded PARTITION the reachable closure.
+
+    This is the test that matters: a fingerprint over a hand-maintained module list is
+    worth nothing the first time someone adds a module to the simulator and forgets the
+    list. A partition (not containment) also keeps dead entries out, and forces any new
+    exclusion to be written down in `SIM_SURFACE_EXCLUDED` with its reason rather than
+    just left off.
+    """
+    fingerprinted = set(rd.SIM_SURFACE_MODULES)
+    excluded = set(rd.SIM_SURFACE_EXCLUDED)
+    assert fingerprinted | excluded == _sim_surface_closure()
+    assert not (fingerprinted & excluded)
+    assert excluded == {"policy_table"}, "a new exclusion needs a documented reason"
+    assert len(rd.SIM_SURFACE_MODULES) == len(fingerprinted)
+    files = rd.sim_surface_files()
+    assert set(files) == fingerprinted
+    assert all(path.is_file() and path.suffix == ".py" for path in files.values())
+    # Every module `policy_table` builds a policy FROM is still on the surface, so
+    # excluding the registry does not take any behaviour off it.
+    for built_from in ("cold_start.growing.deploy.rules",
+                       "cold_start.growing.deploy.model_policy",
+                       "cold_start.growing.deploy.features_vec",
+                       "cold_start.growing.deploy.history_vec"):
+        assert built_from in fingerprinted, built_from
+
+    # The package shells the closure does not reach are docstring-only, which is why
+    # they are out of scope; if one grows a statement, this fails and the list must
+    # take it in.
+    import ast
+
+    for package in ("cold_start", "cold_start.growing", "cold_start.growing.deploy"):
+        init = Path(importlib.import_module(package).__file__)
+        for node in ast.parse(init.read_text()).body:
+            inert = (
+                isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+                or isinstance(node, ast.ImportFrom) and node.module == "__future__"
+                or isinstance(node, ast.Assign)
+                and all(isinstance(t, ast.Name) and t.id.startswith("__") for t in node.targets)
+            )
+            assert inert, f"{init} defines {ast.dump(node)[:60]}: it belongs on the surface"
+
+
+def test_sim_surface_sha_is_stable_deterministic_and_source_dependent(tmp_path, monkeypatch):
+    first = rd.sim_surface_sha()
+    # The pinned invariant. Recomputed from `git show` at every sha that produced shipped
+    # episodes -- 08f0f2c, 2469bb0, bf4719c, da41273, 5460638 -- the simulation surface
+    # hashes to this same value, so nothing in the shipped tree was produced by a
+    # different simulator. A legitimate change to a surface module moves it, and this
+    # assertion is where that has to be acknowledged deliberately.
+    assert first == SIM_SURFACE_SHA_SINCE_LEVEL
+    assert len({first, SIM_SURFACE_SHA_SINCE_BESTMEAN, SIM_SURFACE_SHA_SINCE_ADAPTIVE_K,
+                SIM_SURFACE_SHA_AT_EVERY_SHIPPED_SHA}) == 4, "each acknowledged move must be a move"
+    assert len(first) == 12 and int(first, 16) >= 0
+    rd.sim_surface_sha.cache_clear()
+    assert rd.sim_surface_sha() == first
+
+    # One changed byte anywhere on the surface changes the fingerprint.
+    victim = rd.sim_surface_files()["cold_start.growing.simulator"]
+    edited = tmp_path / "simulator.py"
+    edited.write_text(victim.read_text() + "\n# a byte that changes an episode\n")
+    patched = dict(rd.sim_surface_files())
+    patched["cold_start.growing.simulator"] = edited
+    monkeypatch.setattr(rd, "sim_surface_files", lambda: patched)
+    rd.sim_surface_sha.cache_clear()
+    try:
+        assert rd.sim_surface_sha() != first
+    finally:
+        monkeypatch.undo()
+        rd.sim_surface_sha.cache_clear()
+    assert rd.sim_surface_sha() == first
+
+    versions = rd.sim_surface_versions()
+    assert versions["python"].startswith("3.")
+    for package in rd.SIM_SURFACE_PACKAGES:
+        assert versions[package] != "absent", package
+
+
+def test_stale_reason_flags_a_changed_surface_but_spares_an_unstamped_record(tmp_path):
+    cells = _cells(horizon=20, n_replicates=4)
+    items = rd.build_work(
+        "smoke", cells, ["cp0"], out_dir=tmp_path, baseline_params=None, thresholds=None,
+        models_dir=tmp_path, dynamics_grid=10, done={}, git_sha="test", log_states=False,
+    )
+    item = items[0]
+    assert item.sim_sha == rd.sim_surface_sha()
+    Path(item.parquet_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(item.parquet_path).touch()
+    record = {
+        "parquet": item.parquet_path, "params": item.params, "artifact_sha": None,
+        "n_replicates": item.spec.n_replicates, "base_seed": item.spec.base_seed,
+        "horizon": item.spec.horizon, "cap": item.spec.cap, "snapshots": None,
+        "sim_sha": item.sim_sha,
+    }
+    assert rd.stale_reason(record, item) is None
+    moved = {**record, "sim_sha": "0123456789ab"}
+    assert "simulation surface" in rd.stale_reason(moved, item)
+    # ... with a deliberate escape, so the benign case (a new policy registered in
+    # `policy_table`, which is on the surface) does not cost a full re-run.
+    assert rd.stale_reason(moved, item, ignore_sim_sha=True) is None
+    # The 3,510 shipped records predate the stamp; they must not all turn stale.
+    assert rd.stale_reason({k: v for k, v in record.items() if k != "sim_sha"}, item) is None
+
+
+def test_a_finished_item_records_its_simulation_surface(tmp_path):
+    out = tmp_path / "out"
+    cells = _cells(horizon=30, n_replicates=4)[:1]
+    rd.main([
+        "--test", "smoke", "--n-replicates", "4", "--workers", "1", "--policies", "cp0",
+        "--out-dir", str(out), "--skip-summary", "--models-dir", str(tmp_path / "no-models"),
+    ], cells=cells)
+    records = _read_manifest(out / "manifest_smoke.jsonl")
+    assert len(records) == 1
+    assert records[0]["sim_sha"] == rd.sim_surface_sha()
+    assert records[0]["sim_versions"]["numpy"] == rd.sim_surface_versions()["numpy"]
+
+
+# ---- the cap the baseline constants were tuned at (finding 4.5 / ruling 20) -------------------
+
+#: sha256 of `baseline_params.json` as shipped, and of the same file with the six T=2000
+#: keys stripped, both serialized the way `tune_baselines.py` writes it
+#: (``json.dumps(..., indent=2)`` plus a trailing newline).
+#:
+#: The M8fix re-review established that the file is byte-identical to its pre-T=2000
+#: state once those six keys are gone. Nothing in the tree holds that earlier file, so
+#: the equality itself is no longer re-derivable -- these digests are what keeps the
+#: anchor checkable: any future edit to the file, or to what "the T=2000 keys" means,
+#: has to move one of them deliberately.
+BASELINE_PARAMS_SHA256 = "671f377e18b462b35af2ae212f7d0ff0159644970cb67c9d580cfd6341482103"
+#: ... with the two `level_star` keys (Pre-registration 6) stripped:
+BASELINE_PARAMS_PRE_LEVEL_SHA256 = "f3805cfd3d112943086735388e07ee8710fdec1e2f3f95b436982a2a79efc6c0"
+#: ... with the two `bestmean_star` keys (Pre-registration 5) stripped:
+BASELINE_PARAMS_PRE_BESTMEAN_SHA256 = "c330bd0b361dcfe251734b334b769e9ea44f083b2969d552d6d88c9426d5bffd"
+#: ... with the two `adaptive_K_star` keys (Pre-registration 4, 2026-09-20) stripped:
+BASELINE_PARAMS_PRE_ADAPTIVE_K_SHA256 = "80fd3bb9f6713a9bc880e78fe5e9fe8b08c8f713043f4ea226d0e20e1546879b"
+#: ... and with the two `fixed_K_star` keys (Pre-registration 3, 2026-09-20) stripped: the
+#: file as the M8fix re-review saw it.
+BASELINE_PARAMS_PRE_FIXED_K_SHA256 = "3f049fdbabf3d8fc5cce910000b00f508fba103d99375ab9e4e83dd360be444a"
+BASELINE_PARAMS_NO_T2000_SHA256 = "df71174726d2231273a9f313cdb1c1dde712883b54803b40cf07788f58355abc"
+#: The two keys `select_fixed_k.py` added, by the path they sit at.
+FIXED_K_STAR_KEYS: tuple[tuple[str, ...], ...] = (
+    ("fixed_K_star",),
+    ("meta", "fixed_K_star"),
+)
+ADAPTIVE_K_STAR_KEYS: tuple[tuple[str, ...], ...] = (
+    ("adaptive_K_star",),
+    ("meta", "adaptive_K_star"),
+)
+BESTMEAN_STAR_KEYS: tuple[tuple[str, ...], ...] = (
+    ("bestmean_star",),
+    ("meta", "bestmean_star"),
+)
+LEVEL_STAR_KEYS: tuple[tuple[str, ...], ...] = (
+    ("level_star",),
+    ("meta", "level_star"),
+)
+#: The six keys the T=2000 tuning added, by the path they sit at.
+T2000_KEYS: tuple[tuple[str, ...], ...] = (
+    ("p3_star", "2000"),
+    ("power", "0.25", "2000"),
+    ("power", "0.3333333333333333", "2000"),
+    ("power", "0.5", "2000"),
+    ("power", "0.6666666666666666", "2000"),
+    ("refine_after_init", "2000"),
+)
+
+
+def _dump_baseline_params(params: dict) -> bytes:
+    """Exactly how `tune_baselines.py` serializes `baseline_params.json`."""
+    return json.dumps(params, indent=2).encode("utf-8") + b"\n"
+
+
+@pytest.mark.skipif(
+    not pt.DEFAULT_BASELINE_PARAMS_PATH.exists(), reason="baseline_params.json not in the tree"
+)
+def test_baseline_params_migration_is_reversible_and_keeps_the_t2000_anchor():
+    """The per-cap migration must not cost the audit anchor on the real file."""
+    raw = pt.DEFAULT_BASELINE_PARAMS_PATH.read_bytes()
+    params_on_disk = json.loads(raw)
+    assert pt.tuning_cap(params_on_disk) == 64
+    # Per-cap constants (roadmap 3.3) live under `by_cap` beside the flat cap-64 blocks.
+    # They are tuning outputs that grow with every `--cap X` run, so the anchor is pinned
+    # on the file WITHOUT that key: the flat cap-64 blocks every shipped table was built
+    # from. The in-memory migration below is likewise defined on the flat form.
+    params = {k: v for k, v in params_on_disk.items() if k != pt.BY_CAP_KEY}
+    raw_flat = _dump_baseline_params(params)
+    assert hashlib.sha256(raw_flat).hexdigest() == BASELINE_PARAMS_SHA256
+
+    # Reversible, byte for byte, on the file as shipped -- which is also why the file is
+    # not rewritten: the migration is a pure in-memory view of it.
+    migrated = pt.migrate_baseline_params(params)
+    assert set(migrated[pt.BY_CAP_KEY]) == {"64"}
+    assert not (set(migrated) & set(pt.TUNED_BLOCKS))
+    assert _dump_baseline_params(pt.unmigrate_baseline_params(migrated)) == raw_flat
+    # Migrating twice, or unmigrating an unmigrated file, is an error, not a silent no-op.
+    with pytest.raises(ValueError):
+        pt.migrate_baseline_params(migrated)
+    with pytest.raises(ValueError):
+        pt.unmigrate_baseline_params(params)
+    # The migrated form resolves identically at the cap it was tuned for.
+    for name, horizon in (("p3_star", 1000), ("power_a0.5", 200), ("refine_after_init", 500)):
+        assert (pt.resolve_params(name, horizon, cap=64, baseline_params=migrated)
+                == pt.resolve_params(name, horizon, cap=64, baseline_params=params))
+
+    # The anchor, in two links. Without the two fixed_K_star keys the file is the one the
+    # M8fix re-review saw; without the six T=2000 keys as well, it is that review's
+    # pre-T=2000 state.
+    stripped = json.loads(raw_flat)
+    for path in LEVEL_STAR_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_PRE_LEVEL_SHA256
+    )
+    for path in BESTMEAN_STAR_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_PRE_BESTMEAN_SHA256
+    )
+    for path in ADAPTIVE_K_STAR_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_PRE_ADAPTIVE_K_SHA256
+    )
+    for path in FIXED_K_STAR_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_PRE_FIXED_K_SHA256
+    )
+    for path in T2000_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] in node, path
+        del node[path[-1]]
+    for path in T2000_KEYS:
+        node = stripped
+        for key in path[:-1]:
+            node = node[key]
+        assert path[-1] not in node
+    assert hashlib.sha256(_dump_baseline_params(stripped)).hexdigest() == (
+        BASELINE_PARAMS_NO_T2000_SHA256
+    )
+    # ... and stripping them is itself reversible through the same migration.
+    assert _dump_baseline_params(
+        pt.unmigrate_baseline_params(pt.migrate_baseline_params(stripped))
+    ) == _dump_baseline_params(stripped)
+
+
+def test_resolve_params_marks_a_cap_mismatch_untuned(caplog):
+    """A constant tuned at cap 64 and deployed at cap 128 is not a tuned comparator."""
+    pt._warned.clear()
+    tuned = {
+        "meta": {"cap": 64},
+        "power": {"0.5": {"200": 0.7}},
+        "refine_after_init": {"200": 8},
+        "p3_star": {"200": {"alpha": 0.5, "c": 0.4}},
+    }
+    # At the tuning cap, and with no cap named at all, nothing is stamped: a matching
+    # item's params stay byte-identical to what every earlier run recorded.
+    plain = pt.resolve_params("power_a0.5", 200, baseline_params=tuned)
+    assert plain == {"alpha": 0.5, "c": 0.7}
+    assert pt.resolve_params("power_a0.5", 200, cap=64, baseline_params=tuned) == plain
+    assert pt.params_are_tuned(plain)
+
+    with caplog.at_level("WARNING", logger="deploy.policy_table"):
+        for name, expected in (("power_a0.5", {"alpha": 0.5, "c": 0.7}),
+                               ("p3_star", {"alpha": 0.5, "c": 0.4}),
+                               ("refine_after_init", {"K0": 8})):
+            got = pt.resolve_params(name, 200, cap=128, baseline_params=tuned)
+            assert pt.constructor_params(got) == expected, name
+            assert got[pt.PARAMS_CAP] == 64 and got[pt.PARAMS_TUNED] is False, name
+            assert not pt.params_are_tuned(got)
+            assert not pt.baseline_is_tuned(name, 200, tuned, cap=128)
+            assert pt.baseline_is_tuned(name, 200, tuned, cap=64)
+    assert any("tuned at cap 64 but deploying at cap 128" in r.message for r in caplog.records)
+
+    # A policy whose constants do not come from baseline_params.json is untouched...
+    assert pt.PARAMS_CAP not in pt.resolve_params("cp0", 200, cap=128, baseline_params=tuned)
+    # ... and neither is a file that does not say what cap it was tuned at.
+    quiet = {k: v for k, v in tuned.items() if k != "meta"}
+    assert pt.tuning_cap(quiet) is None
+    assert pt.PARAMS_CAP not in pt.resolve_params("power_a0.5", 200, cap=128, baseline_params=quiet)
+    # A per-cap block, once one exists, makes that cap the tuned one.
+    per_cap = {"meta": {"cap": 64}, **{k: v for k, v in tuned.items() if k != "meta"},
+               "by_cap": {"128": {"power": {"0.5": {"200": 9.0}}}}}
+    at128 = pt.resolve_params("power_a0.5", 200, cap=128, baseline_params=per_cap)
+    assert at128 == {"alpha": 0.5, "c": 9.0}
+    assert pt.baseline_is_tuned("power_a0.5", 200, per_cap, cap=128)
+
+
+def test_a_cap_stamp_does_not_make_a_finished_item_stale(tmp_path):
+    """The 144 mis-capped shipped items must not all re-run for a provenance key."""
+    cells = [rd_replace(c, cap=128) for c in _cells(horizon=200, n_replicates=4)]
+    tuned = {"meta": {"cap": 64}, "power": {"0.5": {"200": 0.7}}}
+    items = rd.build_work(
+        "smoke", cells, ["power_a0.5"], out_dir=tmp_path, baseline_params=tuned, thresholds=None,
+        models_dir=tmp_path, dynamics_grid=10, done={}, git_sha="test", log_states=False,
+    )
+    item = items[0]
+    assert item.params[pt.PARAMS_CAP] == 64 and item.params[pt.PARAMS_TUNED] is False
+    Path(item.parquet_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(item.parquet_path).touch()
+    # A record written before the stamp existed: same constants, no provenance.
+    old_record = {
+        "parquet": item.parquet_path, "params": {"alpha": 0.5, "c": 0.7}, "artifact_sha": None,
+        "n_replicates": item.spec.n_replicates, "base_seed": item.spec.base_seed,
+        "horizon": item.spec.horizon, "cap": item.spec.cap, "snapshots": None,
+        "sim_sha": item.sim_sha,
+    }
+    assert rd.stale_reason(old_record, item) is None
+    # A genuinely different constant is still stale.
+    changed = {**old_record, "params": {"alpha": 0.5, "c": 0.9}}
+    assert "params" in rd.stale_reason(changed, item)

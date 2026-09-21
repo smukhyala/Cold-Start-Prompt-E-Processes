@@ -37,6 +37,7 @@ import analyze_deployment as ad  # noqa: E402
 import make_deploy_figures as mf  # noqa: E402
 import ood  # noqa: E402
 import reservoir_analysis as ra  # noqa: E402
+import run_deployment as rd  # noqa: E402
 
 from cold_start.growing.deploy import feature_groups as fg  # noqa: E402
 from cold_start.growing.deploy import stats  # noqa: E402
@@ -202,12 +203,105 @@ def test_main_table_rows_and_columns(cells, per_cell):
     assert pooled["n_cells"] == 3 and pooled["n_envs"] == 3
     # R_T = R_disc + R_sel holds for the table means.
     assert pooled["regret"] == pytest.approx(pooled["regret_disc"] + pooled["regret_sel"], abs=1e-9)
-    # The cluster-over-environments CI exists for the pooled block (3 environments) and
-    # brackets the planted effect; it is absent at the cell level (one environment).
-    assert pooled["d_regret_vs_cp0_cluster_lo"] <= PLANTED["phi_k16"] <= pooled["d_regret_vs_cp0_cluster_hi"]
+    # Three environments is below `CLUSTER_MIN_ENVS`, so no interval is emitted at all:
+    # the range ships under its own names and brackets the planted effect (ruling 21).
+    assert np.isnan(pooled["d_regret_vs_cp0_cluster_lo"])
+    assert np.isnan(pooled["d_regret_vs_cp0_cluster_hi"])
+    assert pooled["d_regret_vs_cp0_cluster_degenerate"]
+    assert (pooled["d_regret_vs_cp0_cluster_min_env"] <= PLANTED["phi_k16"]
+            <= pooled["d_regret_vs_cp0_cluster_max_env"])
     cell_rows = full[full["level"] == "cell"]
     assert set(cell_rows["cell"]) == {c.name for c in cells}
-    assert cell_rows["d_regret_vs_cp0_cluster_lo"].isna().all()
+    for col in ("cluster_lo", "cluster_hi", "cluster_min_env", "cluster_max_env"):
+        assert cell_rows[f"d_regret_vs_cp0_{col}"].isna().all(), col
+    assert not full["stratum_empty_common_support"].any()
+
+
+def _cap_sweep_cells() -> list[ad.Cell]:
+    """One environment and horizon at four caps -- the shape of the cap sweep."""
+    out: list[ad.Cell] = []
+    for i, cap in enumerate((32, 64, 128, 200)):
+        name = f"beta_good_common_T200_cap{cap}"
+        seed = 30_000 + i
+        frames = {p: _episode_frame(name, "beta_good_common", "A", 200, p, 64, seed)
+                  for p in POLICIES}
+        out.append(ad.Cell(name=name, env_id="beta_good_common", family="A", horizon=200,
+                           cap=cap, base_seed=seed, n=64, frames=frames,
+                           groups={p: GROUPS[p] for p in POLICIES}))
+    return out
+
+
+def test_a_test_with_one_cap_keeps_the_strata_it_always_had(cells):
+    """Adding `cap` to `Stratum` must not move a single-cap test's rows."""
+    strata = ad.strata_of(cells)
+    assert {s.cap for s in strata if s.level != "cell"} == {"all"}
+    assert {s.cap for s in strata if s.level == "cell"} == {"64"}
+    assert [(s.level, s.family, s.horizon) for s in strata] == [
+        (s.level, s.family, s.horizon) for s in strata
+    ]
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    main = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    non_cell = main[main["level"] != "cell"]
+    assert set(non_cell["cap"]) == {"all"}
+    assert set(main[main["level"] == "cell"]["cap"]) == {64}
+
+
+def test_strata_split_by_cap_when_a_test_varies_it():
+    """4.5: `main_cap_primary.csv` pooled four caps into one family_horizon row.
+
+    The constants are tuned at one cap, so the four caps are four different comparators;
+    pooling them left a NaN `cap` column on a row that mixed all of them.
+    """
+    cells = _cap_sweep_cells()
+    strata = ad.strata_of(cells)
+    fh = [s for s in strata if s.level == "family_horizon"]
+    assert len(fh) == 4
+    assert {s.cap for s in fh} == {"32", "64", "128", "200"}
+    for s in fh:
+        assert len(s.cells) == 1 and s.cells[0].endswith(f"cap{s.cap}")
+    # The levels that pool horizons or families still pool caps, and say so.
+    assert {s.cap for s in strata if s.level == "pooled"} == {"all"}
+
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    main = ad.main_table("cap", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    rows = main[(main["level"] == "family_horizon") & (main["policy"] == "phi_k16")]
+    assert len(rows) == 4 and set(rows["cap"]) == {"32", "64", "128", "200"}
+    assert (rows["n_cells"] == 1).all()
+    cov = ad.strata_coverage("cap", cells, strata)
+    assert set(cov[cov["level"] == "family_horizon"]["cap"]) == {"32", "64", "128", "200"}
+
+
+def test_mark_untuned_baselines_flags_a_cell_deployed_at_the_wrong_cap(caplog):
+    """The false assertion 4.5 is about: params_tuned = True at a cap never tuned."""
+    cells = _cap_sweep_cells()
+    baseline = {
+        "meta": {"cap": 64},
+        "power": {"0.5": {"200": 0.7}},
+        "p3_star": {"200": {"alpha": 0.5, "c": 0.4}},
+        "refine_after_init": {"200": 8},
+    }
+    # Manifest lines as the shipped ones are: the constants, no provenance at all.
+    manifest = {
+        ("cap", c.name, "p3_star"): {"params": {"alpha": 0.5, "c": 0.4}} for c in cells
+    }
+    with caplog.at_level("WARNING", logger="deploy.analyze"):
+        marks = ad.mark_untuned_baselines(cells, manifest, baseline)
+    for c in cells:
+        if c.cap == 64:
+            assert "p3_star" not in marks[c.name], c.name
+        else:
+            assert "p3_star" in marks[c.name], c.name
+    # ... and the contrast against it is then refused rather than reported as tuned.
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    strata = ad.strata_of(cells)
+    main = ad.main_table("cap", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    wrong_cap = main[(main["level"] == "family_horizon") & (main["cap"] != "64")
+                     & (main["policy"] == "phi_k16")]
+    assert len(wrong_cap) == 3
+    assert not wrong_cap["d_regret_vs_p3_star_ref_tuned"].any()
+    at_64 = main[(main["level"] == "family_horizon") & (main["cap"] == "64")
+                 & (main["policy"] == "phi_k16")]
+    assert at_64["d_regret_vs_p3_star_ref_tuned"].all()
 
 
 def test_primary_contrasts_has_exactly_three_rows_per_stratum(cells):
@@ -224,7 +318,10 @@ def test_primary_contrasts_has_exactly_three_rows_per_stratum(cells):
     assert pooled.loc["H1a", "lo"] <= PLANTED["phi_k16"] <= pooled.loc["H1a", "hi"]
     assert pooled.loc["H1b", "lo"] <= PLANTED["phi_k16"] - PLANTED["p3_star"] <= pooled.loc["H1b", "hi"]
     assert pooled.loc["H2", "lo"] <= PLANTED["phi_k16"] - PLANTED["phi_k16_quality"] <= pooled.loc["H2", "hi"]
-    assert np.isfinite(pooled.loc["H1a", "cluster_lo"]) and pooled.loc["H1a", "n_envs"] == 3
+    # 3 environments: degenerate, so the range -- not an interval -- is what ships.
+    assert pooled.loc["H1a", "n_envs"] == 3 and pooled.loc["H1a", "cluster_degenerate"]
+    assert np.isnan(pooled.loc["H1a", "cluster_lo"])
+    assert np.isfinite(pooled.loc["H1a", "cluster_min_env"])
 
 
 def _ragged_cells() -> list[ad.Cell]:
@@ -238,6 +335,84 @@ def _ragged_cells() -> list[ad.Cell]:
     del dropped.frames["phi_k16"]
     del dropped.groups["phi_k16"]
     return cells
+
+
+def _disjoint_cells() -> list[ad.Cell]:
+    """Two cells of one stratum whose policy sets do not overlap at all.
+
+    `common_cells` keeps only the cells carrying every policy deployed anywhere in the
+    stratum, so disjoint coverage empties the intersection -- the landmine ruling 23
+    stress-tested, and exactly what adding `cap` as a stratum dimension creates.
+    """
+    cells = [c for c in synthetic_cells(policies=("cp0", "p3_star", "phi_k16")) if c.family == "A"]
+    first, second = cells[0], cells[1]
+    for policy in ("p3_star", "phi_k16"):
+        del first.frames[policy]
+        del first.groups[policy]
+    del second.frames["cp0"]
+    del second.groups["cp0"]
+    return cells
+
+
+def test_an_empty_stratum_is_a_visible_row_and_a_non_zero_exit(tmp_path, caplog):
+    """Ruling 23: the stratum used to vanish from the CSV with only a log warning."""
+    cells = _disjoint_cells()
+    strata = ad.strata_of(cells)
+    empty = [s for s in strata if ad.stratum_is_empty(s)]
+    assert empty, "the fixture must actually empty a stratum"
+    assert all(s.level != "cell" for s in empty)
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 200) for c in cells}
+    with caplog.at_level("ERROR", logger="deploy.analyze"):
+        main = ad.main_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+    assert any("EMPTY common support" in r.message for r in caplog.records)
+    dec = ad.decomposition_table("synthetic", PRIMARY_RECOMMENDER, cells, per_cell, strata)
+
+    for frame in (main, dec):
+        flagged = frame[frame["stratum_empty_common_support"]]
+        assert len(flagged) > 0
+        # Every stratum that emptied is present in the table, not missing from it.
+        assert {(r.level, r.family, r.horizon) for r in flagged.itertuples()} == {
+            (s.level, s.family, s.horizon) for s in empty
+        }
+        # ... and carries no number a reader could quote: only the zero support counts.
+        numeric = flagged.select_dtypes(include="number")
+        counts = [c for c in numeric.columns
+                  if c in ad.EMPTY_ROW_COUNTS or c.endswith(("_n_cells", "_n_excluded_untuned"))]
+        # The level's own support is zero -- that is what "empty" means. The counts that
+        # survive say where the policy DID run (n_cells_policy) and how many cells the
+        # paired contrast had; neither is a quotable result.
+        level_support = [c for c in ("n_cells", "n_envs", "n_episodes") if c in numeric.columns]
+        assert (numeric[level_support] == 0).all().all()
+        assert (numeric[counts] >= 0).all().all()
+        rest = numeric.drop(columns=counts)
+        assert rest.isna().all().all(), rest.columns[~rest.isna().all()].tolist()
+        # The populated strata are untouched.
+        assert not frame[~frame["stratum_empty_common_support"]]["regret"].isna().all()
+
+
+def test_strata_coverage_reports_the_dropped_cells_and_active_exclusions():
+    cells = _ragged_cells()
+    strata = ad.strata_of(cells)
+    exclusions = {
+        ("synthetic", cells[0].name, "phi_k16_quality"): rd.exclusion_record(
+            "synthetic", cells[0].name, "phi_k16_quality", "hours through the exact evaluator", "s"
+        )
+    }
+    cov = ad.strata_coverage("synthetic", cells, strata, exclusions)
+    assert len(cov) == len(strata)
+    assert set(cov["level"]) == {s.level for s in strata}
+    pooled = cov[cov["level"] == "pooled"].iloc[0]
+    # phi_k16 is missing from the (A, 200) cell, so the pooled common support drops it.
+    assert pooled["n_cells"] == 3 and pooled["n_common"] == 2
+    assert pooled["n_cells_dropped"] == 1
+    assert pooled["policies_ragged"] == "phi_k16"
+    assert not pooled["stratum_empty_common_support"]
+    # The deliberate exclusion is visible beside the stratum it touches, with its reason.
+    assert pooled["n_active_exclusions"] == 1
+    assert "phi_k16_quality" in pooled["active_exclusions"]
+    assert "hours through the exact evaluator" in pooled["active_exclusions"]
+    other = cov[(cov["level"] == "cell") & (cov["cell"] != cells[0].name)]
+    assert (other["n_active_exclusions"] == 0).all()
 
 
 def test_primary_contrasts_keep_three_rows_when_a_policy_is_missing():
@@ -363,8 +538,14 @@ def _cells_across_envs(n_envs: int, policies=("cp0", "p3_star", "phi_k16")) -> l
     return out
 
 
-def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
-    """F1: below `CLUSTER_MIN_ENVS` the percentile cluster CI IS [min env, max env]."""
+def test_a_degenerate_cluster_range_ships_under_its_own_column_names():
+    """Ruling 21: below `CLUSTER_MIN_ENVS` no interval is emitted, only a named range.
+
+    Disclosure was not enough -- a careful reader still quoted one of these as a 95% CI
+    (ledger correction C7). `cluster_lo`/`cluster_hi` are now NaN there and the range
+    ships as `cluster_min_env`/`cluster_max_env`, so the wrong reading is unavailable
+    rather than flagged.
+    """
     assert ad.CLUSTER_MIN_ENVS == 4
     for n_envs in (2, 3):
         cells = _cells_across_envs(n_envs)
@@ -373,9 +554,10 @@ def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
         a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
         env_means = [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells]
         assert a["n_envs"] == n_envs and a["cluster_degenerate"] is True
-        # The arithmetic the flag is about: the interval is the range of the env means.
-        assert a["cluster_lo"] == pytest.approx(min(env_means), abs=1e-12)
-        assert a["cluster_hi"] == pytest.approx(max(env_means), abs=1e-12)
+        assert np.isnan(a["cluster_lo"]) and np.isnan(a["cluster_hi"])
+        # The range is the range of the environment means, and says so in its name.
+        assert a["cluster_min_env"] == pytest.approx(min(env_means), abs=1e-12)
+        assert a["cluster_max_env"] == pytest.approx(max(env_means), abs=1e-12)
 
     cells = _cells_across_envs(5)
     per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, N_BOOT) for c in cells}
@@ -384,12 +566,19 @@ def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
     a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
     env_means = [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells]
     assert a["n_envs"] == 5 and a["cluster_degenerate"] is False
-    assert a["cluster_lo"] > min(env_means) and a["cluster_hi"] < max(env_means)
+    # The primary (t) interval is a real interval, not the range -- at n=5 it is wider
+    # than the range, which is exactly why the percentile bootstrap under-covered.
+    assert a["cluster_lo"] != min(env_means) and a["cluster_hi"] != max(env_means)
+    assert a["cluster_pct_lo"] > min(env_means) and a["cluster_pct_hi"] < max(env_means)
+    assert a["cluster_hi"] - a["cluster_lo"] > a["cluster_pct_hi"] - a["cluster_pct_lo"]
+    assert np.isnan(a["cluster_min_env"]) and np.isnan(a["cluster_max_env"])
     # A row with no cluster interval at all is not "degenerate", it is empty.
     cell_level = next(s for s in strata if s.level == "cell")
-    assert not ad.aggregate(per_cell, cell_level, "phi_k16", "d_regret_vs_cp0")["cluster_degenerate"]
+    empty = ad.aggregate(per_cell, cell_level, "phi_k16", "d_regret_vs_cp0")
+    assert not empty["cluster_degenerate"]
+    assert np.isnan(empty["cluster_min_env"]) and np.isnan(empty["cluster_max_env"])
 
-    # Every table that carries cluster bounds carries the flag beside them.
+    # Every table that carries cluster bounds carries the flag and the range beside them.
     cells3 = _cells_across_envs(3)
     per3 = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 400) for c in cells3}
     strata3 = ad.strata_of(cells3)
@@ -397,14 +586,65 @@ def test_cluster_ci_is_flagged_degenerate_at_small_n_envs():
     pc = ad.primary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells3, strata3, 400)
     sc = ad.secondary_contrasts("synthetic", PRIMARY_RECOMMENDER, cells3, per3, strata3)
     for ref in ("cp0", "p3_star"):
-        assert f"d_regret_vs_{ref}_cluster_degenerate" in main.columns
+        for key in ad.CLUSTER_KEYS:
+            assert f"d_regret_vs_{ref}_{key}" in main.columns, key
     pooled_row = main[(main["level"] == "pooled") & (main["policy"] == "phi_k16")].iloc[0]
     assert pooled_row["d_regret_vs_cp0_cluster_degenerate"]
+    assert np.isnan(pooled_row["d_regret_vs_cp0_cluster_lo"])
+    assert np.isfinite(pooled_row["d_regret_vs_cp0_cluster_min_env"])
     pooled_pc = pc[(pc["level"] == "pooled") & pc["evaluated"]]
     assert len(pooled_pc) == 2 and pooled_pc["cluster_degenerate"].all()  # H1a, H1b (H2 absent)
+    assert pooled_pc["cluster_lo"].isna().all()
+    assert np.isfinite(pooled_pc["cluster_min_env"]).all()
     assert sc[sc["level"] == "pooled"]["cluster_degenerate"].all()
     # A row with no contrast at all (H2 here) has no interval, so it is not "degenerate".
     assert not pc[~pc["evaluated"]]["cluster_degenerate"].any()
+    # No shipped table may carry a bound without the degeneracy flag beside it.
+    for frame in (pc, sc):
+        assert set(ad.CLUSTER_KEYS) <= set(frame.columns)
+
+
+def test_the_primary_cluster_interval_is_the_environment_mean_t():
+    """NEXT-STEPS 2.1: the percentile cluster bootstrap under-covers (0.893 at n=8, 0.719 at
+    n=3 against nominal 0.95), so `cluster_lo`/`cluster_hi` are now the Student-t interval
+    on the environment means, with its p, the exact sign-test p, the studentized
+    bootstrap-t and the old percentile interval each shipped under their own names.
+    """
+    from cold_start.growing.deploy import stats
+
+    cells = _cells_across_envs(5)
+    per_cell = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, N_BOOT) for c in cells}
+    pooled = next(s for s in ad.strata_of(cells) if s.level == "pooled")
+    a = ad.aggregate(per_cell, pooled, "phi_k16", "d_regret_vs_cp0")
+    cm = pd.DataFrame({
+        "env_id": [c.env_id for c in cells],
+        "value": [per_cell[c.name].mean[("phi_k16", "d_regret_vs_cp0")] for c in cells],
+    })
+    t = stats.env_mean_t_interval(cm, "env_id", "value")
+    assert a["cluster_lo"] == pytest.approx(t["lo"]) and a["cluster_hi"] == pytest.approx(t["hi"])
+    assert a["cluster_se"] == pytest.approx(t["se"]) and a["cluster_p"] == pytest.approx(t["p"])
+    assert a["cluster_p_sign"] == pytest.approx(stats.permutation_over_envs(cm, "env_id", "value")["p"])
+    assert a["cluster_p_sign"] >= 2 / 2**5
+    assert np.isfinite(a["cluster_pct_lo"]) and np.isfinite(a["cluster_pct_hi"])
+    assert np.isfinite(a["cluster_boot_t_lo"]) and np.isfinite(a["cluster_boot_t_hi"])
+    assert a["cluster_boot_t_lo"] < a["mean"] < a["cluster_boot_t_hi"]
+    assert a["cluster_method"] == "env_mean_t"
+
+    # Below CLUSTER_MIN_ENVS nothing that could be read as a test ships -- not even the
+    # exact sign p, whose floor at three environments is 0.25.
+    cells3 = _cells_across_envs(3)
+    per3 = {c.name: ad.compute_cell_stats(c, PRIMARY_RECOMMENDER, 400) for c in cells3}
+    pooled3 = next(s for s in ad.strata_of(cells3) if s.level == "pooled")
+    b = ad.aggregate(per3, pooled3, "phi_k16", "d_regret_vs_cp0")
+    for key in ad.CLUSTER_KEYS:
+        if key in ("cluster_min_env", "cluster_max_env"):
+            assert np.isfinite(b[key]), key
+        elif key == "cluster_degenerate":
+            assert b[key] is True
+        elif key == "cluster_method":
+            assert b[key] == "range"
+        else:
+            assert np.isnan(b[key]), key
 
 
 def test_mark_untuned_baselines_reads_the_json_and_the_manifest(caplog):
@@ -752,7 +992,26 @@ def test_oracle_tail_integral_matches_closed_form_for_beta():
 # ---- CLI end to end on synthetic parquet -------------------------------------------------------------
 
 
+def _manifest_line(out: Path, cell: ad.Cell, policy: str, **extra) -> dict:
+    """A completion record in the runner's schema for one synthetic (cell, policy)."""
+    return {
+        "test": "smoke", "cell": cell.name, "policy": policy, "group": GROUPS[policy],
+        "n": cell.n, "sha": "synthetic", "env_id": cell.env_id, "family": cell.family,
+        "horizon": cell.horizon, "cap": cell.cap, "base_seed": cell.base_seed,
+        "params": {}, "artifact_sha": None, "counters": None, "snapshots": None,
+        "parquet": str(out / "episodes" / "smoke" / cell.name / f"{policy}.parquet"),
+        **extra,
+    }
+
+
 def _write_synthetic_run(out: Path, cells: list[ad.Cell]) -> None:
+    """The episode tree *and* the manifest that claims it, as a real run leaves them.
+
+    Both, always: `ad.load_cells` reconciles one against the other, so a fixture that
+    wrote only the parquet files would be indistinguishable from the orphan batches of
+    rulings 17 and 22.
+    """
+    lines: list[dict] = []
     for c in cells:
         for policy, frame in c.frames.items():
             path = out / "episodes" / "smoke" / c.name / f"{policy}.parquet"
@@ -764,7 +1023,236 @@ def _write_synthetic_run(out: Path, cells: list[ad.Cell]) -> None:
             np.savez(dyn, t=grid, K_t=np.linspace(2, 20, 11), best_discovered=np.linspace(0.7, 0.9, 11),
                      best_posterior_mean=np.linspace(0.6, 0.85, 11), q_primary=np.linspace(0.6, 0.88, 11),
                      n_eliminated=np.linspace(0, 3, 11), search_rate=np.full(11, 0.2), herfindahl=np.full(11, 0.3))
-    (out / "manifest_smoke.jsonl").write_text("")
+            lines.append(_manifest_line(out, c, policy))
+    (out / "manifest_smoke.jsonl").write_text(
+        "".join(json.dumps(line) + "\n" for line in lines)
+    )
+
+
+def _smoke_manifest(out: Path) -> dict:
+    return rd.latest_records(rd.read_manifest(out / "manifest_smoke.jsonl"))
+
+
+def test_reconciler_is_clean_on_a_tree_that_matches_its_manifest(tmp_path, cells):
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    orphans, holes = ad.reconcile_episodes(out, "smoke", _smoke_manifest(out))
+    assert orphans == [] and holes == []
+    assert len(ad.episode_files_on_disk(out, "smoke")) == len(cells) * len(POLICIES)
+    assert len(ad.load_cells(out, "smoke", _smoke_manifest(out))) == len(cells)
+
+
+def test_load_cells_refuses_an_orphan_parquet_that_no_manifest_line_claims(tmp_path, cells):
+    """Rulings 17 and 22: a killed --resume leaves complete files with no manifest line.
+
+    The orphan must not enter a number -- before this, `load_cells` globbed the tree and
+    nine such files would have lifted Test D's common support from 16 policies to 19.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    victim = cells[0]
+    orphan = out / "episodes" / "smoke" / victim.name / "orphan_policy.parquet"
+    victim.frames["phi_k16"].to_parquet(orphan, index=False)
+
+    orphans, holes = ad.reconcile_episodes(out, "smoke", _smoke_manifest(out))
+    assert orphans == [(victim.name, "orphan_policy")] and holes == []
+    with pytest.raises(SystemExit) as excinfo:
+        ad.load_cells(out, "smoke", _smoke_manifest(out))
+    assert f"{victim.name}/orphan_policy.parquet" in str(excinfo.value)
+    # The escape hatch reads it, and says so on every table it then writes.
+    loaded = ad.load_cells(out, "smoke", _smoke_manifest(out), accept_unmanifested=True)
+    assert "orphan_policy" in {p for c in loaded for p in c.policies}
+
+
+def test_load_cells_refuses_a_manifest_hole_whose_parquet_is_gone(tmp_path, cells):
+    """The quarantine case: the tree no longer reproduces the manifest."""
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    victim = cells[1]
+    (out / "episodes" / "smoke" / victim.name / "phi_k16.parquet").unlink()
+    orphans, holes = ad.reconcile_episodes(out, "smoke", _smoke_manifest(out))
+    assert orphans == [] and holes == [(victim.name, "phi_k16")]
+    with pytest.raises(SystemExit, match="1 manifest hole"):
+        ad.load_cells(out, "smoke", _smoke_manifest(out))
+
+
+def test_an_excluded_item_with_a_file_on_disk_is_an_orphan(tmp_path, cells):
+    """Ruling 19's durable fix: an exclusion line supersedes a completion.
+
+    An item recorded as deliberately not run has no business having episodes, so a file
+    that reappears under it is exactly the orphan class -- not a legitimate completion.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    victim = cells[0]
+    with open(out / "manifest_smoke.jsonl", "a") as fh:
+        fh.write(json.dumps(rd.exclusion_record(
+            "smoke", victim.name, "phi_k16", "costs hours through the exact evaluator", "sha0"
+        )) + "\n")
+    orphans, holes = ad.reconcile_episodes(out, "smoke", _smoke_manifest(out))
+    assert orphans == [(victim.name, "phi_k16")] and holes == []
+
+    # Remove the file and the exclusion is consistent with the tree: no orphan, no hole
+    # (an exclusion is done-with-no-file, so it is never a hole either).
+    (out / "episodes" / "smoke" / victim.name / "phi_k16.parquet").unlink()
+    assert ad.reconcile_episodes(out, "smoke", _smoke_manifest(out)) == ([], [])
+
+
+def test_reconciler_ignores_quarantine_directories_and_partial_writes(tmp_path, cells):
+    """The nine quarantined orphans of ruling 22 live beside the tree, not in it.
+
+    A ``*.parquet.tmp`` from a worker killed mid-write is not an episode either, so
+    neither may be reported -- otherwise the reconciler cries wolf on a clean tree and
+    its refusal gets routed around.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    victim = cells[0]
+    src = out / "episodes" / "smoke" / victim.name / "phi_k16.parquet"
+
+    quarantine = out / "episodes_quarantine" / "orphaned_20260919" / victim.name
+    quarantine.mkdir(parents=True)
+    (quarantine / "phi_k16.parquet").write_bytes(src.read_bytes())
+    inside = out / "episodes" / "smoke" / "quarantine_20260919"
+    inside.mkdir()
+    (inside / "phi_k16.parquet").write_bytes(src.read_bytes())
+    (out / "episodes" / "smoke" / victim.name / "phi_k16_cs.parquet.tmp").write_bytes(b"partial")
+
+    assert ad.reconcile_episodes(out, "smoke", _smoke_manifest(out)) == ([], [])
+    loaded = ad.load_cells(out, "smoke", _smoke_manifest(out))
+    assert {c.name for c in loaded} == {c.name for c in cells}
+
+
+def test_cli_always_reconciles_against_the_manifest(tmp_path, cells, monkeypatch):
+    """`manifest=None` is legal for fixtures; the CLI must never take it.
+
+    This is the load-bearing half of the fix. `load_cells(out_dir, test)` still works
+    for a hand-built tree with no manifest, so nothing stops a future edit from dropping
+    the argument at the one call site that matters -- which is precisely the state the
+    code was in when rulings 17 and 22 happened. The test pins the call site itself:
+    every `main()` invocation must pass a manifest, and an orphan must reach a
+    `SystemExit` through the CLI, not just through `load_cells`.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    argv = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--allow-unverified", "--recommender", PRIMARY_RECOMMENDER]
+
+    seen: list[dict] = []
+    real_load_cells = ad.load_cells
+
+    def spy(out_dir, test, manifest=None, **kwargs):
+        seen.append({"manifest": manifest, "kwargs": kwargs})
+        return real_load_cells(out_dir, test, manifest, **kwargs)
+
+    monkeypatch.setattr(ad, "load_cells", spy)
+    ad.main(argv)
+    assert len(seen) == 1
+    assert seen[0]["manifest"] is not None, "the CLI passed manifest=None to load_cells"
+    assert set(seen[0]["manifest"]) == {
+        ("smoke", c.name, p) for c in cells for p in POLICIES
+    }
+    assert seen[0]["kwargs"] == {"accept_unmanifested": False, "allow_mixed_sim": False}
+
+    # And the refusal is reachable from the CLI: an orphan stops the run.
+    cells[0].frames["phi_k16"].to_parquet(
+        out / "episodes" / "smoke" / cells[0].name / "orphan_policy.parquet", index=False
+    )
+    with pytest.raises(SystemExit, match="orphan"):
+        ad.main(argv)
+
+
+def test_accept_unmanifested_stamps_every_table_it_writes(tmp_path, cells):
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    cells[0].frames["phi_k16"].to_parquet(
+        out / "episodes" / "smoke" / cells[0].name / "orphan_policy.parquet", index=False
+    )
+    argv = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--allow-unverified", "--recommender", PRIMARY_RECOMMENDER]
+    try:
+        result = ad.main(argv + ["--accept-unmanifested"])
+        written = [Path(p) for p in result["written"]]
+        assert written
+        for path in written:
+            frame = pd.read_csv(path)
+            assert "accepted_unmanifested" in frame.columns, path.name
+            assert bool(frame["accepted_unmanifested"].all())
+    finally:
+        ad._ACCEPT_UNMANIFESTED = False
+
+
+def test_load_cells_refuses_a_test_spanning_two_simulation_surfaces(tmp_path, cells):
+    """`--resume` must not be able to keep episodes from a different code version.
+
+    ``manifest_A`` really is 1360 items at one sha plus 80 at another; the repo sha is
+    not a substitute for a surface fingerprint (it moves for every unrelated commit and
+    nothing downstream reads it), so the analysis is where a mixed set has to stop.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, cells)
+    manifest = out / "manifest_smoke.jsonl"
+
+    # Every line unstamped, as the whole shipped tree is: no refusal, nothing to compare.
+    assert ad.sim_shas_in(_smoke_manifest(out), "smoke") == (set(), len(cells) * len(POLICIES))
+    assert len(ad.load_cells(out, "smoke", _smoke_manifest(out))) == len(cells)
+
+    # One surface: fine, and only one.
+    lines = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
+    manifest.write_text("".join(
+        json.dumps({**line, "sim_sha": "aaaaaaaaaaaa"}) + "\n" for line in lines
+    ))
+    assert ad.sim_shas_in(_smoke_manifest(out), "smoke") == ({"aaaaaaaaaaaa"}, 0)
+    assert len(ad.load_cells(out, "smoke", _smoke_manifest(out))) == len(cells)
+
+    # Two: refused by name, and only --allow-mixed-sim gets past it.
+    manifest.write_text("".join(
+        json.dumps({**line, "sim_sha": "aaaaaaaaaaaa" if i else "bbbbbbbbbbbb"}) + "\n"
+        for i, line in enumerate(lines)
+    ))
+    assert ad.sim_shas_in(_smoke_manifest(out), "smoke")[0] == {"aaaaaaaaaaaa", "bbbbbbbbbbbb"}
+    with pytest.raises(SystemExit, match="2 simulation surfaces"):
+        ad.load_cells(out, "smoke", _smoke_manifest(out))
+    assert len(ad.load_cells(out, "smoke", _smoke_manifest(out), allow_mixed_sim=True)) == len(cells)
+
+    # An exclusion line carries no sim_sha and must not count as a second surface.
+    with open(manifest, "w") as fh:
+        for line in lines:
+            fh.write(json.dumps({**line, "sim_sha": "aaaaaaaaaaaa"}) + "\n")
+        fh.write(json.dumps(rd.exclusion_record(
+            "smoke", cells[0].name, "phi_k16", "deliberately dropped", "sha0")) + "\n")
+    assert ad.sim_shas_in(_smoke_manifest(out), "smoke")[0] == {"aaaaaaaaaaaa"}
+
+
+def test_diagnostics_rows_are_ordered_deterministically(monkeypatch):
+    """The committed diagnostics tables must be byte-reproducible, not worker-ordered.
+
+    `run_diagnostics` collects through `imap_unordered`, so `onpolicy_parity_detail`,
+    `ood_*` and `reservoir_*` used to come out in whatever order the pool finished in --
+    a re-run rewrote the version-controlled tables with the same content in a different
+    order, which is a diff carrying no information and hiding whether anything moved.
+    """
+    made = [
+        {"cell": "b_T200", "policy": "cp0", "seconds": 0.0},
+        {"cell": "a_T100", "policy": "phi_k16", "seconds": 0.0},
+        {"cell": "a_T100", "policy": "cp0", "seconds": 0.0},
+        {"cell": "b_T200", "policy": "phi_k16", "seconds": 0.0},
+    ]
+    by_key = {(r["cell"], r["policy"]): r for r in made}
+    items = [
+        ad.DiagItem(
+            item=ood.SnapshotItem("smoke", cell, policy, "e", "A", 100, 64, {}, "x.pkl",
+                                  "model", None, None),
+            offline_path=None, oof_path=None, features_cache=None, skip_ood=True,
+        )
+        for cell, policy in by_key
+    ]
+    monkeypatch.setattr(ad, "run_diag_item",
+                        lambda d: by_key[(d.item.cell, d.item.policy)])
+    got = ad.run_diagnostics(items, workers=1)
+    assert [(r["cell"], r["policy"]) for r in got] == [
+        ("a_T100", "cp0"), ("a_T100", "phi_k16"), ("b_T200", "cp0"), ("b_T200", "phi_k16"),
+    ]
 
 
 def test_cli_refuses_main_tables_without_the_parity_gate(tmp_path, cells):
@@ -779,10 +1267,13 @@ def test_cli_refuses_main_tables_without_the_parity_gate(tmp_path, cells):
     tables = out / "tables"
     for name in ("main_smoke_primary.csv", "cells_smoke_primary.csv", "primary_contrasts_smoke_primary.csv",
                  "secondary_contrasts_smoke_primary.csv", "decomposition_smoke_primary.csv",
-                 "offline_vs_deployed_smoke.csv", "surrogate_validity_smoke.csv", "tau_curves_smoke.csv",
-                 "recommender_sensitivity_smoke.csv", "recommender_kendall_smoke.csv",
-                 "dynamics_smoke.csv", "cap_demotion_smoke.csv"):
+                 "dynamics_smoke.csv", "cap_demotion_smoke.csv", "strata_coverage_smoke.csv"):
         assert (tables / name).exists(), name
+    # The five cross-recommender tables need --recommender all and nothing backfills
+    # them from disk, so a single-recommender run does not produce them (4.4).
+    for base_name in ad.CROSS_RECOMMENDER_TABLES:
+        assert not (tables / ad.table_name(base_name, "smoke")).exists(), base_name
+    assert result["cross_recommender"] is False
     main = pd.read_csv(tables / "main_smoke_primary.csv")
     assert set(main["level"]) == {"family_horizon", "family", "horizon", "pooled"}
     pc = pd.read_csv(tables / "primary_contrasts_smoke_primary.csv")
@@ -813,11 +1304,14 @@ def test_cli_refuses_main_tables_when_a_parity_column_fails(tmp_path, cells, mon
     (out / "snapshots").mkdir()
     (out / "snapshots" / "x.pkl").write_bytes(pickle.dumps([]))
     cell = cells[0]
-    (out / "manifest_smoke.jsonl").write_text(json.dumps({
-        "test": "smoke", "cell": cell.name, "policy": "phi_k16", "group": "learned",
-        "snapshots": str(out / "snapshots" / "x.pkl"), "parquet": str(out / "episodes" / "smoke" / cell.name / "phi_k16.parquet"),
-        "params": {"artifact": "unused.joblib", "tau": 0.6}, "counters": {},
-    }) + "\n")
+    # Appended, not written over: the latest line per item wins, so this supersedes the
+    # fixture's own phi_k16 record while every other item keeps its completion line (the
+    # tree and the manifest must still reconcile -- `ad.reconcile_episodes`).
+    with open(out / "manifest_smoke.jsonl", "a") as fh:
+        fh.write(json.dumps(_manifest_line(
+            out, cell, "phi_k16", snapshots=str(out / "snapshots" / "x.pkl"),
+            params={"artifact": "unused.joblib", "tau": 0.6}, counters={},
+        )) + "\n")
     item = ood.SnapshotItem("smoke", cell.name, "phi_k16", cell.env_id, cell.family, cell.horizon, 64, {},
                             str(out / "snapshots" / "x.pkl"), "model", "unused.joblib", 0.6)
     scalar = np.zeros((1200, len(fg.ALL_DEPLOYABLE)))
@@ -847,24 +1341,67 @@ def test_cli_refuses_main_tables_when_a_parity_column_fails(tmp_path, cells, mon
     assert not (tables / "main_smoke_primary.csv").exists()
 
 
-def test_cli_single_recommender_keeps_cross_recommender_tables(tmp_path, cells):
+def test_cli_exits_non_zero_on_an_empty_stratum_but_writes_it_first(tmp_path):
+    """Ruling 23 through the CLI: the tables are written, then the run fails.
+
+    Written first on purpose -- a reader has to be able to see WHICH stratum emptied,
+    which is what `strata_coverage_<test>.csv` is for.
+    """
+    out = tmp_path / "deploy"
+    _write_synthetic_run(out, _disjoint_cells())
+    argv = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--allow-unverified", "--recommender", PRIMARY_RECOMMENDER]
+    with pytest.raises(SystemExit, match="EMPTY common support"):
+        ad.main(argv)
+    tables = out / "tables"
+    cov = pd.read_csv(tables / "strata_coverage_smoke.csv")
+    assert cov["stratum_empty_common_support"].any()
+    voided = cov[cov["stratum_empty_common_support"]]
+    assert (voided["n_common"] == 0).all() and (voided["level"] != "cell").all()
+    assert voided["policies_ragged"].str.len().gt(0).all()
+    main = pd.read_csv(tables / "main_smoke_primary.csv")
+    assert main["stratum_empty_common_support"].any()
+    assert main[main["stratum_empty_common_support"]]["regret"].isna().all()
+
+    result = ad.main(argv + ["--allow-empty-strata"])
+    assert result["empty_strata"], result
+    assert all("cell" not in name for name in result["empty_strata"])
+
+
+def test_a_single_recommender_run_does_not_touch_the_cross_recommender_tables(tmp_path, cells):
+    """4.4: the disk backfill is gone; these five tables need --recommender all.
+
+    `cross_recommender_frames` used to complete any recommender not computed in the run
+    by reading its main/cells table off disk with no freshness check at all. Immediately
+    after the ruling-22 quarantine, `--test D --recommender primary` would have
+    recomputed the primary recommender on the corrected 16-policy episode set while
+    silently backfilling four recommenders computed on the contaminated 19-policy one.
+    A single-recommender run must now leave the five tables exactly as it found them.
+    """
     out = tmp_path / "deploy"
     _write_synthetic_run(out, cells)
     tables = out / "tables"
-    base = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1", "--allow-unverified"]
-    ad.main(base)
+    base = ["--test", "smoke", "--out-dir", str(out), "--n-boot", "100", "--workers", "1",
+            "--allow-unverified"]
+    full = ad.main(base)
+    assert full["cross_recommender"] is True
+    names = [ad.table_name(base_name, "smoke") for base_name in ad.CROSS_RECOMMENDER_TABLES]
+    before = {name: (tables / name).read_bytes() for name in names}
     kendall_all = pd.read_csv(tables / "recommender_kendall_smoke.csv")
     ovd_all = pd.read_csv(tables / "offline_vs_deployed_smoke.csv")
     assert len(kendall_all) > 0 and set(ovd_all["recommender"]) == set(RECOMMENDER_NAMES)
-    # A single-recommender re-run must rebuild the cross-recommender tables from every
-    # per-recommender table on disk, not shrink them to one recommender.
-    ad.main(base + ["--recommender", "lcb"])
-    kendall_one = pd.read_csv(tables / "recommender_kendall_smoke.csv")
-    ovd_one = pd.read_csv(tables / "offline_vs_deployed_smoke.csv")
-    ranks = pd.read_csv(tables / "recommender_sensitivity_smoke.csv")
-    assert len(kendall_one) == len(kendall_all) and set(ovd_one["recommender"]) == set(RECOMMENDER_NAMES)
-    assert set(ranks["recommender"]) == set(RECOMMENDER_NAMES)
-    pd.testing.assert_frame_equal(kendall_one, kendall_all)
+
+    one = ad.main(base + ["--recommender", "lcb"])
+    assert one["cross_recommender"] is False
+    assert not any(Path(w).name in set(names) for w in one["written"])
+    assert {name: (tables / name).read_bytes() for name in names} == before
+
+    # ... and a later --recommender all run rebuilds them from that run alone.
+    again = ad.main(base)
+    assert again["cross_recommender"] is True
+    pd.testing.assert_frame_equal(
+        pd.read_csv(tables / "recommender_kendall_smoke.csv"), kendall_all
+    )
 
 
 # ---- figures ---------------------------------------------------------------------------------------------

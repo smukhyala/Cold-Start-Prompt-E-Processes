@@ -158,3 +158,121 @@ def test_mixture_has_ten_distinct_policies():
 )
 def test_registry_round_trip(name: str, cls: type):
     assert get_registered("search_policy", name) is cls
+
+
+# ---- the environment-adaptive schedule (DEPLOYMENT_PLAN.md, Pre-registration 4) --------------
+
+
+def _state_with_means(post_rows: list[list[float]], n_pulls: int = 98) -> GrowingState:
+    """A state whose held arms have the given posterior means (`(S+1)/(n+2)`), per replicate."""
+    m = len(post_rows)
+    k = len(post_rows[0])
+    s = GrowingState(n_replicates=m, capacity=k, horizon=200, base_seed=5)
+    for j in range(k):
+        s.add_arms(np.full(m, 0.5, dtype=np.float32), np.full(m, j, dtype=np.int32))
+    n = s.view(s.n)
+    S = s.view(s.S)
+    for i, row in enumerate(post_rows):
+        for j, post in enumerate(row):
+            n[i, j] = n_pulls
+            S[i, j] = round(post * (n_pulls + 2) - 1)  # (S+1)/(n+2) == post, exact at n_pulls = 98
+    return s
+
+
+def test_adaptive_schedule_reads_the_fraction_of_arms_near_the_best():
+    from cold_start.growing.search_policies import TailAdaptiveSchedule, frac_within_of_best
+
+    thin = [0.70, 0.69, 0.68, 0.67]   # every arm within 0.05 of the best -> q = 1
+    heavy = [0.70, 0.40, 0.30, 0.20]  # only the best itself -> q = 0.25
+    s = _state_with_means([thin, heavy])
+    q = frac_within_of_best(s, 0.05)
+    assert q.tolist() == pytest.approx([1.0, 0.25])
+    # b = 0: a plain c * T^alpha schedule, identical for both replicates.
+    plain = TailAdaptiveSchedule(alpha=0.5, c=1.0, b=0.0)
+    ctx = _ctx(t=10, horizon=100)
+    assert plain.target(s, ctx).tolist() == pytest.approx([10.0, 10.0])
+    # b > 0: the heavy-tailed replicate's target grows by (1 + b * (1 - q)); the thin one's does not.
+    adaptive = TailAdaptiveSchedule(alpha=0.5, c=1.0, b=2.0)
+    assert adaptive.target(s, ctx).tolist() == pytest.approx([10.0, 10.0 * (1 + 2 * 0.75)])
+    # And the decision is K_t < target: both hold 4 arms, so both search here...
+    assert adaptive.should_search(s, ctx).tolist() == [True, True]
+    # ...but at c = 0.4 (target 4 vs 10) only the heavy-tailed replicate keeps recruiting.
+    tight = TailAdaptiveSchedule(alpha=0.5, c=0.4, b=2.0)
+    assert tight.target(s, ctx).tolist() == pytest.approx([4.0, 10.0])
+    assert tight.should_search(s, ctx).tolist() == [False, True]
+
+
+def test_adaptive_schedule_target_depends_on_the_horizon_not_the_clock():
+    """K_target = c * T^alpha * (...): a *fixed-K-per-horizon* rule, reached as fast as possible."""
+    from cold_start.growing.search_policies import TailAdaptiveSchedule
+
+    s = _state_with_means([[0.7, 0.69, 0.68]])
+    rule = TailAdaptiveSchedule(alpha=0.5, c=2.0, b=0.0)
+    assert rule.target(s, _ctx(t=3, horizon=100)).tolist() == pytest.approx([20.0])
+    assert rule.target(s, _ctx(t=90, horizon=100)).tolist() == pytest.approx([20.0])
+    assert rule.target(s, _ctx(t=3, horizon=400)).tolist() == pytest.approx([40.0])
+
+
+def test_adaptive_schedule_opens_with_no_arms_and_is_registered():
+    from cold_start.growing.search_policies import TailAdaptiveSchedule
+
+    assert TailAdaptiveSchedule(alpha=0.5, c=1.0, b=1.0).should_search(_state(0), _ctx()).all()
+    assert get_registered("search_policy", "adaptive_K") is TailAdaptiveSchedule
+
+
+# ---- the best-mean gate (DEPLOYMENT_PLAN.md, Pre-registration 5) --------------------------
+
+
+def test_best_mean_gate_searches_while_the_best_is_below_theta_and_k_below_the_ceiling():
+    from cold_start.growing.search_policies import BestMeanGate, best_held_mean
+
+    low = [0.45, 0.40, 0.30]    # best 0.45 -> keep recruiting
+    high = [0.70, 0.40, 0.30]   # best 0.70 -> stop
+    s = _state_with_means([low, high])
+    assert best_held_mean(s).tolist() == pytest.approx([0.45, 0.70])
+    rule = BestMeanGate(theta=0.6, alpha=0.5, c=2.0)
+    ctx = _ctx(t=10, horizon=100)
+    assert rule.ceiling(ctx) == pytest.approx(20.0)
+    assert rule.should_search(s, ctx).tolist() == [True, False]
+    # The ceiling binds even when the best is poor: c * T^alpha = 2 arms here, both hold 3.
+    tight = BestMeanGate(theta=0.6, alpha=0.0, c=2.0)
+    assert tight.should_search(s, ctx).tolist() == [False, False]
+    # theta >= 1 is the fixed-K schedule: the gate never closes on its own.
+    fixed = BestMeanGate(theta=1.0, alpha=0.5, c=2.0)
+    assert fixed.should_search(s, ctx).tolist() == [True, True]
+
+
+def test_best_mean_gate_opens_with_no_arms_and_is_registered():
+    from cold_start.growing.search_policies import BestMeanGate
+
+    assert BestMeanGate(theta=0.6, alpha=0.5, c=2.0).should_search(_state(0), _ctx()).all()
+    assert get_registered("search_policy", "bestmean_K") is BestMeanGate
+
+
+# ---- the level-scaled schedule (DEPLOYMENT_PLAN.md, Pre-registration 6) --------------------
+
+
+def test_level_scaled_schedule_scales_its_target_by_the_observed_level():
+    from cold_start.growing.search_policies import LevelScaledSchedule, held_level
+
+    thin = [0.70, 0.60, 0.50]    # level 0.60
+    heavy = [0.50, 0.30, 0.31]   # level 0.37
+    s = _state_with_means([thin, heavy])
+    assert held_level(s).tolist() == pytest.approx([0.6, 0.37])
+    ctx = _ctx(t=10, horizon=100)
+    plain = LevelScaledSchedule(alpha=0.5, c=2.0, b=0.0)
+    assert plain.target(s, ctx).tolist() == pytest.approx([20.0, 20.0])
+    scaled = LevelScaledSchedule(alpha=0.5, c=2.0, b=4.0)
+    import math
+    assert scaled.target(s, ctx).tolist() == pytest.approx([20 * math.exp(4 * (0.5 - 0.6)), 20 * math.exp(4 * (0.5 - 0.37))])
+    # Both hold 3 arms: the thin replicate's target (13.4) and the heavy one's (33.6) both exceed 3.
+    assert scaled.should_search(s, ctx).tolist() == [True, True]
+    tight = LevelScaledSchedule(alpha=0.0, c=3.5, b=4.0)  # targets 2.3 and 5.9
+    assert tight.should_search(s, ctx).tolist() == [False, True]
+
+
+def test_level_scaled_schedule_opens_with_no_arms_and_is_registered():
+    from cold_start.growing.search_policies import LevelScaledSchedule
+
+    assert LevelScaledSchedule(alpha=0.5, c=1.0, b=2.0).should_search(_state(0), _ctx()).all()
+    assert get_registered("search_policy", "level_K") is LevelScaledSchedule

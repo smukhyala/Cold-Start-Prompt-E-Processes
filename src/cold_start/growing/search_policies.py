@@ -112,6 +112,141 @@ class PowerSchedule(SearchPolicy):
         return _force_first_arm(state, state.Kt < target)
 
 
+def frac_within_of_best(state: GrowingState, band: float) -> np.ndarray:
+    """Per replicate, the fraction of held arms whose posterior mean is within `band` of
+    the best held arm's -- `est_frac_arms_within_5pct_of_best` at ``band=0.05``, computed
+    from ``(S+1)/(n+2)`` alone. 1.0 when a replicate holds no arms."""
+    post = state.view(state.empirical_mean())
+    held = np.arange(post.shape[1])[None, :] < state.Kt[:, None]
+    k = np.maximum(state.Kt, 1).astype(np.float64)
+    best = np.where(held, post, -np.inf).max(axis=1)
+    near = (held & (post >= (best - band)[:, None])).sum(axis=1)
+    return np.where(state.Kt > 0, near / k, 1.0)
+
+
+@register("adaptive_K", kind="search_policy")
+class TailAdaptiveSchedule(SearchPolicy):
+    """SEARCH while ``K_t < c * T**alpha * (1 + b * (1 - q_t))`` (Pre-registration 4).
+
+    A fixed-K-per-horizon schedule -- recruit to the target as fast as possible, then
+    refine -- whose target grows when the held arms say the reservoir is heavy-tailed:
+    ``q_t`` is the fraction of held arms within `band` of the best held arm's posterior
+    mean. In a thin-tailed reservoir ``q_t`` is near 1 and the target is the plain
+    ``c * T**alpha``; in a heavy-tailed one it is near 0 and the target is up to
+    ``1 + b`` times larger. ``b = 0`` is the fixed-K schedule exactly. Three scalars,
+    one QUALITY statistic, no confidence sequence and no e-process.
+    """
+
+    name = "adaptive_K"
+
+    def __init__(
+        self,
+        alpha: float = 0.5,
+        c: float = 2.0,
+        b: float = 0.0,
+        band: float = 0.05,
+        rng: np.random.Generator | None = None,
+    ) -> None:
+        super().__init__(rng)
+        self.alpha = float(alpha)
+        self.c = float(c)
+        self.b = float(b)
+        self.band = float(band)
+
+    def target(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        base = self.c * float(max(ctx.horizon, 1)) ** self.alpha
+        if self.b == 0.0:
+            return np.full(state.M, base, dtype=np.float64)
+        q = frac_within_of_best(state, self.band)
+        return base * (1.0 + self.b * (1.0 - q))
+
+    def should_search(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        return _force_first_arm(state, state.Kt < self.target(state, ctx))
+
+
+def best_held_mean(state: GrowingState) -> np.ndarray:
+    """Per replicate, the largest posterior mean ``(S+1)/(n+2)`` over held arms; 0 with none."""
+    post = state.view(state.empirical_mean())
+    held = np.arange(post.shape[1])[None, :] < state.Kt[:, None]
+    best = np.where(held, post, -np.inf).max(axis=1)
+    return np.where(state.Kt > 0, best, 0.0)
+
+
+@register("bestmean_K", kind="search_policy")
+class BestMeanGate(SearchPolicy):
+    """SEARCH while ``best_mean_t < theta`` and ``K_t < c * T**alpha`` (Pre-registration 5).
+
+    Recruit until the best arm held is good enough, never beyond a per-horizon ceiling,
+    then refine. This is the rule `model_reads.py` found the k = 4 learned policy to be
+    reading: its top feature at every horizon is the best held arm's posterior mean.
+    ``theta >= 1`` never closes the gate and is the fixed-K schedule exactly.
+    """
+
+    name = "bestmean_K"
+
+    def __init__(
+        self,
+        theta: float = 0.65,
+        alpha: float = 0.5,
+        c: float = 4.0,
+        rng: np.random.Generator | None = None,
+    ) -> None:
+        super().__init__(rng)
+        self.theta = float(theta)
+        self.alpha = float(alpha)
+        self.c = float(c)
+
+    def ceiling(self, ctx: DecisionContext) -> float:
+        return self.c * float(max(ctx.horizon, 1)) ** self.alpha
+
+    def should_search(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        below_ceiling = state.Kt < self.ceiling(ctx)
+        return _force_first_arm(state, below_ceiling & (best_held_mean(state) < self.theta))
+
+
+def held_level(state: GrowingState) -> np.ndarray:
+    """Per replicate, the mean posterior mean ``(S+1)/(n+2)`` over held arms; 0.5 with none."""
+    post = state.view(state.empirical_mean())
+    held = np.arange(post.shape[1])[None, :] < state.Kt[:, None]
+    total = np.where(held, post, 0.0).sum(axis=1)
+    return np.where(state.Kt > 0, total / np.maximum(state.Kt, 1), 0.5)
+
+
+@register("level_K", kind="search_policy")
+class LevelScaledSchedule(SearchPolicy):
+    """SEARCH while ``K_t < c * T**alpha * exp(b * (0.5 - level_t))`` (Pre-registration 6).
+
+    A fixed-K-per-horizon schedule whose target is scaled by the observed reservoir
+    level -- the mean posterior mean over held arms. A high level (thin-tailed reservoir,
+    the best arm near the typical one) shrinks the target; a low level (heavy-tailed,
+    rare excellent arms far above typical) grows it. `model_reads.py` found this to be
+    what the k = 4 learned policy effectively reads. ``b = 0`` is the fixed-K schedule.
+    """
+
+    name = "level_K"
+
+    def __init__(
+        self,
+        alpha: float = 0.5,
+        c: float = 2.0,
+        b: float = 0.0,
+        rng: np.random.Generator | None = None,
+    ) -> None:
+        super().__init__(rng)
+        self.alpha = float(alpha)
+        self.c = float(c)
+        self.b = float(b)
+
+    def target(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        base = self.c * float(max(ctx.horizon, 1)) ** self.alpha
+        if self.b == 0.0:
+            return np.full(state.M, base, dtype=np.float64)
+        return base * np.exp(self.b * (0.5 - held_level(state)))
+
+    def should_search(self, state: GrowingState, ctx: DecisionContext) -> np.ndarray:
+        return _force_first_arm(state, state.Kt < self.target(state, ctx))
+
+
 @register("epsilon_schedule", kind="search_policy")
 class EpsilonSchedule(SearchPolicy):
     """A power schedule with epsilon-randomization.

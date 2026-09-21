@@ -396,3 +396,314 @@ main runs overrun, and then stated as not done.
   changing the protocol, to prove the reproduction is faithful.
 - Every number in `DEPLOYMENT_RESULTS.md` traceable to a CSV in `results/growing_bandits/deploy/`.
 - Final check that no deployed policy imports/reads `state.mu`, `reservoir`, `oracle_*`, or `meta_*` (grep + test).
+
+---
+
+## Pre-registration 2 — the replacement contrast H1b′ (registered 2026-09-20, before any run)
+
+This section is a second, separate pre-registration. It is written **after** the first study's results
+were read and **before** a single episode of the run it registers exists; the commit that adds it precedes
+the commit that adds the run's manifest lines, and that ordering is the whole of its claim to honesty.
+It is hypothesis switching after seeing the data, and it is labelled as such.
+
+### H1b as written is answered: null, and under-powered
+
+The pre-registered H1b — `phi_k16` (P9₁₆, τ_val) vs the validation-tuned schedule P3\*, pooled over five
+horizons at cap 64 — is **null** in all six tests (`DEPLOYMENT_RESULTS.md` §3.2, §7.5), and the study will
+not spend more compute on it. Three measured reasons it could not have been anything else:
+
+1. **Power.** The best available effect size is d = 0.328 (mean −0.000891, between-environment sd 0.002719,
+   n = 30, `cells_robust_primary.csv`), which needs ~73 environments for 80% power at α = 0.05; Test A has 8.
+2. **Structural zeros.** 12 of the 40 Test-A cells have `d_regret_vs_p3_star` exactly 0.0 for `phi_k16`
+   (17/40 for `phi_k4`, 20/40 for `phi_k1`): at T ≥ 200 the 64-arm cap makes Φ and P3\* the same policy.
+3. **The contrast at T ≥ 200 is not the claimed one.** It is "Φ against fill-the-cap", not "Φ against a
+   schedule" (`DEPLOYMENT_RESULTS.md` §4).
+
+### What motivated the replacement, and why that evidence is excluded
+
+On Test A, the two short-commitment variants beat P3\* in eight of eight environments (`phi_k4` −0.003445,
+cl[−0.006266, −0.000624], p = 0.023; `phi_k1` −0.003429, cl[−0.006280, −0.000578], p = 0.025), where
+`phi_k16` does not (5 of 8). Those numbers were **selected** from 25 exploratory variants after the fact and
+do not survive Holm (min adjusted 0.585). They are the reason this contrast exists; **they are never quoted
+as evidence for it**, and Test A is not part of H1b′'s evidence.
+
+### H1b′ (one contrast)
+
+- **Policy:** `phi_k4` — the k = 4 commitment model, τ from `thresholds.json` exactly as deployed in Test A.
+  Chosen over `phi_k1` because the Test-A effects are indistinguishable (Δ 1.6e−5) and `phi_k4` costs 3.6×
+  less to run; that choice was made on Test A, which is why Test A is excluded above.
+- **Reference:** `p3_star`, the validation-tuned power schedule, constants as deployed (`baseline_params.json`).
+- **Panel:** the 30-environment robustness panel (`--test robust`: all corpus environments, test-split seeds,
+  cap 64, M = 500). Its 150 cells already hold `p3_star`; the run adds `phi_k4` to them and nothing else.
+- **Horizons for the primary statistic:** T ∈ {50, 100, 200} — the horizons where the two policies can differ
+  (reason 2 above). The T ∈ {500, 1000} cells are run too so the standard tables are complete, and are
+  reported as secondary.
+- **Primary statistic:** pooled over the 90 cells (30 environments × 3 horizons), Δ = regret(`phi_k4`) −
+  regret(`p3_star`) per episode, cell-stratified paired bootstrap for the paired CI, and the
+  **environment-mean t interval on n = 30** with its two-sided `cluster_p`. Negative favours `phi_k4`.
+- **Minimum effect of interest:** |Δ| ≥ **0.002** pooled — about 2% of P3\*'s regret on this panel, and the
+  smallest difference the study would act on given that the cap mis-sizing alone is worth 0.02
+  (`k_star_envelope.csv`). A significant Δ smaller than this is reported as "detectable, not material".
+- **Decision rule, stated in advance:** H1b′ is *supported* iff pooled `cluster_p` < 0.05, Δ < 0 and
+  |Δ| ≥ 0.002. It is *refuted* iff Δ ≥ 0 or the t interval excludes −0.002 from below (the effect is
+  significantly smaller than the MEI). Anything else is *inconclusive* and is reported as that word.
+- **Secondary rows:** the three per-horizon strata (n = 30 each), Holm-corrected among themselves; the two
+  long-horizon strata, uncorrected and labelled structural.
+- **Family:** one primary row. No other contrast in this registration.
+
+### What either outcome means
+
+- **Supported:** a learned short-commitment SEARCH rule beats a validation-tuned schedule *on the training
+  corpus's environments*. That is in-distribution robustness at n = 30 (non-claim 11 of the results
+  document still applies) — never generalization, which Test C already answered against.
+- **Refuted or inconclusive:** the learned-policy line closes. The write-up is the negative result the data
+  already support: the arm budget and the commitment horizon set deployed regret, not the decision
+  classifier.
+
+### Run, in order
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 \
+    --policies phi_k4
+.venv/bin/python experiments/growing_bandits/deploy/analyze_deployment.py --test robust --recommender all --gate-from A
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py     # writes tables/h1b_prime.csv
+```
+
+---
+
+## Pre-registration 3 — the null model H1b′ must beat (registered 2026-09-20, before selection or run)
+
+H1b′ was supported (`DEPLOYMENT_RESULTS.md` §12.3), and §12.2 says why in a way that undercuts it: `phi_k4`
+merely matches front-loaded search at its own arm count. The question that remains is whether the learned
+model carries *any* information a schedule cannot. This registers the schedule it must beat and the rule for
+reading the result, before the schedule's constants are selected.
+
+### The null model, and why this form (a declared researcher degree of freedom)
+
+**`fixed_K_star`: recruit to K(T) arms as fast as possible, then refine only; K(T) chosen per horizon on the
+validation split.** The functional form was chosen *after* reading §12.1–12.2 — they say the whole effect is
+"which K, and reach it early" — so the roadmap's 3-parameter feature rule (NEXT-STEPS §3.4) is replaced by
+the simplest rule that embodies that finding. This is a researcher degree of freedom and is declared as such.
+It has no features, costs what `p3_star` costs, and is the existing `fixed_K` kind with a per-horizon K
+(`policy_table.py`, `fixed_K_star`; constants in `baseline_params.json["fixed_K_star"]`).
+
+- **Selection:** for each T ∈ {50, 100, 200, 500, 1000}, the 8 main environments on the **validation** split,
+  cap 64, M = 2000, K over the grid {4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64} ∩ [3, T]
+  (≤ 17 candidates per horizon); K(T) = argmin of the environment-equal-weight pooled regret
+  (`select_fixed_k.py`, `tables/fixed_k_selection.csv`). The same protocol P3\* was selected under, with a
+  smaller candidate set. Selection is on deployed validation regret, so it carries the same winner's curse as
+  P3\*; at the measured selection SE that is ≤ 1.7e−3, below the minimum effect of interest.
+- **Deployment:** `fixed_K_star` on the robustness panel (150 cells), Test A and Test C, test-split seeds,
+  CRN-paired with every policy already there.
+
+### The registered contrasts
+
+- **Primary — H1b″:** `phi_k4` − `fixed_K_star` on the robustness panel at T ∈ {50, 100, 200}, pooled over 90
+  cells, environment-mean t on n = 30, MEI 0.002, the same rule as H1b′:
+  *supported* iff `cluster_p` < 0.05, Δ < 0 and |Δ| ≥ 0.002 — the learned model carries information a
+  per-horizon fixed K does not; *refuted* iff Δ ≥ 0 or the t interval lies above −0.002 — it does not;
+  otherwise *inconclusive*.
+- **Secondary:** `fixed_K_star` − `p3_star` on the same cells (does the null model itself beat the tuned power
+  schedule, i.e. is H1b′'s effect available without a classifier?), and the per-horizon rows of the primary,
+  Holm-corrected among the three.
+
+### What either outcome means
+
+- **Refuted:** "a per-horizon fixed K selected on validation regret matches a 62-feature logistic policy
+  trained on 87,148 oracle-labelled states." The corpus-labelling line retires; the paper is about the arm
+  budget.
+- **Supported:** the study's first defensible claim that the learned model carries information a simple rule
+  cannot — on the training corpus's environments, at T ≤ 200, against this null.
+
+### Run, in order
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/select_fixed_k.py --workers 12        # validation split
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 --policies fixed_K_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test A      --resume --workers 12 --policies fixed_K_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test C      --resume --workers 12 --policies fixed_K_star
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_null   # tables/h1b_null.csv
+```
+
+---
+
+## Pre-registration 4 — an environment-adaptive schedule as the null model (registered 2026-09-20, before code, selection or run)
+
+§12.4 of the results says the learned model's value is sizing K to the environment. The question that
+closes the programme is whether a schedule that *observes* the environment through something already on
+the policy's hot path can do the same. If it can, the 62-feature classifier is a lookup table with extra
+steps; if it cannot, the learned model is the result.
+
+### The null model (a declared researcher degree of freedom, chosen after reading §12.4)
+
+**`adaptive_K_star`: SEARCH while K_t < K\_target(t), with K\_target = c · T^α · (1 + b · (1 − q_t))**, where
+q_t is the fraction of currently held arms whose posterior mean lies within 0.05 of the best held arm's
+(`est_frac_arms_within_5pct_of_best`, a QUALITY feature the study already computes; `(S+1)/(n+2)` means, no
+confidence sequence, no e-process). In a thin-tailed reservoir q_t → 1 and the target collapses to the plain
+schedule c · T^α; in a heavy-tailed one q_t → 0 and it is up to (1 + b) times larger. Three scalars (α, c, b);
+b = 0 is a per-horizon power fixed K, so the null nests Pre-registration 3's. It is a new `search_policy`
+kind (`adaptive_K`), feature-free apart from that one statistic, evaluated vectorized each step.
+
+- **Selection:** the 8 main environments × T ∈ {50, 100, 200} on the **validation** split, cap 64,
+  M = 2000; one (α, c, b) for all horizons, the argmin of pooled regret over the 24 cells, grid
+  α ∈ {0.5, 0.75} × c ∈ {1, 2, 3, 4, 6} × b ∈ {0, 1, 2, 4, 8} — 50 candidates (`select_rule.py --rule adaptive_K_star`,
+  `tables/adaptive_k_selection.csv`, `baseline_params.json["adaptive_K_star"]`).
+- **Deployment:** robustness panel, Test A, Test C; test-split seeds; CRN-paired with everything there.
+
+### The registered contrasts (robustness panel, T ∈ {50, 100, 200}, env-mean t on n = 30, MEI 0.002)
+
+- **Primary — H1b‴:** `phi_k4` − `adaptive_K_star`. *Supported* iff `cluster_p` < 0.05, Δ < 0 and
+  |Δ| ≥ 0.002: the learned model carries information a three-parameter environment-adaptive schedule does
+  not. *Refuted* iff Δ ≥ 0 or the t interval lies above −0.002: it does not, and the classifier reduces to
+  "size K to the observed tail". Otherwise *inconclusive*.
+- **Secondary:** `adaptive_K_star` − `fixed_K_star` (does observing the tail buy what §12.4 attributed to it?),
+  and the per-horizon rows of the primary, Holm-corrected among the three.
+
+### What either outcome means
+
+- **Refuted:** the programme's result is a three-parameter rule — recruit to c · T^α, more when the held arms
+  are spread out — and the oracle-labelling pipeline was an expensive route to it.
+- **Supported:** the learned model reads something about the environment that the held arms' 5%-band does
+  not carry, on the corpus environments at T ≤ 200. One registered claim, in-distribution.
+
+### Run, in order
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/select_rule.py --rule adaptive_K_star --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 --policies adaptive_K_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test A      --resume --workers 12 --policies adaptive_K_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test C      --resume --workers 12 --policies adaptive_K_star
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_adaptive
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_adaptive_secondary
+```
+
+---
+
+## Pre-registration 5 — the rule the model appears to be (registered 2026-09-20, before code, selection or run)
+
+`model_reads.py` (results §12.6) asked `phi_k4` directly what it reads on the H1b′ cells. The answer is the
+**best held arm's posterior mean**: the top feature at every horizon, tracking the per-environment K at
+|ρ| ≥ 0.93, and a rule on it plus log K reproduces 96 / 93 / 85% of the model's decisions at T = 50 / 100 /
+200. This registers that rule as the null model and states, before selection, what beating or matching it
+means.
+
+### The null model (a declared researcher degree of freedom, chosen from `model_reads.py`)
+
+**`bestmean_star`: SEARCH while `best_mean_t < θ` **and** `K_t < c · T^α`** — recruit until the best arm you
+hold is good enough, never beyond a per-horizon ceiling, then refine. `best_mean_t` is the maximum posterior
+mean `(S+1)/(n+2)` over held arms, computed by the rule itself (no evidence pass). Three scalars (θ, α, c);
+θ ≥ 1 is the fixed-K schedule of Pre-registration 3, so the null nests it.
+
+- **Selection:** the 8 main environments × T ∈ {50, 100, 200} on the **validation** split, cap 64, M = 2000;
+  one (θ, α, c) for all horizons; grid θ ∈ {0.55, 0.60, 0.625, 0.65, 0.675, 0.70} ×
+  (α, c) ∈ {(0.5, 3), (0.5, 4), (0.5, 6), (0.5, 8), (0.75, 1), (0.75, 1.5), (0.75, 2), (0.75, 3)} —
+  48 candidates (`select_rule.py --rule bestmean_star`, `tables/bestmean_selection.csv`,
+  `baseline_params.json["bestmean_star"]`).
+- **Deployment:** robustness panel, Test A, Test C; test-split seeds.
+
+### The registered contrasts (robustness panel, T ∈ {50, 100, 200}, env-mean t on n = 30, MEI 0.002)
+
+- **Primary — H1b⁗:** `phi_k4` − `bestmean_star`. *Supported* iff `cluster_p` < 0.05, Δ < 0 and |Δ| ≥ 0.002:
+  the model carries information beyond its own top feature. *Refuted* iff Δ ≥ 0 or the t interval lies
+  above −0.002: **the model is this rule**, and the programme's result is three numbers.
+- **Secondary:** `bestmean_star` − `fixed_K_star` (does the best-mean gate deliver the environment sizing of
+  §12.4?), and the per-horizon rows of the primary, Holm-corrected among the three.
+
+### Run, in order
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/select_rule.py --rule bestmean_star --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test robust --resume --workers 12 --policies bestmean_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test A      --resume --workers 12 --policies bestmean_star
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test C      --resume --workers 12 --policies bestmean_star
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_bestmean
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration h1b_bestmean_secondary
+```
+
+---
+
+## Pre-registration 6 — the level-scaled schedule (registered 2026-09-20, before code, selection or run)
+
+Pre-registration 5's gate was inert: on the validation split every θ ≤ 0.65 closed it on a single lucky
+first pull (a 1-pull success has posterior mean 0.667) after ~2.5 arms, and selection escaped to a θ the
+best mean never reaches before the ceiling. What `model_reads.py` actually shows is that the k = 4 model
+stops while every arm has 1–3 pulls — where "the best posterior mean" is no more than *whether first pulls
+succeeded*, i.e. an estimate of the **reservoir's mean level**. `f_mean_of_means` tracks the per-environment
+K at ρ = −0.96 / −0.98 / −0.93 exactly as `est_quantile_0.99` does. High level (thin-tailed reservoir, the
+best is near the typical arm) → few arms; low level (heavy-tailed, excellent arms are rare and far above
+typical) → many. This registers that as the null model.
+
+### The null model (a declared researcher degree of freedom, chosen from `model_reads.py` and §12.6)
+
+**`level_star`: SEARCH while K_t < c · T^α · exp(b · (0.5 − level_t))**, where level_t is the mean posterior
+mean `(S+1)/(n+2)` over held arms. Three scalars (α, c, b); b = 0 is the fixed-K schedule. At b = 4 a
+level of 0.60 scales the target by 0.67 and a level of 0.37 by 1.68 — the 2.5× contrast between
+`phi_k4`'s 14 arms in `beta_good_common` and 36 in `tail_b8.0_mu1.0_c1.0` at T = 50.
+
+- **Selection:** as Pre-registrations 4–5 (8 main environments × T ∈ {50, 100, 200}, validation split, cap 64,
+  M = 2000), grid (α, c) ∈ {(0.5, 3), (0.5, 4), (0.5, 6), (0.5, 8), (0.75, 1), (0.75, 1.5), (0.75, 2), (0.75, 3)} ×
+  b ∈ {0, 2, 4, 6, 8} — 40 candidates (`select_rule.py --rule level_star`).
+- **Deployment:** robustness panel, Test A, Test C.
+
+### The registered contrasts (robustness panel, T ∈ {50, 100, 200}, env-mean t on n = 30, MEI 0.002)
+
+- **Primary — H1b⁵:** `phi_k4` − `level_star`; the same rule as before. *Refuted* means the model is a
+  level-scaled schedule and the programme's result is three numbers. *Supported* means it reads more than
+  the level.
+- **Secondary:** `level_star` − `fixed_K_star` (does scaling by the level deliver §12.4's environment sizing?).
+
+Every null registered here is a rule the *learned policy* must beat, so adding registrations makes the
+claim "the model carries information a rule cannot" harder to sustain, not easier; the sequence 3 → 4 → 5
+→ 6 is reported in full.
+
+---
+
+## Pre-registration 7 — the CRN-paired, per-cap-tuned cap sweep (registered 2026-09-21, before tuning or deployment)
+
+§4 of the results compares caps whose cells drew different seeds (Ruling 26) with constants tuned at cap 64
+only (Ruling 20), and §12.1 says the cap was mis-sized four-fold at T = 1000. This registers the sweep that
+replaces §4, and what will be read from it.
+
+### Design
+
+- **Cells:** the 8 main environments × T ∈ {200, 1000} × caps {32, 48, 64, 96, 128, 160, 200} at T = 200 and
+  {32, 48, 64, 96, 128, 192, 256, 384, 512, 1000} at T = 1000 (`run_deployment.CAPP_HORIZON_CAPS`), M = 2000,
+  test-split seeds. **Every cap of an (env, T) runs on that cell's cap-64 seed**
+  (`cells.make_matched_cell`), so `mu_star` is bit-identical across caps and `analyze_capp.py` refuses the
+  tree if it is not. Test id `capp`; never pooled with `--test cap`.
+- **Constants, selected at each cap before deployment** (roadmap 3.3, second half), on the tune / validation
+  splits at that cap and the sweep's horizons, M = 500 for every schedule so the three are selected alike:
+  `p3_star`'s (α, c) per horizon (`tune_baselines.py --cap X`), `fixed_K_star`'s K per horizon
+  (`select_fixed_k.py --cap X`), `level_star`'s (α, c, b) (`select_rule.py --rule level_star --cap X`), and
+  τ for `phi_k4` and `phi_k16` (`select_thresholds.py --cap X`). Each lands under `by_cap["X"]`; the
+  cap-64 blocks every shipped table used are untouched. A row of `capp_policies.csv` whose deployed
+  constant was *not* selected at its cap is stamped `params_tuned = False` and is not read.
+- **Policies:** `always_search`, `cp0`, `refine_after_init`, `p3_star`, `fixed_K_star`, `level_star`,
+  `phi_k4`, `phi_k16`.
+
+### What will be read (env-mean t on n = 8 throughout; nothing here is multiplicity-corrected, and nothing
+here is a claim about a policy beating another — those were Pre-registrations 2–6)
+
+1. **The cross-cap curve, paired for the first time** (`capp_crosscap.csv`): for each policy and T, regret
+   at cap X minus regret at cap 64 on the same episodes. The question §12.1 raised from the tune split —
+   does a larger cap help at T = 1000, and by how much — answered on the test split with each policy's
+   constants selected at that cap.
+2. **The schedules under a like-for-like cap** (`capp_contrasts.csv`): `level_star` − `p3_star` and
+   `level_star` − `fixed_K_star` at every cap. §12.6 established the level rule's edge at cap 64, T ≤ 200;
+   this reports whether it persists at T = 1000 and at caps where K\* is reachable, with τ and every
+   constant re-selected.
+3. **`phi_k4` − `level_star` at every cap.** Pre-registration 6 found them indistinguishable at cap 64,
+   T ≤ 200. A non-null here at a larger cap or T = 1000 would mean the model reads something the level
+   rule does not *when it has headroom*; a null everywhere closes that question too.
+4. **§4's withdrawn claims, re-measured:** `phi_k16` − `always_search` and `phi_k16` − `p3_star` at
+   cap 128 and cap = T, which the document declined to sign on unpaired seeds.
+
+### Run, in order
+
+```
+for X in 32 48 96 128: tune / select at X for horizons 200,1000; for X in 160 200: horizon 200;
+for X in 192 256 384 512 1000: horizon 1000   (tune_baselines, select_fixed_k, select_rule level_star,
+                                              select_thresholds for the two learned variants)
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test capp --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/analyze_capp.py
+```

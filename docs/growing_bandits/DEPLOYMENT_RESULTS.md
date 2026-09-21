@@ -22,12 +22,20 @@ such. Three conventions matter throughout:
   learned policy. It decomposes as `R_T = R_disc + R_sel` (discovery + selection).
 - **Multiplicity**: only H1a, H1b and H2 are pre-registered. Everything else is exploratory and uncorrected.
   Section 3.5 states what survives correction, and it is not much.
+- **The cluster interval is the Student-t on the environment means** (`cluster_lo` / `cluster_hi`,
+  `cluster_method = env_mean_t`). The percentile cluster bootstrap this document first shipped under-covers
+  at the environment counts the study has — 0.719 / 0.796 / 0.863 / 0.893 at n_envs = 3 / 4 / 6 / 8 against
+  nominal 0.95, measured on the 30-environment population; the t interval covers 0.918 / 0.922 / 0.935 /
+  0.943 — so it was replaced (NEXT-STEPS 2.1). Every "cluster" interval below is the t interval; its
+  two-sided p is `cluster_p`, the exact sign-flip p is `cluster_p_sign`, and the old percentile interval is
+  still on every row as `cluster_pct_lo` / `cluster_pct_hi` for comparison. Where the swap changed a
+  conclusion the text says so in place. Every point estimate, paired CI and flag is bit-identical to the
+  previous version of this document.
 - **Two bootstrap runs of record.** `primary_contrasts_<test>_primary.csv` and `main_<test>_primary.csv`
-  re-bootstrap the same paired contrasts independently at n_boot = 10000, so their point estimates are
-  bit-identical while their CI bounds differ by Monte-Carlo noise of about 1% of interval width — pooled H1b
-  reads cluster [−0.003379, +0.000508] in the first and [−0.003350, +0.000518] in the second. Both are quoted
-  below with their source file. No CI in this document comes from `summary_<test>.csv`, which is a third,
-  coarser bootstrap (n_boot = 2000).
+  re-bootstrap the same paired contrasts independently at n_boot = 10000, so their point estimates and their
+  (deterministic) t cluster bounds are bit-identical while their *paired* CI bounds differ by Monte-Carlo
+  noise of about 1% of interval width. Both are quoted below with their source file. No CI in this document
+  comes from `summary_<test>.csv`, which is a third, coarser bootstrap (n_boot = 2000).
 
 ---
 
@@ -37,20 +45,43 @@ Deploying the learned k=16 policy Φ lowers simple regret against the continuati
 defined against, and does **not** lower it against a validation-tuned growth schedule.
 
 - **H1a (Φ vs `cp0`)**: pooled Δ = **−0.038165**, paired [−0.039006, −0.037310], environment-cluster
-  [−0.065288, −0.015835]; cluster-significant in all 18 Test-A strata
-  (`primary_contrasts_A_primary.csv`, H1a, level=pooled). The necessary condition holds, conditional on the
-  64-arm cap the labels were harvested under: in the cap sweep pooled H1a is −0.013909 with a cluster upper
-  bound of −0.000245 (Monte-Carlo-close to zero), and at T = 1000 it reverses to **+0.009645**, cluster
-  [+0.000370, +0.015424] (`primary_contrasts_cap_primary.csv`, H1a, level=horizon, horizon=1000).
+  [−0.070636, −0.005693], p = 0.027, and negative in every one of the eight environments (exact sign
+  p = 0.0078); cluster-significant pooled and at every horizon, i.e. in the 6 of 18 Test-A strata that have
+  eight environments — the 12 `family` / `family_horizon` strata have four, where a t interval on three
+  degrees of freedom includes zero although all four environments agree in sign
+  (`primary_contrasts_A_primary.csv`, H1a). The necessary condition holds, conditional on the 64-arm cap the
+  labels were harvested under: in the cap sweep pooled H1a is −0.013909 with a cluster interval
+  [−0.047846, +0.020029] that includes zero (n_envs = 4), and at T = 1000 it reverses in sign to
+  **+0.009645**, cluster [−0.005667, +0.024956], also including zero (`primary_contrasts_cap_primary.csv`,
+  H1a, level=pooled and level=horizon, horizon=1000).
 - **H1b (Φ vs the tuned power schedule P3\*)**: pooled Δ = **−0.001389**, paired [−0.001885, −0.000898],
-  cluster **[−0.003379, +0.000508] — includes zero** (same file, H1b, level=pooled). In none of the six
+  cluster **[−0.003899, +0.001121] — includes zero** (same file, H1b, level=pooled). In none of the six
   tests is Φ cluster-significantly better than P3\*, and on both off-distribution tests it is worse.
 - **H2 (e-process features)**: pooled Δ(`phi_k16` − `phi_k16_quality`) = **+0.000114**, cluster
-  [−0.000184, +0.000430] — a null on Test A, unmeasured on Tests B and D, and negative (the features help)
+  [−0.000277, +0.000505] — a null on Test A, unmeasured on Tests B and D, and negative (the features help)
   only outside the training support.
 - **H3 (offline surrogate)**: Spearman ρ(offline OOF AUC, deployed pooled regret) = **+0.005082**,
   [−0.527026, +0.523659], n_variants = 22 (`surrogate_validity.csv`, test=A,
   recommender=posterior_mean_shrunk, offline=oof_auc, deployed=pooled).
+
+**Three follow-up experiments (§12, 2026-09-20) sharpen this.** The optimal arm count is interior and the
+64-arm cap threw away 0.0217 of regret at T = 1000 — 16× the H1b effect (§12.1). Given the *same* final
+arm count, no learned policy beats front-loaded search; the pre-registered Φ and the tuned schedule are both
+*worse* than it (§12.2). And the one contrast registered after the fact — the k = 4 model vs the schedule on
+30 environments at T ≤ 200 — is **supported**, Δ = −0.005050, t [−0.006603, −0.003497], p = 3e−7 (§12.3).
+A fourth, registered next, says what that is: the k = 4 model also beats the best **fixed K per horizon**
+selected on validation (Δ = −0.004701, p = 1e−6, §12.4), and that fixed K does not beat the schedule. The
+learned model's value is not the timing of SEARCH (§12.2) but **sizing K to the environment** — 14–15 arms
+in the thin-tailed reservoirs, 33–36 in the heavy-tailed ones, where a schedule can only hold 24. Asking
+the model what it reads (§12.6) gave the answer, and the sixth registration closed the programme: **the
+learned policy is a three-number rule.** Recruit to `1.0 · T^0.75 · exp(4 · (0.5 − level))` arms and then
+refine, where *level* is the mean posterior of the arms held; `phi_k4` − that rule is −0.000018
+(p = 0.96, n = 30), and the rule beats the fixed K by the model's own margin (−0.004683, p = 8e−6).
+Finally, a cap sweep with paired seeds and every constant re-tuned at each cap (§12.7) shows that at cap
+64 every policy in this study is the same policy to four decimals, that the cap cost 0.021 at T = 1000,
+and that given headroom the learned policies over-recruit to 380–527 arms for regret of 0.14–0.15 where
+the level rule holds 161 for 0.076 — most of the learned policy's measured advantage was the advantage of
+not filling a too-small cap.
 
 The mechanism is the 64-arm cap: P3\* is already a cap-filling policy at T ≥ 200 (k_final = 64.0 at
 T = 200/500/1000), and Φ joins it only at T = 1000 (k_final 44.2 at T=200, 57.7 at T=500, 64.0 at T=1000;
@@ -139,21 +170,26 @@ Test A is the in-distribution panel: 8 corpus environments × 5 horizons × 2000
 policies, all CRN-paired. The pre-registered table is exactly 54 rows — 3 hypotheses × 18 strata — every one
 `pre_registered=True`, `status=ok`, `n_boot=10000` (`primary_contrasts_A_primary.csv`).
 
-### 3.1 H1a — Φ beats `cp0` in every Test-A stratum
+### 3.1 H1a — Φ beats `cp0`, pooled and at every horizon
 
 | stratum | Δ | paired CI | cluster CI |
 |---|---|---|---|
-| pooled | **−0.038165** | [−0.039006, −0.037310] | [−0.065288, −0.015835] |
-| family A | −0.043414 | [−0.044695, −0.042104] | [−0.089132, −0.013609] |
-| family B | −0.032916 | [−0.033984, −0.031866] | [−0.060414, −0.006917] |
-| T=50 | −0.040014 | [−0.042487, −0.037583] | [−0.069598, −0.016000] |
-| T=100 | −0.040590 | [−0.042839, −0.038340] | [−0.072237, −0.015183] |
-| T=200 | −0.040170 | [−0.042038, −0.038337] | [−0.072993, −0.013776] |
-| T=500 | −0.039152 | [−0.040630, −0.037706] | [−0.064304, −0.017130] |
-| T=1000 | −0.030898 | [−0.031990, −0.029807] | [−0.048954, −0.014216] |
+| pooled | **−0.038165** | [−0.039006, −0.037310] | [−0.070636, −0.005693] |
+| family A | −0.043414 | [−0.044695, −0.042104] | [−0.119764, +0.032936] |
+| family B | −0.032916 | [−0.033984, −0.031866] | [−0.086742, +0.020910] |
+| T=50 | −0.040014 | [−0.042487, −0.037583] | [−0.075587, −0.004440] |
+| T=100 | −0.040590 | [−0.042839, −0.038340] | [−0.078060, −0.003121] |
+| T=200 | −0.040170 | [−0.042038, −0.038337] | [−0.078463, −0.001877] |
+| T=500 | −0.039152 | [−0.040630, −0.037706] | [−0.070866, −0.007438] |
+| T=1000 | −0.030898 | [−0.031990, −0.029807] | [−0.053539, −0.008257] |
 
-(`primary_contrasts_A_primary.csv`, H1a rows; paired win rate 0.604281 pooled.) All 18 strata, including the
-ten `family_horizon` rows not shown, have cluster CIs excluding zero. The effect is large relative to
+(`primary_contrasts_A_primary.csv`, H1a rows; paired win rate 0.604281 pooled.) The pooled row and the five
+`horizon` rows — the six strata with n_envs = 8 — have cluster CIs excluding zero (p = 0.027 pooled; exact
+sign p = 0.0078, all eight environments negative). The two `family` rows and the ten `family_horizon` rows
+not shown have n_envs = 4, and there a t interval on three degrees of freedom includes zero for every one of
+them (p between 0.09 and 0.21) even though all four environments agree in sign in each (sign p = 0.125,
+the floor at n = 4). The previous version of this document reported all 18 as cluster-significant on the
+percentile interval; that interval under-covers at n = 4 (§3.5). The effect is large relative to
 everything else in this study: Φ's pooled regret is 0.110106 against `cp0`'s 0.148271
 (`main_A_primary.csv`, level=pooled), and roughly 86% of `cp0`'s regret is discovery
 (`regret_disc` 0.128180 of 0.148271) — `cp0` simply does not search enough. The necessary condition is met:
@@ -163,41 +199,42 @@ the labels are one improvement step from `cp0`, and deploying the model trained 
 
 | stratum | Δ | paired CI | cluster CI |
 |---|---|---|---|
-| pooled | **−0.001389** | [−0.001885, −0.000898] | [−0.003379, **+0.000508**] |
-| T=50 | −0.002841 | [−0.004472, −0.001214] | [−0.007809, +0.002406] |
-| T=100 | **−0.004067** | [−0.005740, −0.002451] | **[−0.008552, −0.000354]** |
-| T=200 | −0.000387 | [−0.001179, +0.000404] | [−0.002734, +0.001904] |
-| T=500 | **+0.000350** | [+0.000131, +0.000570] | [−0.000372, +0.001448] |
+| pooled | **−0.001389** | [−0.001885, −0.000898] | [−0.003899, **+0.001121**] |
+| T=50 | −0.002841 | [−0.004472, −0.001214] | [−0.009548, +0.003867] |
+| T=100 | −0.004067 | [−0.005740, −0.002451] | [−0.009466, +0.001333] |
+| T=200 | −0.000387 | [−0.001179, +0.000404] | [−0.003375, +0.002600] |
+| T=500 | **+0.000350** | [+0.000131, +0.000570] | [−0.000876, +0.001577] |
 | T=1000 | −7.42e−07 | [−4.6e−06, +2.3e−06] | [−4.0e−06, +2.0e−06] |
 
-(`primary_contrasts_A_primary.csv`, H1b rows.) The pooled cluster CI includes zero. Exactly two of the 18
-strata have a cluster CI excluding zero, both at T=100: `level=horizon` (−0.004067,
-cluster [−0.008552, −0.000354]) and `family=A, horizon=100` (−0.006837, cluster [−0.014112, −0.001728]).
-At T=500 the schedule is better and the paired CI excludes zero. At T=1000 the difference is seven decimal
-places from zero, because both policies are doing the same thing (§4).
+(`primary_contrasts_A_primary.csv`, H1b rows.) The pooled cluster CI includes zero (p = 0.23; sign p = 0.23,
+five of eight environments negative). **No stratum has a cluster CI excluding zero.** The two that did on the
+percentile interval, both at T=100 — `level=horizon` (−0.004067, now cluster [−0.009466, +0.001333],
+p = 0.12) and `family=A, horizon=100` (−0.006837, cluster [−0.019037, +0.005362], n_envs = 4) — do not on
+the t interval. At T=500 the schedule is better and the paired CI excludes zero. At T=1000 the difference
+is seven decimal places from zero, because both policies are doing the same thing (§4).
 The honest statement of H1b is: **on the corpus environments Φ and a validation-tuned power schedule are
-indistinguishable, with a short-horizon advantage to Φ at T=100 and a small advantage to the schedule at
-T=500.**
+indistinguishable, with a short-horizon advantage to Φ at T=100 that the environment-level interval does not
+confirm, and a small advantage to the schedule at T=500.**
 
 ### 3.3 H2 — the e-process features are a null here
 
 | stratum | Δ(`phi_k16` − `phi_k16_quality`) | paired CI | cluster CI |
 |---|---|---|---|
-| pooled | **+0.000114** | [−0.000040, +0.000265] | [−0.000184, +0.000430] |
-| T=100 | +0.000587 | [+0.000025, +0.001165] | [−0.000132, +0.001473] |
-| family A, T=100 | **+0.001354** | [+0.000431, +0.002349] | **[+0.000186, +0.002522]** |
-| family A, T=500 | −0.000340 | [−0.000529, −0.000157] | [−0.000997, 0.000000] |
+| pooled | **+0.000114** | [−0.000040, +0.000265] | [−0.000277, +0.000505] |
+| T=100 | +0.000587 | [+0.000025, +0.001165] | [−0.000475, +0.001648] |
+| family A, T=100 | +0.001354 | [+0.000431, +0.002349] | [−0.000937, +0.003645] |
+| family A, T=500 | −0.000340 | [−0.000529, −0.000157] | [−0.001389, +0.000709] |
 | T=1000 | −9.4e−07 | [−2.4e−06, +3.6e−07] | [−3.0e−06, 0.000000] |
 
 (`primary_contrasts_A_primary.csv`, H2 rows.) A positive Δ means the model *with* the e-process columns is
-slightly worse. Pooled, the interval straddles zero on both bootstraps. The one Test-A stratum whose
-cluster CI excludes zero is the `family_horizon` row family A × T=100, at +0.001354,
-cluster [+0.000186, +0.002522] — at n_envs = 4 that is directional evidence, not a test (§9.4 item 14) —
-i.e. the evidence features appear to cost about a thousandth of a regret unit there. Counted the same way,
-H1b likewise has one `family_horizon` row excluding zero (family A × T=100, −0.006837,
-cluster [−0.014112, −0.001728]) alongside the `horizon`-level T=100 row; those are the two H1b strata
-quoted in §3.2. (The post-hoc review attributed that significance to the `horizon=100` row; the shipped
-table's `horizon=100` cluster CI is [−0.000132, +0.001473] and includes zero. The table is what is quoted
+slightly worse. Pooled, the interval straddles zero. No Test-A stratum has a cluster CI excluding zero. The
+one that did on the percentile interval, the `family_horizon` row family A × T=100 at +0.001354, reads
+cluster [−0.000937, +0.003645] on the t interval (n_envs = 4; §9.4 item 14) — the evidence features appear
+to cost about a thousandth of a regret unit there, and the paired CI [+0.000431, +0.002349] says so, but
+the environment-level interval does not. The same is true of H1b's family A × T=100 row (−0.006837,
+cluster [−0.019037, +0.005362]) and its `horizon`-level T=100 row, the two H1b strata discussed in §3.2.
+(The post-hoc review attributed that significance to the `horizon=100` row; the shipped
+table's `horizon=100` cluster CI is [−0.000475, +0.001648] and includes zero. The table is what is quoted
 here.) A cleaner version of the same ablation is the single-column contrast: `phi_k16` (with `f_log_e_pair`)
 against `phi_k16_cs` (confidence-sequence bounds only) differ by **1.0e−06** in pooled regret
 (0.110106 vs 0.110105, `main_A_primary.csv`, level=pooled). The e-process column changes nothing in
@@ -218,11 +255,11 @@ five rules (`primary_contrasts_A_<rec>.csv`, level=pooled):
 
 | rule | H1a | H1b | H2 |
 |---|---|---|---|
-| `posterior_mean_shrunk` (primary) | −0.038165 cl[−0.065288, −0.015835] | −0.001389 cl[−0.003379, +0.000508] | +0.000114 cl[−0.000184, +0.000430] |
-| `lcb` (secondary) | −0.038218 cl[−0.065339, −0.015894] | −0.001427 cl[−0.003437, +0.000480] | +0.000108 cl[−0.000183, +0.000412] |
-| `oracle_prior` (secondary, not deployable) | −0.038196 cl[−0.065948, −0.015368] | −0.001422 cl[−0.003415, +0.000461] | +0.000101 cl[−0.000181, +0.000396] |
-| `posterior_mean` (secondary) | −0.037593 cl[−0.063806, −0.015481] | −0.000933 cl[−0.002831, +0.000951] | +0.000076 cl[−0.000194, +0.000355] |
-| `empirical` (secondary, the naive control) | −0.034256 cl[−0.060622, −0.013413] | −0.001471 cl[−0.005986, +0.003001] | +0.000992 cl[−0.000013, +0.002262] |
+| `posterior_mean_shrunk` (primary) | −0.038165 cl[−0.070636, −0.005693] | −0.001389 cl[−0.003899, +0.001121] | +0.000114 cl[−0.000277, +0.000505] |
+| `lcb` (secondary) | −0.038218 cl[−0.070741, −0.005695] | −0.001427 cl[−0.003958, +0.001103] | +0.000108 cl[−0.000280, +0.000496] |
+| `oracle_prior` (secondary, not deployable) | −0.038196 cl[−0.070717, −0.005675] | −0.001422 cl[−0.003909, +0.001065] | +0.000101 cl[−0.000272, +0.000473] |
+| `posterior_mean` (secondary) | −0.037593 cl[−0.069648, −0.005538] | −0.000933 cl[−0.003357, +0.001491] | +0.000076 cl[−0.000279, +0.000431] |
+| `empirical` (secondary, the naive control) | −0.034256 cl[−0.064432, −0.004081] | −0.001471 cl[−0.007493, +0.004551] | +0.000992 cl[−0.000508, +0.002492] |
 
 H1a is cluster-significant under every rule; H1b and H2 are cluster-null under every rule. The feared
 inflation from the oracle-prior recommender is empirically nil at cap 64: primary and `oracle_prior` pooled
@@ -234,17 +271,31 @@ degenerate control, reported but never averaged into anything (`recommender_kend
 ### 3.5 Multiplicity, stated explicitly
 
 No multiplicity correction is applied anywhere in the shipped tables, and none is claimed. Computed after the
-fact by Holm on p-values inverted from the cluster interval:
+fact by Holm on the shipped `cluster_p` (the two-sided p of the environment-mean t interval). Every number
+in this section changed when the t interval replaced the percentile bootstrap, in the direction of fewer
+survivors, because the percentile interval was too narrow (header note; NEXT-STEPS 2.1):
 
-- Within the 54-row Test-A pre-registered family, **exactly one row survives**: H1a at `level=horizon`,
-  `horizon=1000` (adjusted p = 0.0264). Pooled H1a gets adjusted p = 0.129 and dies; no H1b or H2 row
-  survives at any stratum.
-- Across the full 246-row pre-registered family (A 54 + B 54 + C 21 + D 36 + cap 27 + robust 54),
-  **31 rows survive, none of them from Test A, B or D** — the survivors are the cap sweep (12), Test C (6)
-  and the 30-environment robustness sweep (13).
-- On the defensible one-row-per-hypothesis-per-test family (16 testable pooled rows), 7 survive, and **two of
-  them point against the thesis**: Test C H1b (+0.00368, adjusted 0.0476) and cap H1b (+0.0193, adjusted
-  1.2e−5), both saying the schedule beats Φ.
+- Within the 54-row Test-A pre-registered family, **no row survives**. The previous version's single
+  survivor, H1a at `level=horizon`, `horizon=1000` (adjusted 0.0264 on the percentile interval), has
+  p = 0.0145 on the t interval and adjusted p = 0.78; pooled H1a (p = 0.027) is adjusted to 1.0.
+- Across the full 282-row pre-registered family (A 54 + B 54 + C 21 + D 36 + cap 63 + robust 54), 171 rows
+  carry a cluster interval at all — Tests B and D's `not_evaluated` / `missing` rows (18 each), all 21 Test-C
+  rows (n_envs = 3, §7.2), and the cap sweep's 12 `untuned_reference` and 42 n_envs = 2 rows do not. Of those
+  171, **12 survive, every one an H1a row of the 30-environment robustness sweep** (pooled, the five
+  `horizon` rows, and family B's six rows; adjusted p ≤ 0.0032, smallest 1e−4). Nothing from Test A, B, C,
+  D or the cap sweep survives. (On the percentile interval this read 14, with one cap-sweep H2 row and one
+  more robustness row; both are gone.)
+- On the defensible one-row-per-hypothesis-per-test family (13 testable pooled rows — Test C's three have no
+  cluster interval at n_envs = 3, §7.2), **one survives: the robustness sweep's H1a** (n_envs = 30,
+  p = 3e−7). Test A's pooled H1a (p = 0.027), Test B's (the same row relabelled) and Test D's (p = 0.026)
+  are each adjusted to 0.31; the study's only environment-level survivor of a family of any size is the one
+  row with thirty environments behind it. **None points against the thesis**. (An earlier version of this
+  section listed four survivors, and before that two that pointed against. Test C H1b (+0.00368, "adjusted 0.0476")
+  rested on the n_envs = 3 [min, max] range read as a 95% interval, which the tables no longer emit as one;
+  its *paired* CI [+0.002793, +0.004572] still excludes zero and §7.2 reports it as such — worse, but not
+  cluster-tested. Cap H1b at +0.0193 was an artefact of comparing against a schedule constant tuned at a
+  different cap; once those cells are refused it is +0.000387 with a CI including zero — a null, not evidence
+  either way. See §4.)
 
 The exploratory set is larger still: `secondary_contrasts_A_primary.csv` alone is 1,854 rows, every one
 `pre_registered=False`. Wherever this document lists "policies whose cluster CI excludes zero", the expected
@@ -254,18 +305,21 @@ expected chance finding before bootstrap noise is considered.
 
 ### 3.6 The exploratory ladder
 
-With that discount in place: of the 25 learned variants in Test A, seven have pooled cluster CIs excluding
-zero against P3\* at the published bootstrap seeds — `phi_k4` (−0.003445, cl[−0.005946, −0.001694]),
-`phi_k1` (−0.003429, cl[−0.005975, −0.001728]), `phi_k16_perstep` (−0.003386, cl[−0.006571, −0.001231]),
-`phi_k16_onpolicy_union` (−0.001936, cl[−0.004038, −0.000315]), `phi_k16_noT200` (−0.001895,
-cl[−0.003921, −0.000125]), `phi_k16_notrunc` (−0.001886, cl[−0.003553, −0.000527]) and `phi_k16_nopolicy`
-(−0.001283, cl[−0.002472, −0.000027]) — and the **pre-registered `phi_k16` is not one of them**
-(−0.001389, cl[−0.003350, +0.000518]) (`main_A_primary.csv`, level=pooled). Three qualifications are
-required and none is optional. (i) The count is uncorrected, with E[false positives] = 1.25 as above. (ii)
-Under Holm across those 25 rows only **two** survive, `phi_k4` and `phi_k1` (adjusted p 0.0374 each);
-`phi_k16_onpolicy_union` reaches 0.817. (iii) The count is not even stable in the bootstrap: re-drawing the
-seed 300 times gives 6/7/8 significant policies in 32/141/127 draws, so "seven" is the modal answer at 47%,
-and only six policies are unanimous across those draws.
+With that discount in place: of the 25 learned variants in Test A, **two** have pooled cluster CIs excluding
+zero against P3\* — `phi_k4` (−0.003445, cl[−0.006266, −0.000624], p = 0.023, negative in all eight
+environments) and `phi_k1` (−0.003429, cl[−0.006280, −0.000578], p = 0.025, likewise eight of eight) — and
+the **pre-registered `phi_k16` is not one of them** (−0.001389, cl[−0.003899, +0.001121])
+(`main_A_primary.csv`, level=pooled). On the percentile interval this document previously counted seven,
+adding `phi_k16_perstep` (−0.003386, now cl[−0.006988, +0.000217], p = 0.062), `phi_k16_onpolicy_union`
+(−0.001936, cl[−0.004382, +0.000509], p = 0.10), `phi_k16_noT200` (−0.001895, cl[−0.004382, +0.000593],
+p = 0.11), `phi_k16_notrunc` (−0.001886, cl[−0.003834, +0.000062], p = 0.056) and `phi_k16_nopolicy`
+(−0.001283, cl[−0.002869, +0.000303], p = 0.097); each of those five loses it on the t interval. Two
+qualifications are required and neither is optional. (i) The count is uncorrected, with E[false positives]
+= 1.25 as above — so two observed against 1.25 expected is not evidence of anything. (ii) Under Holm across
+those 25 rows **nothing** survives: the smallest adjusted p is 0.585 (`phi_k4`). The previous version's
+"`phi_k4` and `phi_k1` survive at 0.0374" was computed from the under-covering interval. (The old count
+was also unstable in its bootstrap seed — 6/7/8 significant policies in 32/141/127 of 300 re-draws; the t
+interval has no seed to re-draw.)
 
 The one robust pattern in the ladder is that **short commitment wins**. `phi_k4` (0.108050), `phi_k1`
 (0.108066) and `phi_k16_perstep` (0.108110 — the k=16 model re-evaluated every step, which is the same
@@ -317,7 +371,10 @@ register row 13 is confirmed exactly: at cap = T the recommendation is a one-pul
 
 **A stopping notion exists at short horizons and vanishes at long ones.** At T=200 with cap 128, `phi_k16`
 stops at K = 82.4 (cap_hit 0.389) for regret 0.132055, against `always_search` 0.140941 and P3\* 0.142790
-(both at K = 128) — Φ is genuinely not `always_search` relabelled there. At T=1000 with cap 128, by contrast,
+(both at K = 128) — so Φ is not `always_search` *at K = 128* relabelled. It is, however, `always_search`
+at K ≈ 82 relabelled, or worse: the K-matched control of §12.2 shows that at its own arm count Φ never
+beats front-loaded search and at T ≤ 200 on Test A is worse than it in 7 of 8 environments. "Stops early"
+is established; "stops *well*" is not. At T=1000 with cap 128, by contrast,
 `phi_k16` is **bit-identical to `always_search`** (both 0.095835 at K = 128, cap_hit 1.0), so the −0.010749
 against P3\* there says nothing about a learned stopping rule. That comparison is plateau-decided and must be
 read as such. P3\*'s `c` is selected on a tuning objective that at T ≥ 200 is structurally blind to it: at
@@ -328,19 +385,39 @@ T=200, 30 grid values lie within one pooled SE (1.57e−3) of the selected c=3.7
 (`schedule_tuning.csv`, split=tune, cap=64; Ruling 20). Neither cap-128 number is evidence about a learned
 rule.
 
-**Cap 128 is not uniformly better, and the comparison is not like-for-like.** At T=200 every policy is worse
-at cap 128 than at cap 64 (`always_search` 0.124932 → 0.140941; `phi_k16` 0.125711 → 0.132055; P3\*
-0.124932 → 0.142790); at T=1000 every policy is better (`always_search` 0.118209 → 0.095835). And P3\*'s `c`
-was tuned at cap 64 only (Ruling 20), so the cap-128 column compares a learned policy extrapolating outside
-its training support against a schedule extrapolating outside its tuning support. τ has the same problem in
-mirror image: all 4,880 rows of `threshold_selection.csv` are cap 64, and τ = 0.5 is deployed unchanged at
+**Cap 128 is not uniformly better, and the comparison is not like-for-like.** At T=200 `always_search` goes
+0.124932 → 0.140941 and P3\* 0.124932 → 0.142790 from cap 64 to cap 128, and at T=1000 `always_search` goes
+0.118209 → 0.095835 the other way.
+
+*Read cross-cap differences with care: the cap axis is not CRN-paired.* `base_seed` is a function of
+(split, env, horizon, cap) (`cells.py`, `make_cell`), so the four caps draw four different environments'
+worth of randomness rather than re-running the same draws under a different budget. The size of that noise is
+directly measurable from the two policies whose behaviour cannot depend on the cap at all: over `cp0` and
+`refine_after_init`, the pooled cross-cap spread reaches 0.005909 and the per-environment spread reaches
+0.018652 (`cap_sweep.csv`, means over the 4 environments). The `always_search` (+0.016010) and P3\*
+(+0.017858) changes above clear that floor; `phi_k16`'s (+0.006344, 0.125711 → 0.132055) does not, so this
+document does not claim that *every* policy is worse at cap 128 — for the learned policy that difference is
+within the unpaired-seed noise. Contrasts computed *within* a single cap (every Δ vs P3\* quoted in this
+section) share a `base_seed` and are properly paired; only statements comparing one cap against another are
+affected.
+
+And P3\*'s `c` was tuned at cap 64 only (Ruling 20), so the cap-128 column compares a learned policy
+extrapolating outside its training support against a schedule extrapolating outside its tuning support.
+τ has the same problem in mirror image: all 4,880 rows of `threshold_selection.csv` are cap 64, and τ = 0.5 is deployed unchanged at
 every cap. No conclusion about "the value of a bigger cap" is drawn here.
 
 **The pre-registered hypotheses move under the cap.** Over the whole sweep, pooled H1a is −0.013909
-(cluster [−0.035086, −0.000245], n_envs=4 — Monte-Carlo-close to zero at the upper end), and at T=1000 it
-**reverses** to +0.009645 (cluster [+0.000370, +0.015424]): Φ loses to `cp0` there because `cp0` never
-over-recruits. Pooled H1b is +0.019327 (cluster [+0.011634, +0.027020]), driven by the cap = T cells
-(T=1000 alone +0.043435). Pooled H2 is −0.008423 (cluster [−0.017889, −0.003375]); see §7.5 for why that is
+(cluster [−0.047846, +0.020029], n_envs=4 — the interval includes zero; on the percentile interval its
+upper bound was −0.000245), and at T=1000 it **reverses in sign** to +0.009645 (cluster
+[−0.005667, +0.024956], also including zero): Φ loses to `cp0` there, on the point estimate, because `cp0`
+never over-recruits. With four environments neither the pooled deficit nor the T=1000 reversal is
+cluster-significant; what the sweep establishes is that the sign of H1a is cap-dependent, not its size. Pooled H1b is **+0.000387**, paired [−0.000300, +0.001072], cluster [−0.002035, +0.002809] — a null
+(`primary_contrasts_cap_primary.csv`, H1b, level=pooled, n_cells=8, n_envs=4). It is computed on 8 cells
+rather than 32 because the analysis now refuses a contrast whose reference baseline carries a constant tuned
+at a different cap (`params_cap`; status `untuned_reference`). The +0.019327 this document previously reported
+over all 32 cells was that refused comparison: P3\*'s `c`, tuned at cap 64, deployed at caps 32/128/T, and
+most of the effect came from the cap = T cells where it is furthest from its tuning point. The honest reading
+is that the cap sweep says **nothing** about H1b, not that Φ is much worse there. Pooled H2 is −0.008423 (cluster [−0.023526, +0.006679]); see §7.5 for why that is
 not a licence to say the e-process features help (`primary_contrasts_cap_primary.csv`). Note that all 18
 `family` and `family_horizon` rows of that table have n_envs = 2 and `cluster_degenerate=True`, where the
 "cluster CI" is just the two environment means and can be up to 24× *narrower* than the paired CI; only the
@@ -490,9 +567,9 @@ policy set. Test B therefore contributes **no independent pre-registered evidenc
 replication of Test A.
 
 Its exploratory rows are the informative part, and they are flat: three variants inside 2.7e−04 of one
-another, with only `phi_k16_nopolicy`'s cluster interval marginally excluding zero at its upper endpoint
-(−0.000027). The rows are `phi_k16_all71` −0.001553 (cluster [−0.003414, +0.000176]), `phi_k16` −0.001389
-and `phi_k16_nopolicy` −0.001283 (cluster [−0.002472, −0.000027]), at pooled regret
+another, none with a cluster interval excluding zero (`phi_k16_nopolicy`'s did so marginally on the
+percentile interval, at an upper endpoint of −0.000027; on the t interval it is +0.000303). The rows are `phi_k16_all71` −0.001553 (cluster [−0.003861, +0.000755]), `phi_k16` −0.001389
+and `phi_k16_nopolicy` −0.001283 (cluster [−0.002869, +0.000303]), at pooled regret
 0.109942 / 0.110106 / 0.110212 (`main_B_primary.csv`, level=pooled). Dropping the fingerprint-heavy
 generating policies and the history features costs nothing and gains nothing. Do not read this off the Test-B line, decomposition, dynamics or
 tau-curve figures: those default to the robustness sweep's six policies, whose intersection with Test B is
@@ -533,9 +610,9 @@ The effect of that correction is the headline finding of the fix wave:
 |---|---|---|
 | `p3_star` at T=2000: regret / k_final | 0.124022 / 45.0 | **0.106148 / 64.0** (cap-filling) |
 | Test-D Δ at T=2000 vs P3\* (all learned + `always_search`) | −0.017889 | **−0.000015** |
-| pooled Δ `phi_sf_k16` | −0.003354 | **−0.000532** (cluster [−0.001026, −0.000118]) |
-| pooled Δ `phi_k16_cs` | −0.002970 | −0.000148 (cluster [−0.001186, +0.000779], includes zero) |
-| pooled Δ `phi_sf_k16_noT1000` | −0.003210 | −0.000388 (cluster [−0.001341, +0.000399], includes zero) |
+| pooled Δ `phi_sf_k16` | −0.003354 | −0.000532 (cluster [−0.001104, +0.000040], includes zero) |
+| pooled Δ `phi_k16_cs` | −0.002970 | −0.000148 (cluster [−0.001503, +0.001042], includes zero) |
+| pooled Δ `phi_sf_k16_noT1000` | −0.003210 | −0.000388 (cluster [−0.001620, +0.000743], includes zero) |
 | pooled Δ `phi_k16_clock` | −0.002220 | **+0.000603** (sign flip) |
 | `refine_after_init` at T=2000 | 0.313886 (K0=4) | 0.240173 (K0=8) |
 
@@ -547,16 +624,17 @@ search_frac 0.031031), so the row says nothing about a learned stopping rule eit
 its bracket [−0.000029, −0.000002] means all three environments agree in sign, at a magnitude of 1e−5.
 
 What remains of horizon transfer is the T=200 holdout, and it is modest: the model that never saw T=200
-(`phi_k16_noT200`) scores Δ = **−0.001542**, paired [−0.002203, −0.000881], **cluster [−0.003460, +0.000006],
+(`phi_k16_noT200`) scores Δ = **−0.001542**, paired [−0.002203, −0.000881], **cluster [−0.003831, +0.000747],
 which includes zero**, against −0.001889 for the model that *did* see T=200 (`phi_k16_noT1000`)
 (`main_D_primary.csv`, level=horizon, horizon=200). Holding out the horizon costs nothing measurable and
 buys nothing measurable. The scale-free clock variant demanded by register row 12 is deployed:
-`phi_sf_k16` scores pooled Δ = −0.000532, cluster [−0.001026, −0.000118] (`main_D_primary.csv`,
+`phi_sf_k16` scores pooled Δ = −0.000532, cluster [−0.001104, +0.000040] (`main_D_primary.csv`,
 level=pooled). That is an exploratory, uncorrected contrast — H1b is pre-registered only for `phi_k16`,
 whose Test-D pooled Δ is −0.000194 with a cluster CI that includes zero — and it is not the largest or the
 only one: `phi_k16_noT1000` is lower in pooled regret (0.100824 against 0.101140) at Δ = −0.000945,
-cluster [−0.001933, −0.000153], and at T=200 both `phi_k16_noT1000` (−0.001889,
-cluster [−0.003866, −0.000291]) and `phi_sf_k16` (−0.001257, cluster [−0.002519, −0.000274]) clear zero.
+cluster [−0.002101, +0.000212], and at T=200 both `phi_k16_noT1000` (−0.001889,
+cluster [−0.004203, +0.000425]) and `phi_sf_k16` (−0.001257, cluster [−0.002701, +0.000187]) have
+paired CIs excluding zero and cluster CIs that do not (they cleared zero on the percentile interval).
 These are not comparable to one another in any case: `phi_sf_k16`'s pooled contrast runs on 19 cells and
 `phi_k16_noT1000`'s on 16 (`d_regret_vs_p3_star_n_cells`). Every one of these is a 5e−04 to 2e−03 effect
 against a tuned schedule; none is a pre-registered Test-D result.
@@ -576,9 +654,9 @@ the contrast column, not the difference of levels.
 ### 7.4 Robustness sweep — 30 environments, marginal
 
 All 30 corpus environments × 5 horizons at M=500. Pooled: `phi_k16_quality` −0.000980
-(cluster [−0.001926, −0.000016]), `phi_k16` −0.000891 (cluster [−0.001843, +0.000045]), against `cp0`
+(cluster [−0.002009, +0.000050]), `phi_k16` −0.000891 (cluster [−0.001906, +0.000124]), against `cp0`
 +0.031917 and `always_search` +0.025593 (`main_robust_primary.csv`, level=pooled; H1a pooled −0.032808
-cluster [−0.042895, −0.023548], cluster-significant in all 18 strata). These 30 environments **are exactly
+cluster [−0.042996, −0.022621], cluster-significant in 16 of 18 strata). These 30 environments **are exactly
 the 30 training-corpus environments**. This is a robustness sweep over a wider environment grid, not
 generalization evidence; Test C is the generalization evidence, and there Φ is worse.
 
@@ -589,12 +667,12 @@ H2 is not a uniform null and must be reported test-conditionally
 
 | test | H2 (Φ − quality-only) | reading |
 |---|---|---|
-| A | +0.000114, cluster [−0.000184, +0.000430] | null |
+| A | +0.000114, cluster [−0.000277, +0.000505] | null |
 | B | **no measurement** — `not_evaluated:phi_k16_quality`, n_cells = 0 | — |
 | C (held-out family) | −0.002046, paired [−0.002476, −0.001622], 3-env range [−0.003446, −0.000079] | the features **help**, three of three environments agreeing in sign |
 | D | **no measurement** — `not_evaluated:phi_k16_quality`, n_cells = 0 | — |
-| cap sweep | −0.008423, paired [−0.009103, −0.007768], cluster [−0.017889, −0.003375] (n_envs=4) | the features help, but see below |
-| robustness (30 corpus envs) | +0.000089, cluster [−0.000122, +0.000291] | null |
+| cap sweep | −0.008423, paired [−0.009103, −0.007768], cluster [−0.023526, +0.006679] (n_envs=4) | the features help on the point estimate; the cluster interval includes zero — see below |
+| robustness (30 corpus envs) | +0.000089, cluster [−0.000132, +0.000309] | null |
 
 So: inside the training support the e-process column is worth nothing; two of the six tests never measured it
 at all; outside the support it is worth something. Both of the "helps" need their conditions attached. On
@@ -609,10 +687,13 @@ nothing where the policy was trained to operate, and acquire value only in a reg
 excludes by construction.**
 
 Similarly for H1b across tests: A/B −0.001389 (cluster includes zero), robustness −0.000891 (cluster includes
-zero), D −0.000194 (cluster includes zero), C **+0.003679** (worse), cap **+0.019327** (much worse). In none
-of the six tests is the learned policy cluster-significantly better than the validation-tuned schedule.
-H1a is negative in all of them — A/B −0.038165, C −0.074116, D −0.035534, cap −0.013909 (upper bound
-−0.000245), robustness −0.032808 — with the cap-sweep reversal at T=1000 as the one place it fails.
+zero), D −0.000194 (cluster includes zero), C **+0.003679** (worse), cap **+0.000387** (cluster includes zero,
+on the 8 cells whose reference is tuned at the cap it is deployed at — §4). In none of the six tests is the
+learned policy cluster-significantly better than the validation-tuned schedule, and in one — the held-out
+mixture family — it is worse.
+H1a is negative in all of them — A/B −0.038165, C −0.074116, D −0.035534, cap −0.013909 (cluster
+[−0.047846, +0.020029], including zero at n_envs = 4), robustness −0.032808 — with the cap-sweep reversal
+at T=1000 as the one place its sign fails.
 
 ---
 
@@ -635,18 +716,19 @@ schedule-generated rows. Overall: on-policy 0.640 agreement / 0.648 balanced acc
 0.709 / 0.662 / 0.757 on the corpus (`onpolicy_label_diagnostics.csv`).
 
 **One policy-iteration step does not materially change the deployed result.** Φ′(union) scores pooled Δ vs
-P3\* = −0.001936 (cluster [−0.004038, −0.000315]) against base Φ's −0.001389 (cluster [−0.003350, +0.000518])
+P3\* = −0.001936 (cluster [−0.004382, +0.000509]) against base Φ's −0.001389 (cluster [−0.003899, +0.001121])
 — about 0.0005 of pooled regret (`main_A_primary.csv`, level=pooled). Matched directly against base Φ, the
-gain is −0.000547 pooled with cluster [−0.001303, +0.000025], i.e. the cluster interval includes zero, and it
-is bought entirely at two horizons: −0.001753 at T=100 (cluster [−0.003411, −0.000374]) and −0.000816 at
-T=200 (cluster [−0.002142, −0.000043]); at T=500 and T=1000 the two policies are indistinguishable
+gain is −0.000547 pooled with cluster [−0.001414, +0.000320], i.e. the cluster interval includes zero, and it
+is bought entirely at two horizons: −0.001753 at T=100 (cluster [−0.003753, +0.000247]) and −0.000816 at
+T=200 (cluster [−0.002339, +0.000707]); at T=500 and T=1000 the two policies are indistinguishable
 (Δ = +9e−06 and +1e−06, both CIs straddling zero) (`secondary_contrasts_A_primary.csv`,
 policy=phi_k16_onpolicy_union, reference=phi_k16). This is an
-exploratory contrast; under Holm across the 25 pooled learned rows it does not survive (adjusted p 0.817).
+exploratory contrast whose own cluster interval against P3\* includes zero (p = 0.10); under Holm across
+the 25 pooled learned rows it is adjusted to 1.0.
 
 **Training on on-policy data alone is harmful at long horizons.** Φ′(only) vs base Φ: −0.002774 at T=50
-(better), then +0.002583 at T=500 (cluster [+0.000546, +0.005320]) and **+0.029427 at T=1000**
-(cluster [+0.012753, +0.046673]), pooled +0.005642. At T=1000 it ends at K = 47.050 with
+(better), then +0.002583 at T=500 (cluster [−0.000580, +0.005747]) and **+0.029427 at T=1000**
+(cluster [+0.007461, +0.051393]), pooled +0.005642. At T=1000 it ends at K = 47.050 with
 `search_frac` 0.045141, against base Φ's 64.0 and 0.062124 (`main_A_primary.csv`, level=horizon,
 horizon=1000) — it under-searches exactly where its label set is 64% ties. Pooled it ends at K = 46.2 with
 `search_frac` 0.275149, above base Φ's 0.244064, so the deficit is a long-horizon phenomenon and not a
@@ -669,14 +751,17 @@ live at long horizons.
 ### 9.1 Established
 
 1. **H1a.** The learned k=16 policy has lower mean paired regret than `cp0` in the pooled result of every
-   test that deployed both: cluster-significant in all 18 Test-A strata and all 18 strata of the
-   30-environment robustness sweep, and negative in all seven Test-C strata (where, at n_envs = 3, that means
-   all three mixture environments agree in sign). It is the only pre-registered result that survives a
-   conservative view — and even then only partly: in the 54-row Test-A family the single Holm survivor is
-   H1a at `level=horizon`, `horizon=1000` (adjusted p = 0.0264) while **pooled** H1a dies at adjusted
-   p = 0.129; pooled H1a survives only when the family is the 16 one-row-per-hypothesis-per-test rows
-   (adjusted p = 0.0298), not the 54 Test-A rows and not the 246 pre-registered rows (§3.5). It is conditional on the 64-arm cap: in the
-   cap sweep at T = 1000 it reverses to +0.009645.
+   test that deployed both: cluster-significant pooled and at every horizon in Test A (the six strata with
+   eight environments; the twelve with four are negative in every environment but a t interval on three
+   degrees of freedom includes zero), in 16 of the 18 strata of the 30-environment robustness sweep, and
+   negative in all seven Test-C strata (where, at n_envs = 3, that means all three mixture environments
+   agree in sign). It is the only pre-registered result that survives a conservative view — and only where
+   there are thirty environments behind it: under Holm, no Test-A row survives in any family (pooled H1a
+   p = 0.027 is adjusted to 1.0 in the 54-row family and to 0.31 in the 13 one-row-per-hypothesis-per-test
+   rows), and the single survivor of every family is the robustness sweep's pooled H1a (p = 3e−7) with its
+   own horizon and family-B strata (§3.5). It is conditional on the 64-arm cap: in the cap sweep at
+   T = 1000 it reverses in sign to +0.009645, though at four environments that reversal is not itself
+   cluster-significant.
 2. **The harness is sound.** CRN holds exactly across all 296 cells; the tables reproduce from the episode
    parquet (all 54 pre-registered rows to max |Δ| = 9.4e−17); levels, decompositions, manifests and summaries
    reconcile across A, B, C, cap and robust to 1e−12; the parity gate passes on all 71 feature columns over
@@ -692,14 +777,20 @@ live at long horizons.
 
 - **DP validation.** Register row 14: a dynamic-programming ceiling was declared out of scope in the plan and
   **was not computed**. Nothing in this study is validated against an exact optimum. `dp.py` remains a
-  label sanity check only.
-- **That Φ beats a tuned schedule.** H1b's pooled cluster CI includes zero, only T=100 is
+  label sanity check only. The achievable reference that now stands in for it is the fixed-K envelope of
+  §12.1 (`k_star_envelope.csv`): a tune-split, in-sample argmin over K, which is a design instrument and
+  not a test-split number.
+- **That Φ beats a tuned schedule.** H1b's pooled cluster CI includes zero, no stratum is
   cluster-significant, at T=500 the schedule wins, and at T ≥ 200 P3\* is itself a cap-filling policy, so the
-  comparison there is "Φ vs fill-the-cap", not "Φ vs a schedule".
+  comparison there is "Φ vs fill-the-cap", not "Φ vs a schedule". §12.7 makes that literal: at cap 64 and
+  T = 1000 every policy in the study scores 0.0973.
 - **That the policy generalizes.** On the one genuinely held-out environment family, the pre-registered Φ is
   worse than the schedule.
-- **That a bigger cap is better, or that Φ's extrapolation beyond K = 64 is beneficial.** P3\*'s `c` and Φ's
-  τ are both tuned at cap 64 only (Ruling 20 and §4), so the cap-128 column is not like-for-like.
+- ~~**That a bigger cap is better, or that Φ's extrapolation beyond K = 64 is beneficial.**~~ Resolved by
+  §12.7 on paired seeds with every constant re-tuned per cap: a bigger cap *is* better, by 0.021 at T = 1000
+  for every tuned schedule (flat from cap 256), and Φ's extrapolation is *harmful* — +0.078 against the
+  level rule uncapped (p = 0.012), recruiting 380–527 arms. §4's unpaired, untuned columns stand only as
+  the record of why the sweep had to be redone.
 - **Any claim about T = 2000 beyond "the tuned schedule and the learned policies are the same policy there"**.
 
 ### 9.3 Every ruling taken during this study, with its cost if wrong
@@ -836,9 +927,13 @@ is stated anywhere above, in any paraphrase.
 4. **Not claimed:** "At cap=128 Φ's out-of-support extrapolation is beneficial at both horizons (−0.011 both)
    because more arms genuinely help up to 128." At T=1000 the −0.010749 is bit-identical to `always_search`'s
    and rests on a P3\* constant its own selection objective cannot identify; and at T=200 cap 128 is worse
-   than cap 64 for every policy.
-5. **Not claimed:** "Φ′(union) is the only learned policy whose cluster CI excludes zero." Seven do at the
-   published seeds; the union is fourth; and it is exploratory and uncorrected, not confirmatory.
+   than cap 64 for `always_search` (+0.016010) and P3\* (+0.017858), though Φ's own +0.006344 sits inside the
+   0.005909 unpaired-seed floor, so "every policy" is not claimed either (§4). *Resolved by §12.7 on paired
+   seeds with constants re-tuned per cap: at T = 1000 more arms help every tuned schedule up to cap 256 (by
+   0.02), and Φ's extrapolation beyond the cap it was trained under is harmful, not beneficial; at T = 200
+   cap 128 is 0.0118 worse than cap 64 for `always_search` and 0.0000 for the re-tuned P3\*.*
+5. **Not claimed:** "Φ′(union)'s cluster CI excludes zero." It does not on the t interval (p = 0.10); only
+   `phi_k4` and `phi_k1` do, and those are exploratory and uncorrected, not confirmatory.
 6. **Not claimed:** "Test D: T=200 `noT200` −0.0019." That is `noT1000`'s number. `noT200` is −0.001542 and
    its cluster CI includes zero.
 7. **Not claimed:** "H3: Spearman(offline OOF AUC, deployed regret) = +0.089 [−0.49, +0.60]." That is a stale
@@ -868,16 +963,21 @@ is stated anywhere above, in any paraphrase.
 18. **Not claimed:** "cluster-significant" for any Test-C row. All 21 have n_envs = 3.
 19. **Not claimed:** "cluster-significant" for any cap-sweep `family` or `family_horizon` row. Those have
     n_envs = 2, where the interval is the two environment means and can be 24× narrower than the paired CI.
-20. **Not claimed:** "192 pre-registered rows outside Test A corroborate the result." 36 are untestable NaNs
-    and 48 are Test A's rows relabelled (all 36 Test-B `ok` rows and 12 of Test D's 18); only 108 (C 21,
-    cap 27, robust 54, and Test D's 6 family/pooled rows) are new measurements.
+20. **Not claimed:** "228 pre-registered rows outside Test A corroborate the result." 48 are untestable NaNs
+    (B 18, D 18, and the cap sweep's 12 `untuned_reference` refusals), 48 are Test A's rows relabelled (all 36
+    Test-B `ok` rows and 12 of Test D's 18), and of the 132 that are new measurements (C 21, cap 51, robust
+    54, and Test D's 6 family/pooled rows) only 69 carry a cluster interval that is an interval — the 21
+    Test-C rows and 42 of the cap rows sit below `CLUSTER_MIN_ENVS` and ship [min, max] ranges instead.
 21. **Not claimed:** "Test B's pre-registered contrast confirms Test A."
 22. **Not claimed:** "H2 was measured on all six tests." Tests B and D have no H2 row.
 23. **Not claimed:** "the e-process features help" as an unconditional reading of the cap sweep's −0.008423.
 24. **Not claimed:** that any pre-registered result survives multiplicity correction on the cluster interval,
-    except H1a and then only in the 16-pooled-row family.
-25. **Not claimed:** "seven learned policies beat P3\* significantly" without the Monte-Carlo caveat.
-26. **Not claimed:** "Φ′(union) is significant" as surviving correction. Holm-adjusted p = 0.817.
+    except H1a on the 30-environment robustness sweep (pooled, its five horizon rows and family B's six);
+    no Test-A, B, C, D or cap-sweep row survives in any family (§3.5).
+25. **Not claimed:** "seven learned policies beat P3\* significantly." Two do on the uncorrected t interval,
+    against 1.25 expected by chance, and none survives Holm.
+26. **Not claimed:** "Φ′(union) is significant." Its cluster interval includes zero and its Holm-adjusted
+    p is 1.0.
 27. **Not claimed:** any internal ordering of `phi_k4` / `phi_k1` / `phi_k16_perstep`. The spread is 5.9e−05
     and the order changes with the recommendation rule.
 28. **Not claimed:** any policy ranking read off `regret_vs_T_*.png` at the right-hand edge. Exact ties are
@@ -904,6 +1004,317 @@ or the asymmetry simply reverses. **(b)** The quoted OOD fractions are medians; 
 tables per test were written in one contiguous wave with identical policy sets), the pairwise-table race was
 discharged by building the tables in the parent before forking, and the on-policy undefined counter is a
 shard-scoped lower bound, not a per-chunk restart.
+
+---
+
+## 12. Follow-up experiments (2026-09-20)
+
+Three experiments from the post-study roadmap (`NEXT-STEPS.md` §2), run after every number above was
+restated on the t interval. Each is one table, one script, and one paragraph of what it can and cannot say.
+
+### 12.1 K\*(env, T): the cap was the wrong knob
+
+`fixed_K` — recruit until K arms are held, then refine — over a 14-point K grid, uncapped, on the eight
+main environments at every horizon, **tune split**, M = 500 (`k_star_envelope.py`, 25 s;
+`k_star_envelope.csv`). The optimum is interior and U-shaped at every horizon:
+
+| T | pooled K\* | regret at K\* | regret at K = 64 | per-env K\* range |
+|---|---|---|---|---|
+| 50 | 24 | 0.134409 | — (K > T) | 12–32 |
+| 100 | 32 | 0.122402 | 0.131529 | 16–64 |
+| 200 | 48 | 0.106291 | 0.107567 | 24–128 |
+| 500 | 128 | 0.088783 | 0.097886 | 32–256 |
+| 1000 | 256 | 0.076543 | 0.098225 | 48–400 |
+
+(`k_star_envelope.csv`, level=pooled and the `is_argmin` env rows.) At T = 1000 a fixed K = 64 is
+**0.021682 worse than K = 256** on the same cells — sixteen times the 0.001389 that H1b argued about. §4's
+"the cap is the policy" is therefore incomplete: the cap was also *mis-sized*, by a factor of four at the
+longest horizon. Two readings the table refuses: it is a tune-split in-sample argmin, never a test-split
+result and never a policy the tables above compare against (deployed `fixed_K16` is 0.135722 at T = 50
+against `phi_k4`'s 0.125865, so an untuned fixed K is not a tie); and K\* is environment-specific (48–400
+at T = 1000), so the per-environment argmin is the ceiling and the pooled argmin only a baseline. The
+schedule-tuning and τ-selection passes (Rulings 10 and 20) were both run at cap 64, so every deployed
+constant in this document was tuned inside a budget the envelope says is too small at T ≥ 500.
+
+### 12.2 The K-matched control: a learned rule, or a K chooser?
+
+Every learned policy ends holding some K_final. The control that "does the *timing* of SEARCH matter?"
+needs is `always_search` capped at the policy's own realised K_final, **on the same episodes** — a control
+the study had never run. `run_deployment.py --test capmatch --match <policy>` builds, for each of six
+policies and each of the 33 (env, T ≤ 200) cells of Tests A and C, a cell with the deployed cell's seed and
+cap = round(k_final), and deploys the policy, `always_search` and `uniform` in it (cells already at K = 64
+are Test A / C themselves; `cells.make_matched_cell`). 431 items, six minutes. Δ = policy − `always_search`
+@ K, paired by episode (`analyze_capmatch.py`, `capmatch_contrasts.csv`, reference=always_search):
+
+| policy | Test A pooled Δ | paired CI | t-cluster (n = 8) | p | sign p | Test C pooled Δ (n = 3, paired) |
+|---|---|---|---|---|---|---|
+| `phi_k4` | **+0.000088** | [−0.000224, +0.000406] | [−0.000478, +0.000654] | 0.73 | 0.73 | −0.000791 [−0.001596, −0.000008] |
+| `phi_k16_perstep` | **+0.000102** | [−0.000264, +0.000454] | [−0.000876, +0.001080] | 0.81 | 0.80 | +0.001546 [+0.000750, +0.002370] |
+| `phi_k1` | −0.000369 | [−0.000664, −0.000080] | [−0.001257, +0.000519] | 0.36 | 0.42 | −0.001855 [−0.002618, −0.001091] |
+| `phi_k16_notrunc` | +0.000888 | [+0.000551, +0.001222] | [−0.000071, +0.001847] | 0.065 | **0.0078** | +0.000324 [−0.000262, +0.000939] |
+| `phi_k16` (pre-registered) | **+0.001800** | [+0.001375, +0.002235] | [−0.000103, +0.003703] | 0.060 | **0.023** | +0.003867 [+0.002829, +0.004926] |
+| `p3_star` (tuned schedule) | **+0.000867** | [+0.000626, +0.001108] | [+0.000542, +0.001192] | **0.0004** | **0.0078** | +0.001785 [+0.001186, +0.002383] |
+
+Positive means the policy is *worse* than front-loaded search at its own arm count. **No learned policy
+beats its K-matched control.** `phi_k4` and `phi_k16_perstep` tie it to four decimal places; `phi_k1` is
+0.0004 better on the paired interval and indistinguishable at the environment level. The pre-registered
+`phi_k16` is worse in 7 of 8 environments, `phi_k16_notrunc` in 8 of 8 — and so is the validation-tuned
+schedule P3\*, in 8 of 8 environments, cluster-significantly. The roadmap's reading applies in full: the
+learned SEARCH-vs-REFINE policy is a device for choosing a final arm count, the existing schedule grid
+already does that, and the honest description is **"we learned a growth schedule"** — one whose *timing*
+never beats "reach K as fast as possible, then refine", and for the k = 16 model is worse than it.
+A tie was the stronger result here by construction (the control reaches K by round K, the policy at the
+horizon), and a loss is stronger still. Limitations that travel with the table: the cap is the *mean*
+K_final, so the in-cell policy holds slightly fewer arms than it did deployed (`k_final` vs
+`k_final_deployed`: 41.9 vs 43.0 for `phi_k4`, 33.5 vs 35.3 for `phi_k16`); τ stays at its cap-64 value
+(Ruling 20's asymmetry, unchanged); and the per-cell cap is data-dependent, so this is a diagnostic
+control, never a pre-registered hypothesis. §4's "Φ is genuinely not `always_search` relabelled" at
+cap 128 is narrowed in place: it is not `always_search` *at 128*; at its own K it is, or worse.
+
+### 12.3 H1b′: the registered replacement contrast — supported, and what that means
+
+`DEPLOYMENT_PLAN.md`, "Pre-registration 2": H1b as written was declared answered (null, ~9× under-powered,
+structural zeros at T ≥ 200), and **one** replacement contrast was registered — `phi_k4` vs `p3_star` on
+the 30-environment robustness panel at T ∈ {50, 100, 200}, environment-mean t on n = 30, minimum effect of
+interest 0.002, decision rule written down — in a commit that precedes the run's manifest lines. Test A,
+where `phi_k4` was chosen, is excluded from its evidence. `phi_k4` was then deployed on all 150 robust
+cells (41 s) and `registered_contrast.py` computed the statistic (`h1b_prime.csv`):
+
+| row | T | Δ | paired CI | t-cluster (n = 30) | p | Holm |
+|---|---|---|---|---|---|---|
+| **primary** | 50–200 pooled | **−0.005050** | [−0.005808, −0.004260] | **[−0.006603, −0.003497]** | 2.7e−7 | — |
+| secondary | 50 | −0.008674 | | [−0.011055, −0.006293] | 3.3e−8 | 1.0e−7 |
+| secondary | 100 | −0.006082 | | [−0.008775, −0.003389] | 7.3e−5 | 1.5e−4 |
+| secondary | 200 | −0.000394 | | [−0.000740, −0.000048] | 0.027 | 0.027 |
+| structural | 500 / 1000 | −0.000000 / −0.000001 | | includes zero | 0.44 / 0.42 | — |
+
+**Verdict: supported** — Δ is 2.5× the minimum effect, the t interval excludes −0.002 from above, and the
+row survives at n = 30 with room to spare. It is the study's first registered positive against the tuned
+schedule. What it establishes, and only this: **a k = 4 commitment model beats the validation-tuned power
+schedule on the training corpus's own environments at T ≤ 200.** In-distribution robustness at n = 30 —
+non-claim 11 applies, and Test C (§7.2) already answered generalization against Φ.
+
+What it does *not* establish is a state-dependent rule, and §12.2 is why. On the same panel at T = 50,
+`phi_k4` and `p3_star` hold almost the same number of arms (22.5 vs 21.0, `main_robust_primary.csv`,
+level=horizon) yet differ by 0.0087 in regret; §12.2 shows `phi_k4` merely *matches* front-loaded search
+at its own K while P3\* *loses* to it by 0.0015 at T = 50. The power schedule spreads its recruiting over
+the horizon; the k = 4 model recruits early and stops, which is what the crudest policy does. So at the
+level of *timing*, H1b′'s effect is "reach K quickly, then refine". Whether the classifier's choice of K is
+itself worth anything over a schedule's is a separate question, and §12.4 registers and answers it: it is.
+
+### 12.4 H1b″: the learned model against the best fixed K — supported, and the mechanism
+
+`DEPLOYMENT_PLAN.md`, "Pre-registration 3", written before its constants were selected: the null model is
+`fixed_K_star` — recruit to K(T) immediately, then refine only, with K(T) the validation argmin per horizon
+over ≤ 17 candidates (the protocol P3\* was selected under). The functional form was chosen after reading
+§12.1–12.2 and is declared as a researcher degree of freedom. Selection gave **K = 24 / 36 / 64 / 64 / 64**
+at T = 50 / 100 / 200 / 500 / 1000 (`fixed_k_selection.csv`; `baseline_params.json["fixed_K_star"]`),
+consistent with the tune-split envelope of §12.1 and pinned at the cap from T = 200. It was deployed on the
+robustness panel, Test A and Test C (`main_robust_primary.csv` gains 18 rows, nothing else moves), and the
+two registered contrasts computed (`registered_contrast.py --registration h1b_null` /
+`h1b_null_secondary`; `h1b_null.csv`, `h1b_null_secondary.csv`):
+
+| contrast | T | Δ | paired CI | t-cluster (n = 30) | p | Holm | verdict |
+|---|---|---|---|---|---|---|---|
+| **`phi_k4` − `fixed_K_star`** (primary) | 50–200 | **−0.004701** | [−0.005445, −0.003958] | **[−0.006284, −0.003118]** | 1.3e−6 | — | **supported** |
+| | 50 | −0.008543 | | [−0.011138, −0.005948] | 2e−9 | 1e−6 | |
+| | 100 | −0.005166 | | [−0.008005, −0.002327] | 8.5e−4 | 1.7e−3 | |
+| | 200 | −0.000394 | | [−0.000740, −0.000048] | 0.027 | 0.027 | |
+| **`fixed_K_star` − `p3_star`** (secondary) | 50–200 | −0.000349 | [−0.000836, +0.000146] | [−0.001007, +0.000309] | 0.29 | — | **refuted** |
+| | 50 / 100 / 200 | −0.000131 / −0.000916 / 0.000000 | | | 0.89 / 3e−5 / 0.33 | 0.89 / 8e−5 / 0.65 | |
+
+**The learned model beats the best fixed K per horizon by 2.4× the minimum effect of interest, and that
+fixed K does not beat the tuned schedule.** H1b′'s effect is therefore not available without the
+classifier: front-loading alone (`fixed_K_star` vs P3\*, both holding ~the same K) is worth 0.0003 pooled,
+0.0009 at T = 100 and nothing elsewhere — the timing effect §12.2 measured, now bounded from the other side.
+Reconciled with §12.2, which found `phi_k4` unable to beat front-loaded search *at its own K*, the two
+results identify what the model does: **it sizes K to the environment.** At T = 50 the validation-selected
+fixed K is 24; `phi_k4` holds 14–15 arms in the thin-tailed reservoirs (`beta_good_common`,
+`tail_b0.5_*`, `tail_b1.0_*`) and 33–36 in the heavy-tailed ones (`beta_skewed`, `beta_rare_excellent`,
+`tail_b8.0_*`), and its gain over the fixed K grows with that departure — Spearman(|K_φ − K_fixed|, gain)
+= −0.31 / −0.25 / −0.67 at T = 50 / 100 / 200, gain negative in 67 of 90 cells
+(`cells_robust_primary.csv`, `k_final` and `regret` of the two policies). §12.1 said per-environment K\*
+spans 12–32 at T = 50; a per-horizon rule cannot use that, and a classifier that reads the reservoir's
+shape can. That is the state-dependence the study set out to find, located: not in when to search, but
+in **how many arms this environment is worth**.
+
+What this does and does not establish, in the registration's own terms. It establishes that a k = 4
+commitment model trained on oracle labels carries information a validation-selected fixed K per horizon
+does not, on the training corpus's 30 environments at T ≤ 200 (non-claim 11: in-distribution). It does
+not establish generalization — Test C (§7.2) is still against the pre-registered Φ, and `fixed_K_star`'s
+Test-C rows are deployed but no contrast on them is registered. It does not rescue the pre-registered
+`phi_k16`, which §12.2 shows is *worse* than front-loaded search at its own K. And it is one registered
+positive after two registrations; §3.5's arithmetic on chance findings applies to registrations too.
+The null model that would close this is a **schedule whose K depends on the environment through
+something the harness already observes**; §12.5 registers one.
+
+### 12.5 H1b‴: the learned model against an environment-adaptive schedule — supported, and what the schedule could not see
+
+`DEPLOYMENT_PLAN.md`, "Pre-registration 4", written before the rule existed: `adaptive_K_star` recruits
+while K_t < c · T^α · (1 + b · (1 − q_t)), where q_t is the fraction of held arms whose posterior mean is
+within 0.05 of the best held arm's — `est_frac_arms_within_5pct_of_best`, one QUALITY statistic the
+classifier also sees, and the one that should say "thin-tailed, stop" versus "heavy-tailed, keep going".
+Three scalars; b = 0 is a fixed schedule, so the null nests §12.4's. The simulation surface moved for it
+(`97704d2795f7` → `2ad982bf77bb`; 60 inserted lines, 0 deleted; every earlier item keeps the old sha).
+
+**Selection chose not to use the statistic.** Over the registered 50-candidate grid on the validation
+split (`adaptive_k_selection.csv`), the argmin is α = 0.75, c = 1.0, **b = 0** — K = 19 / 32 / 53 at
+T = 50 / 100 / 200, a plain fixed schedule. The best candidate with b > 0 (α = 0.5, c = 1, b = 2) trails it
+by 0.0008, about 1.5 selection standard errors; b = 4 and b = 8 are 0.004 and 0.03 worse. Reading the
+5%-band was never an improvement anywhere on the grid.
+
+| contrast | T | Δ | t-cluster (n = 30) | p | Holm | verdict |
+|---|---|---|---|---|---|---|
+| **`phi_k4` − `adaptive_K_star`** (primary) | 50–200 | **−0.003941** | **[−0.005730, −0.002152]** | 1.0e−4 | — | **supported** |
+| | 50 / 100 / 200 | −0.006859 / −0.005391 / +0.000428 | | 1e−5 / 2e−3 / 0.49 | 4e−5 / 3e−3 / 0.49 | |
+| **`adaptive_K_star` − `fixed_K_star`** (secondary) | 50–200 | −0.000760 | [−0.001913, +0.000392] | 0.19 | — | **refuted** |
+
+(`h1b_adaptive.csv`, `h1b_adaptive_secondary.csv`.) Two fixed schedules selected two different ways are
+indistinguishable from each other and each loses to the learned model by 0.004–0.005 at T ≤ 200, all of
+it at T = 50 and T = 100. So the programme's closing statement is narrower and firmer than §12.4's: **the
+k = 4 model sizes K to the environment (§12.4), and it does not do so by counting how many held arms sit
+near the best — the obvious one-number summary of the tail carries none of it on validation.** §12.6
+asks the model itself, and its last registration answers.
+
+### 12.6 What the model reads, and the rule it is
+
+**Asking the model.** `model_reads.py` rebuilds the deployed `phi_k4` and records the exact feature matrix
+it sees at every decision on the 90 H1b′ cells (first 64 episodes per cell — by CRN, the deployed ones):
+167,040 decisions. Per horizon, permutation importance on the decision at τ; across the 30 environments,
+the Spearman correlation of each feature's early-episode mean with the K the model reached there
+(`model_reads_importance.csv`, `model_reads_env_signal.csv`). The answer is one feature at every horizon:
+
+| T | top feature | coef | perm. mean \|ΔP\| | flip rate | ρ(early value, env K_final) |
+|---|---|---|---|---|---|
+| 50 | `est_quantile_0.99` | −0.85 | 0.131 | 0.131 | **−0.958** |
+| 100 | `est_quantile_0.99` | −0.85 | 0.131 | 0.137 | **−0.976** |
+| 200 | `est_quantile_0.99` | −0.85 | 0.141 | 0.227 | **−0.932** |
+
+QUALITY carries ~0.6 of the summed permutation importance, CLOCK ~0.3 (`f_log_K`, `f_K_over_T`),
+EVIDENCE ~0.3 (`f_leader_lcb`). `est_quantile_0.99` at K ≤ 36 arms is the best held arm's posterior mean
+to three decimals, and a logistic rule on it plus log K reproduces 96 / 93 / 85% of the model's decisions.
+But the model stops while every arm has 1–3 pulls (`f_leader_n` ≈ 1.0–1.4 on the early rows, and the
+leader's lower confidence bound at the last SEARCH decision is the 1-pull floor, 0.026, at every horizon).
+At that point "the best posterior mean" is no more than whether first pulls succeeded — an estimate of the
+**reservoir's mean level**, and `f_mean_of_means` tracks K at the same ρ = −0.96 / −0.98 / −0.93. High
+level (thin-tailed reservoir, the best arm near the typical one) → few arms; low level (heavy-tailed,
+excellent arms rare and far above typical) → many. That is the state-dependence, named.
+
+**Two registrations that missed, reported in full** (`DEPLOYMENT_PLAN.md`, Pre-registrations 4 and 5, each
+committed before its code): a K-target scaled by the fraction of held arms within 0.05 of the best (§12.5;
+selection set b = 0), and a gate "SEARCH while best_mean < θ" (`bestmean_star`). The gate was inert: a
+1-pull success has posterior mean 0.667, so every θ ≤ 0.65 closed it after ~2.5 arms on a lucky first pull
+(`beta_good_common` at T = 100: K = 2.6, regret 0.148 against 0.074), and selection escaped to θ = 0.675,
+which the best mean never reaches before the ceiling — the same fixed schedule as §12.5's, with the same
+result (`phi_k4` −0.003941, p = 1e−4, `h1b_bestmean.csv`).
+
+**The registration that closed it** (Pre-registration 6, `level_star`): SEARCH while
+K_t < c · T^α · exp(b · (0.5 − level_t)), level_t the mean posterior over held arms, b = 0 the fixed
+schedule. Selection on validation over 40 candidates chose **α = 0.75, c = 1.0, b = 4** — an interior
+optimum in b, 0.0058 better than every fixed schedule on the validation cells (`level_selection.csv`) —
+and on the robustness panel (`h1b_level.csv`, `h1b_level_secondary.csv`):
+
+| contrast | T | Δ | t-cluster (n = 30) | p | verdict |
+|---|---|---|---|---|---|
+| **`phi_k4` − `level_star`** (primary) | 50–200 | **−0.000018** | **[−0.000711, +0.000676]** | 0.96 | **refuted** |
+| | 50 / 100 / 200 | −0.000012 / −0.000395 / +0.000354 | | 0.99 / 0.37 / 0.22 | |
+| **`level_star` − `fixed_K_star`** (secondary) | 50–200 | **−0.004683** | **[−0.006453, −0.002914]** | 8e−6 | **supported** |
+| | 50 / 100 / 200 | −0.008531 / −0.004772 / −0.000747 | | 3e−6 / 1e−3 / 0.027 | |
+
+**The 62-feature logistic policy trained on 87,148 oracle-labelled states is, on the panel where it beat
+every schedule by 0.004–0.005, indistinguishable from a three-number rule** — to 2e−5 pooled and within
+±0.0004 at every horizon — and that rule beats the fixed K by the model's own margin (−0.004683 against
+−0.004701). The programme's positive result is therefore: *recruit to `T^0.75 · exp(4 · (0.5 − level))`
+arms, then refine.* It sizes K to the environment through the one thing a few pulls per arm can tell you,
+the reservoir's level; §12.2 says the timing of getting there is worth nothing; §12.1 says the cap the
+whole study ran under was too small for it at T ≥ 500.
+
+Read in the registrations' own terms: the sequence 3 → 4 → 5 → 6 is four nulls the learned policy had to
+beat, and it beat the first three because they were the wrong rule, not because it knew more; every null
+added made "the model carries information a rule cannot" harder to sustain, and the fourth refuted it. What
+survives about the learned model is that it *found* the rule — the oracle-labelling pipeline recovered a
+sensible infinite-armed heuristic from data — and that its k = 16 version, the pre-registered one, does
+not (§12.2). What this does not say: whether `level_star` generalizes (Test C rows are deployed, no contrast
+registered), and whether the level is the right statistic at caps where §12.1's K\* is reachable; the
+cap re-tune is next.
+
+### 12.7 The cap, paired and re-tuned: the sweep §4 should have been
+
+`DEPLOYMENT_PLAN.md`, "Pre-registration 7", committed before any tuning run. Two defects made §4's cap
+sweep unreadable — its caps drew different seeds (Ruling 26), and every constant in it was tuned at cap
+64 (Ruling 20). This sweep removes both: the eight main environments × T ∈ {200, 1000} × the cap ladders
+{32, 48, 64, 96, 128, 160, 200} and {32, 48, 64, 96, 128, 192, 256, 384, 512, 1000}, M = 2000, **every cap of
+an (env, T) on that cell's cap-64 seed** (`analyze_capp.py` refuses the tree unless `mu_star` is
+bit-identical across caps; it was), and **every constant selected at the cap it deploys at** — P3\*'s
+(α, c), the fixed K, the level rule's (α, c, b) and τ for both learned policies, on the tune / validation
+splits at that cap, stored under `by_cap` beside the untouched cap-64 blocks. No row of
+`capp_policies.csv` deployed a constant selected elsewhere. Tables: `capp_policies.csv`,
+`capp_contrasts.csv` (within-cap paired contrasts, env-mean t on n = 8), `capp_crosscap.csv` (regret at
+cap X minus regret at cap 64, paired by episode). Nothing here is multiplicity-corrected; the claims about
+policies were Pre-registrations 2–6, and this section reports what they look like under a cap that is
+neither wrong nor confounded.
+
+**Pooled regret over the eight environments, T = 1000** (`capp_policies.csv`):
+
+| cap | `always_search` | P3\* (re-tuned) | fixed K\* | `level_star` | `phi_k4` | `phi_k16` |
+|---|---|---|---|---|---|---|
+| 32 | 0.1257 | 0.1257 | 0.1257 | 0.1257 | 0.1257 | 0.1257 |
+| 48 | 0.1082 | 0.1082 | 0.1082 | 0.1082 | 0.1082 | 0.1082 |
+| **64 (the study)** | **0.0973** | **0.0973** | **0.0973** | **0.0973** | **0.0973** | **0.0973** |
+| 96 | 0.0861 | 0.0861 | 0.0861 | 0.0861 | 0.0868 | 0.0861 |
+| 128 | 0.0809 | 0.0809 | 0.0809 | 0.0808 | 0.0818 | 0.0809 |
+| 192 | 0.0783 | 0.0783 | 0.0783 | 0.0778 | 0.0783 | 0.0785 |
+| 256 | 0.0780 | 0.0772 | 0.0783 | **0.0759** | 0.0782 | 0.0777 |
+| 384 | 0.0815 | 0.0772 | 0.0783 | **0.0759** | 0.0810 | 0.0803 |
+| 512 | 0.0912 | 0.0772 | 0.0783 | **0.0759** | 0.0900 | 0.0878 |
+| 1000 | 0.3460 | 0.0774 | 0.0780 | **0.0759** | **0.1535** | **0.1417** |
+
+Four things this table says that §4 could not.
+
+1. **At cap 64 every policy is the same policy.** Six columns agree to four decimals at every cap ≤ 64 and
+   at cap 96–192 to within 0.001: below K\* the cap is the policy, and the whole of §3's H1b, at every
+   horizon ≥ 200, compared identical objects. The study's design question was answered by its cap.
+2. **The cap cost 0.021 at T = 1000, paired and re-tuned.** P3\*'s cross-cap curve
+   (`capp_crosscap.csv`, paired against cap 64): +0.0284 [+0.0072, +0.0497] at cap 32, −0.0112
+   [−0.0217, −0.0007] at cap 96, −0.0164 at 128, −0.0200 [−0.0454, +0.0054] from cap 256 up — flat once
+   the cap clears K\*. §12.1's tune-split 0.0217 was right to three decimals. The interval at n = 8
+   includes zero above cap 128 (the between-environment spread of the *gain* is large: environments where
+   K\* is 400 gain 0.05, those where it is 48 gain nothing), so "the cap cost 0.02" is a pooled point
+   estimate with a wide environment-level band, not a cluster-significant one.
+3. **The fixed K comes interior at cap 256.** K\* = 32 / 48 / 64 / 96 / 128 / 192 at caps 32–192 (pinned),
+   then **192** at caps 256–512 and **256** uncapped; P3\*'s re-tuned c falls from the grid's edge at cap
+   128 to an interior value from cap 256 (K_T = 216). The validation-split optimum at T = 1000 is
+   192–256 arms; the study ran at 64.
+4. **The learned policies fail with headroom.** Given a cap they cannot fill, `phi_k4` recruits to 315 arms
+   at cap 384, 410 at cap 512 and 380 uncapped, and `phi_k16` to 527 uncapped, for regret 0.0810 / 0.0900 /
+   **0.1535** and **0.1417** — against the level rule's 0.0759 holding 161 arms at every cap ≥ 256. The
+   corpus held no state above 64 arms (`CORPUS_MAX_LIVE_ARMS`); neither model ever saw "enough", and
+   neither learned it. `phi_k4` − `level_star` at T = 1000 is null at every cap ≤ 384 (|Δ| ≤ 0.005, p ≥ 0.2),
+   +0.0141 [−0.0056, +0.0338] at cap 512 and **+0.0777 [+0.0232, +0.1321], p = 0.012, uncapped**;
+   `phi_k16` − P3\* likewise **+0.0643 [+0.0105, +0.1181], p = 0.025**. §4's "Φ has no 'enough arms'
+   notion" and §9.2's abstention on Φ's extrapolation beyond 64 are both resolved, against the models, on
+   paired seeds with τ re-selected at each cap (τ itself moves from 0.3 at cap 32 to 0.7 uncapped — the
+   selector compensates, but not enough).
+
+**T = 200.** Flat from cap 96 up for every tuned schedule (P3\* 0.1063–0.1078, fixed K 0.1063, the level rule
+0.1021–0.1050), because K\*(200) ≈ 48–64 was reachable at the study's cap; the learned policies sit within
+±0.004 of the level rule at every cap (`phi_k4` − `level_star` between −0.0016 and +0.0036, none with
+p < 0.08), and `always_search` degrades as the cap loosens (0.1063 → 0.3029 uncapped) exactly as at T = 1000.
+
+**The level rule under headroom.** `level_star` − P3\* is −0.0014 [−0.0045, +0.0017] (p = 0.33) at every
+cap ≥ 256 at T = 1000 and −0.0017 to −0.0055 at caps ≥ 96 at T = 200, none cluster-significant at n = 8;
+`level_star` − fixed K is −0.0024 [−0.0055, +0.0006] (p = 0.10) at caps ≥ 256. The rule's edge over a
+re-tuned schedule with room to work is real in sign at every cap but small — a fifth of what it was at cap
+64 on T ≤ 200 (§12.6), where the schedules were pinned and it was not. The honest statement is that
+**most of what §12.3–12.6 measured as the learned policy's advantage was the advantage of *not filling a
+too-small cap*; the residual, on a cap that fits, is about 0.001–0.002 and not cluster-significant on eight
+environments.**
+
+What this section replaces: §4's cap paragraphs (unpaired, untuned; kept for the record, superseded here),
+§9.2's second and fourth bullets ("that Φ beats a tuned schedule" — at cap 64 they are the same policy;
+"that a bigger cap is better, or that Φ's extrapolation beyond K = 64 is beneficial" — a bigger cap is
+better by 0.02 at T = 1000 for every tuned schedule, and Φ's extrapolation is harmful), and non-claim 4
+of §9.4. What it does not touch: every Test-A number, which is what it says it is, at cap 64.
 
 ---
 

@@ -80,6 +80,17 @@ _PLACEHOLDER_P3_STAR = {
     "c": float(rules.POLICY_SPECS["power_sqrt"]["c"]),
 }
 _PLACEHOLDER_RULE_TAU = float(rules.POLICY_SPECS["reservoir_rule"]["tau"])
+_PLACEHOLDER_FIXED_K = int(rules.POLICY_SPECS["fixed_K16"]["K"])
+_PLACEHOLDER_ADAPTIVE_K = {
+    k: float(rules.POLICY_SPECS["adaptive_K"][k]) for k in ("alpha", "c", "b")
+}
+#: Rules whose every constant is one validation-selected block in `baseline_params.json`
+#: (``kind -> (block name, parameter names)``); `resolve_params` fills them together.
+TUNED_RULE_BLOCKS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "adaptive_K": ("adaptive_K_star", ("alpha", "c", "b")),
+    "bestmean_K": ("bestmean_star", ("theta", "alpha", "c")),
+    "level_K": ("level_star", ("alpha", "c", "b")),
+}
 
 # Which `rules.POLICY_SPECS` entry each kind is built through; `params` override the
 # rest, so only the kind of the registered entry matters here.
@@ -91,6 +102,9 @@ _SPEC_FOR_KIND: dict[str, str] = {
     "power": "power_sqrt",
     "cp0": "cp0",
     "reservoir_rule": "reservoir_rule",
+    "adaptive_K": "adaptive_K",
+    "bestmean_K": "bestmean_K",
+    "level_K": "level_K",
     "model": "model",
 }
 
@@ -142,6 +156,37 @@ POLICIES: dict[str, dict[str, Any]] = {
     },
     "uniform": {"kind": "uniform", "params": {}, "group": "baseline", "requires": []},
     "fixed_K16": {"kind": "fixed_K", "params": {"K": 16}, "group": "baseline", "requires": []},
+    # Pre-registration 3's null model: recruit to K(T) immediately, then refine; K(T) the
+    # validation argmin per horizon (`select_fixed_k.py`, `baseline_params.json["fixed_K_star"]`).
+    "fixed_K_star": {
+        "kind": "fixed_K",
+        "params": {"K": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
+    # Pre-registration 4's null model: K_target = c * T^alpha * (1 + b * (1 - q_t)), one
+    # (alpha, c, b) for every horizon, selected on validation (`select_rule.py`).
+    "adaptive_K_star": {
+        "kind": "adaptive_K",
+        "params": {"alpha": None, "c": None, "b": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
+    # Pre-registration 5's null model: recruit until the best held arm's posterior mean
+    # reaches theta, never beyond c * T^alpha; (theta, alpha, c) selected on validation.
+    "bestmean_star": {
+        "kind": "bestmean_K",
+        "params": {"theta": None, "alpha": None, "c": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
+    # Pre-registration 6's null model: a fixed-K schedule scaled by the observed reservoir level.
+    "level_star": {
+        "kind": "level_K",
+        "params": {"alpha": None, "c": None, "b": None},
+        "group": "baseline",
+        "requires": ["baseline_params"],
+    },
     "power_a0.25": _power("0.25"),
     "power_a0.33": _power("0.33"),
     "power_a0.5": _power("0.5"),
@@ -241,6 +286,12 @@ TEST_POLICIES: dict[str, tuple[str, ...]] = {
     "robust": _ROBUST,
     "cap": _ROBUST,
     "smoke": CORPUS_POLICIES,
+    # The K-matched control deploys these plus the ``--match`` policy (run_deployment.py).
+    "capmatch": ("always_search", "uniform"),
+    # The CRN-paired cap sweep: the three references / baselines, the two schedules the
+    # follow-ups selected, and the two learned policies the document compares.
+    "capp": ("always_search", "cp0", "refine_after_init", "p3_star", "fixed_K_star", "level_star",
+             "phi_k4", "phi_k16"),
 }
 
 
@@ -267,6 +318,157 @@ def load_baseline_params(path: str | Path = DEFAULT_BASELINE_PARAMS_PATH) -> dic
 
 def load_thresholds(path: str | Path = DEFAULT_THRESHOLDS_PATH) -> dict | None:
     return load_json_or_none(path, "thresholds.json")
+
+
+def tuning_cap(baseline_params: dict | None) -> int | None:
+    """The live-arm cap `baseline_params` was tuned under (``meta.cap``), or ``None``.
+
+    ``None`` means the file does not say, in which case nothing is claimed about the cap
+    and no item is marked untuned on that ground -- silence is not evidence of a match.
+    """
+    meta = (baseline_params or {}).get("meta") or {}
+    cap = meta.get(TUNING_CAP_KEY)
+    return None if cap is None else int(cap)
+
+
+def baseline_params_for_cap(
+    baseline_params: dict | None, cap: int | None
+) -> tuple[dict | None, int | None]:
+    """``(the tuning block that applies at `cap`, the cap it was tuned under)``.
+
+    Today's file has one block, tuned at ``meta.cap``. A per-cap retune adds a `BY_CAP_KEY`
+    mapping ``"<cap>" -> {power, p3_star, refine_after_init}``; when it holds `cap`, that
+    block is the tuned one and there is no mismatch. The file on disk is unchanged by
+    this: `migrate_baseline_params` is the (reversible) writer side, and nothing here
+    requires it to have been run.
+    """
+    if baseline_params is None:
+        return None, None
+    by_cap = baseline_params.get(BY_CAP_KEY) or {}
+    if cap is not None:
+        block = _lookup_by_number(by_cap, int(cap))
+        if block:
+            return {**baseline_params, **block}, int(cap)
+    return baseline_params, tuning_cap(baseline_params)
+
+
+def migrate_baseline_params(baseline_params: dict) -> dict:
+    """Move the top-level tuned blocks under ``by_cap["<meta.cap>"]``, losing nothing.
+
+    The forward half of the per-cap schema. It is pure and in memory: the shipped
+    ``baseline_params.json`` is NOT rewritten, so the M8fix audit anchor -- the file is
+    byte-identical to its pre-T=2000 state once the six T=2000 keys are stripped -- stays
+    checkable against the real file (`test_baseline_params_migration_is_reversible`).
+    """
+    cap = tuning_cap(baseline_params)
+    if cap is None:
+        raise ValueError("baseline_params has no meta.cap; it cannot be keyed by cap")
+    if BY_CAP_KEY in baseline_params:
+        raise ValueError("baseline_params is already keyed by cap")
+    block = {k: v for k, v in baseline_params.items() if k in TUNED_BLOCKS}
+    out: dict[str, Any] = {}
+    for key, value in baseline_params.items():
+        if key in TUNED_BLOCKS:
+            out.setdefault(BY_CAP_KEY, {str(cap): block})
+            continue
+        out[key] = value
+    out.setdefault(BY_CAP_KEY, {str(cap): block})
+    return out
+
+
+def unmigrate_baseline_params(baseline_params: dict) -> dict:
+    """The exact inverse of `migrate_baseline_params`, key order included."""
+    cap = tuning_cap(baseline_params)
+    by_cap = baseline_params.get(BY_CAP_KEY)
+    if cap is None or by_cap is None:
+        raise ValueError("baseline_params is not keyed by cap")
+    block = _lookup_by_number(by_cap, cap)
+    if block is None:
+        raise ValueError(f"by_cap has no block for the tuning cap {cap}")
+    if set(by_cap) != {str(cap)}:
+        raise ValueError(f"by_cap holds more than the tuning cap: {sorted(by_cap)}")
+    out: dict[str, Any] = {}
+    for key, value in baseline_params.items():
+        if key == BY_CAP_KEY:
+            out.update(block)
+        else:
+            out[key] = value
+    return out
+
+
+def merge_cap_block(params: dict, cap: int, block: dict) -> dict:
+    """`params` with `block`'s constants stored for `cap` (pure; key order preserved).
+
+    At the file's tuning cap (``meta.cap``) the block's keys go at the top level, as every
+    writer always put them; at any other cap they go under ``by_cap["<cap>"]``, where
+    `baseline_params_for_cap` reads them, and the cap-64 blocks are not touched. A
+    ``meta`` key in `block` merges into the corresponding ``meta`` rather than replacing it.
+    The roadmap's per-cap schema (3.3), on the writer side.
+    """
+    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in params.items()}
+    tuning = tuning_cap(out)
+    if tuning is not None and int(cap) == int(tuning):
+        for key, value in block.items():
+            if key == "meta":
+                out.setdefault("meta", {}).update(value)
+            else:
+                out[key] = value
+        return out
+    by_cap = dict(out.get(BY_CAP_KEY) or {})
+    entry = dict(by_cap.get(str(int(cap))) or {})
+    for key, value in block.items():
+        if key == "meta":
+            entry["meta"] = {**(entry.get("meta") or {}), **value}
+        else:
+            entry[key] = value
+    by_cap[str(int(cap))] = entry
+    out[BY_CAP_KEY] = by_cap
+    return out
+
+
+def write_baseline_params(path: str | Path, params: dict) -> None:
+    """Serialize as `tune_baselines.py` does (indent 2, trailing newline), key order kept."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(params, indent=2) + "\n")
+    tmp.replace(path)
+
+
+def merge_thresholds_block(thresholds: dict, cap: int, entries: dict, tuning_cap_: int = 64) -> dict:
+    """`thresholds.json` with `entries` stored for `cap`: top level at the tuning cap, else
+    under ``by_cap["<cap>"]`` (pure)."""
+    out = {k: (dict(v) if isinstance(v, dict) else v) for k, v in thresholds.items()}
+    if int(cap) == int(tuning_cap_):
+        out.update(entries)
+        return out
+    by_cap = dict(out.get(BY_CAP_KEY) or {})
+    by_cap[str(int(cap))] = {**(by_cap.get(str(int(cap))) or {}), **entries}
+    out[BY_CAP_KEY] = by_cap
+    return out
+
+
+def tau_for_cap(
+    name: str, variant: str, thresholds: dict | None, *, cap: int | None,
+    fallback: float | None = None, fallback_source: str = "artifact_tau",
+    horizon_holdout: bool = False, tuning_cap_: int = 64,
+) -> tuple[float | None, str, int | None]:
+    """``(tau, source, tau_cap)``: the threshold selected at `cap` when `thresholds.json`
+    holds one under ``by_cap``, else the flat (cap-``tuning_cap_``) entry.
+
+    ``tau_cap`` is the cap the returned tau was selected at (``None`` when it did not come
+    from the file); a caller deploying at a different cap stamps the mismatch.
+    """
+    if thresholds and cap is not None:
+        block = (thresholds.get(BY_CAP_KEY) or {}).get(str(int(cap)))
+        if block and block.get(variant):
+            tau, source = _tuned_tau(name, variant, block, fallback, fallback_source,
+                                     horizon_holdout=horizon_holdout)
+            if source != fallback_source:
+                return tau, source, int(cap)
+    tau, source = _tuned_tau(name, variant, thresholds, fallback, fallback_source,
+                             horizon_holdout=horizon_holdout)
+    return tau, source, (int(tuning_cap_) if source != fallback_source else None)
 
 
 def _lookup_by_number(table: dict, key: float, tol: float = 1e-6):
@@ -309,8 +511,33 @@ def _alpha_label(alpha: float) -> str:
 #: are byte-identical to what every earlier run wrote.
 PARAMS_TUNED = "params_tuned"
 PARAMS_FALLBACK = "params_fallback"
+#: The live-arm cap the schedule constants were actually tuned under, stamped ONLY when
+#: it differs from the cap the item deploys at. `baseline_params.json` tunes at one cap
+#: (`meta.cap`, 64 for the shipped file): every constant in it was selected under that
+#: many live arms, and a cell that deploys the same constant at cap 32, 128 or T is not
+#: running a tuned comparator. `main_cap_primary.csv` asserted ``params_tuned = True`` on
+#: cells tuned at a different cap, which is a false assertion however the retune goes
+#: (finding 4.5 / ruling 20).
+#:
+#: Stamped only on a mismatch, exactly like `PARAMS_TUNED`: the unmarked case stays
+#: "tuned at this cap", so a matching item's params -- and therefore its manifest record
+#: and `run_deployment.stale_reason` -- are byte-identical to what every earlier run
+#: wrote.
+PARAMS_CAP = "params_cap"
+#: The cap a learned policy's tau was selected at, when it is not the cap it deploys at.
+TAU_CAP = "tau_cap"
 #: Provenance recorded in the params that is not a policy constructor argument.
-PROVENANCE_KEYS: tuple[str, ...] = ("tau_source", PARAMS_TUNED, PARAMS_FALLBACK)
+PROVENANCE_KEYS: tuple[str, ...] = ("tau_source", PARAMS_TUNED, PARAMS_FALLBACK, PARAMS_CAP, TAU_CAP)
+
+#: The cap `baseline_params.json` records its tuning under, and the optional per-cap
+#: block a future retune would add (`baseline_params_for_cap`).
+TUNING_CAP_KEY = "cap"
+BY_CAP_KEY = "by_cap"
+#: The blocks a per-cap retune would have to duplicate; everything else is metadata.
+TUNED_BLOCKS: tuple[str, ...] = (
+    "power", "p3_star", "refine_after_init", "fixed_K_star", "adaptive_K_star", "bestmean_star",
+    "level_star",
+)
 
 
 def _tuned_c(
@@ -359,12 +586,54 @@ def _tuned_p3_star(
     return (float(sel["alpha"]), float(sel["c"])), None
 
 
+def _tuned_fixed_k(name: str, horizon: int, baseline_params: dict | None) -> tuple[int, dict | None]:
+    ph = {"K": _PLACEHOLDER_FIXED_K}
+    if baseline_params is None:
+        _warn_once(name, f"no baseline_params; using placeholder K={_PLACEHOLDER_FIXED_K}")
+        return _PLACEHOLDER_FIXED_K, ph
+    sel = _lookup_by_number(baseline_params.get("fixed_K_star", {}), horizon)
+    if not sel or "K" not in sel:
+        _warn_once(name, f"no validation-selected K for T={horizon}; placeholder {_PLACEHOLDER_FIXED_K}")
+        return _PLACEHOLDER_FIXED_K, ph
+    return int(sel["K"]), None
+
+
+def _tuned_rule(name: str, kind: str, baseline_params: dict | None) -> tuple[dict[str, float], dict | None]:
+    """The validation-selected constants of a `TUNED_RULE_BLOCKS` rule, or its placeholder."""
+    block, keys = TUNED_RULE_BLOCKS[kind]
+    ph = {k: float(rules.POLICY_SPECS[kind][k]) for k in keys}
+    sel = (baseline_params or {}).get(block) or {}
+    if not all(k in sel for k in keys):
+        _warn_once(name, f"no validation-selected {keys}; placeholder {ph}")
+        return ph, ph
+    return {k: float(sel[k]) for k in keys}, None
+
+
+def _tuned_adaptive_k(name: str, baseline_params: dict | None) -> tuple[dict[str, float], dict | None]:
+    return _tuned_rule(name, "adaptive_K", baseline_params)
+
+
 def _stamp_untuned(params: dict[str, Any], fallback: dict | None) -> None:
     """Record a placeholder substitution in the params it was substituted into."""
     if fallback is None:
         return
     params[PARAMS_TUNED] = False
     params.setdefault(PARAMS_FALLBACK, {}).update(fallback)
+
+
+def _stamp_cap(name: str, params: dict[str, Any], cap: int | None, tuned_cap: int | None) -> None:
+    """Record that the constants in `params` were tuned at a different cap than `cap`.
+
+    Only a slot that came out of `baseline_params.json` can be mis-capped, so this is
+    applied to `BASELINE_PARAM_KINDS` alone; a learned policy's tau is tracked by
+    `TAU_SOURCES`. Nothing is stamped when either cap is unknown or the two agree, which
+    keeps every cap-64 item byte-identical to what earlier runs recorded.
+    """
+    if cap is None or tuned_cap is None or int(cap) == int(tuned_cap):
+        return
+    _warn_once(name, f"constants tuned at cap {tuned_cap} but deploying at cap {cap}")
+    params[PARAMS_CAP] = int(tuned_cap)
+    params[PARAMS_TUNED] = False
 
 
 def params_are_tuned(params: dict[str, Any] | None) -> bool:
@@ -378,8 +647,35 @@ def params_are_tuned(params: dict[str, Any] | None) -> bool:
 BASELINE_PARAM_KINDS: frozenset[str] = frozenset({"power", "refine_after_init"})
 
 
+def _reads_baseline_params(entry: dict[str, Any]) -> bool:
+    """Whether a table entry fills a slot from `baseline_params.json` (and so can be
+    untuned or mis-capped): every `BASELINE_PARAM_KINDS` entry, plus `fixed_K_star`, the
+    one `fixed_K` whose K is a ``None`` slot (a fixed integer like `fixed_K16` is not)."""
+    return entry["kind"] in BASELINE_PARAM_KINDS or (
+        entry["kind"] == "fixed_K" and entry["params"].get("K") is None
+    ) or (
+        entry["kind"] in TUNED_RULE_BLOCKS
+        and entry["params"].get(TUNED_RULE_BLOCKS[entry["kind"]][1][0]) is None
+    )
+
+
+def constructor_params(params: dict | None) -> dict:
+    """`params` without the provenance keys: what actually reaches the policy constructor.
+
+    Provenance (`PROVENANCE_KEYS`) describes how a constant was chosen, not what it is,
+    so two params dicts that differ only there produce bit-identical episodes.
+    """
+    return {k: v for k, v in (params or {}).items() if k not in PROVENANCE_KEYS}
+
+
 def deployed_params_are_current(
-    name: str, horizon: int, recorded: dict | None, baseline_params: dict | None, tol: float = 1e-12
+    name: str,
+    horizon: int,
+    recorded: dict | None,
+    baseline_params: dict | None,
+    tol: float = 1e-12,
+    *,
+    cap: int | None = None,
 ) -> bool:
     """Whether `recorded` (a manifest's params) is what this table resolves today.
 
@@ -390,28 +686,38 @@ def deployed_params_are_current(
     (finding B1). Kinds outside `BASELINE_PARAM_KINDS` are not judged here and return True.
     """
     entry = POLICIES.get(name)
-    if entry is None or entry["kind"] not in BASELINE_PARAM_KINDS or recorded is None:
+    if entry is None or not _reads_baseline_params(entry) or recorded is None:
         return True
-    fresh = resolve_params(name, horizon, baseline_params=baseline_params)
-    fresh = {k: v for k, v in fresh.items() if k not in PROVENANCE_KEYS}
-    have = {k: v for k, v in recorded.items() if k not in PROVENANCE_KEYS}
+    fresh = constructor_params(resolve_params(name, horizon, cap=cap, baseline_params=baseline_params))
+    have = constructor_params(recorded)
     if set(have) != set(fresh):
         return False
     return all(abs(float(have[k]) - float(fresh[k])) <= tol for k in fresh)
 
 
-def baseline_is_tuned(name: str, horizon: int, baseline_params: dict | None) -> bool:
+def baseline_is_tuned(
+    name: str, horizon: int, baseline_params: dict | None, cap: int | None = None
+) -> bool:
     """Whether every `baseline_params.json` slot of `name` at `horizon` holds a tuned value.
 
     `resolve_params` stamps `PARAMS_TUNED` on the item it resolves, but a manifest written
     before that key existed carries no such mark. The analysis re-derives the answer from
     the same table and the same JSON -- which is also what a rerun today would deploy --
     so an old manifest cannot hide an untuned baseline.
+
+    `cap` extends that to the live-arm cap: every shipped manifest line predates
+    `PARAMS_CAP`, so the cap sweep's mis-capped cells can only be found by re-deriving
+    them here (`_stamp_cap`).
     """
     entry = POLICIES.get(name)
     if entry is None:
         return True
     kind, slots = entry["kind"], entry["params"]
+    if _reads_baseline_params(entry) and cap is not None:
+        _, tuned_cap = baseline_params_for_cap(baseline_params, cap)
+        if tuned_cap is not None and int(tuned_cap) != int(cap):
+            return False
+    baseline_params = baseline_params_for_cap(baseline_params, cap)[0]
     if kind == "power":
         if slots["alpha"] is None:  # p3_star
             return _tuned_p3_star(name, int(horizon), baseline_params)[1] is None
@@ -419,6 +725,10 @@ def baseline_is_tuned(name: str, horizon: int, baseline_params: dict | None) -> 
             return _tuned_c(name, float(slots["alpha"]), int(horizon), baseline_params)[1] is None
     elif kind == "refine_after_init" and slots["K0"] is None:
         return _tuned_k0(name, int(horizon), baseline_params)[1] is None
+    elif kind == "fixed_K" and slots["K"] is None:
+        return _tuned_fixed_k(name, int(horizon), baseline_params)[1] is None
+    elif kind in TUNED_RULE_BLOCKS and slots[TUNED_RULE_BLOCKS[kind][1][0]] is None:
+        return _tuned_rule(name, kind, baseline_params)[1] is None
     return True
 
 
@@ -483,6 +793,7 @@ def resolve_params(
     name: str,
     horizon: int,
     *,
+    cap: int | None = None,
     baseline_params: dict | None = None,
     thresholds: dict | None = None,
     models_dir: str | Path = DEFAULT_MODELS_DIR,
@@ -498,6 +809,12 @@ def resolve_params(
     thresholded policy, ``tau_source`` (one of `TAU_SOURCES`) saying where its tau
     came from. A schedule constant that fell back to its placeholder additionally
     carries ``params_tuned: False`` and ``params_fallback`` (`PARAMS_TUNED`).
+
+    `cap` is the live-arm cap the item will deploy at. Every constant in
+    `baseline_params.json` was selected under one cap (``meta.cap``), so deploying it at
+    another is not a tuned comparison: such an item carries ``params_cap`` (the cap it
+    WAS tuned at) and ``params_tuned: False`` (`PARAMS_CAP`). ``None`` means the caller
+    is not deploying at a particular cap and nothing is claimed either way.
     """
     if name not in POLICIES:
         raise KeyError(f"unknown policy {name!r}; known={sorted(POLICIES)}")
@@ -505,19 +822,37 @@ def resolve_params(
     kind = entry["kind"]
     params = dict(entry["params"])
     horizon = int(horizon)
+    baseline_params, tuned_cap = baseline_params_for_cap(baseline_params, cap)
+    from_baseline = False
 
     if kind == "power":
         if params["alpha"] is None:  # p3_star
             (alpha, c), fallback = _tuned_p3_star(name, horizon, baseline_params)
             params["alpha"], params["c"] = alpha, c
             _stamp_untuned(params, fallback)
+            from_baseline = True
         elif params["c"] is None:
             params["c"], fallback = _tuned_c(name, float(params["alpha"]), horizon, baseline_params)
             _stamp_untuned(params, fallback)
+            from_baseline = True
     elif kind == "refine_after_init":
         if params["K0"] is None:
             params["K0"], fallback = _tuned_k0(name, horizon, baseline_params)
             _stamp_untuned(params, fallback)
+            from_baseline = True
+    elif kind == "fixed_K":
+        if params["K"] is None:  # fixed_K_star
+            params["K"], fallback = _tuned_fixed_k(name, horizon, baseline_params)
+            _stamp_untuned(params, fallback)
+            from_baseline = True
+    elif kind in TUNED_RULE_BLOCKS:
+        if params[TUNED_RULE_BLOCKS[kind][1][0]] is None:  # adaptive_K_star, bestmean_star
+            constants, fallback = _tuned_rule(name, kind, baseline_params)
+            params.update(constants)
+            _stamp_untuned(params, fallback)
+            from_baseline = True
+    if from_baseline:
+        _stamp_cap(name, params, cap, tuned_cap)
     elif kind == "reservoir_rule":
         if params["tau"] is None:
             params["tau"], params["tau_source"] = _tuned_tau(
@@ -531,14 +866,15 @@ def resolve_params(
         if params["tau"] is None:
             if artifact is None:
                 artifact = load_model(path)
-            params["tau"], params["tau_source"] = _tuned_tau(
-                name,
-                variant,
-                thresholds,
-                artifact.get("tau"),
-                "artifact_tau",
-                horizon_holdout=bool(heldout_horizons(artifact)),
+            params["tau"], params["tau_source"], tau_cap = tau_for_cap(
+                name, variant, thresholds, cap=cap, fallback=artifact.get("tau"),
+                fallback_source="artifact_tau", horizon_holdout=bool(heldout_horizons(artifact)),
             )
+            if cap is not None and tau_cap is not None and int(tau_cap) != int(cap):
+                # Ruling 20's asymmetry, now recorded: a tau selected at one cap deployed at another.
+                _warn_once(name, f"tau selected at cap {tau_cap} but deploying at cap {cap}")
+                params[TAU_CAP] = int(tau_cap)
+                params[PARAMS_TUNED] = False
         else:
             params["tau_source"] = "fixed"
         params["artifact"] = str(path)

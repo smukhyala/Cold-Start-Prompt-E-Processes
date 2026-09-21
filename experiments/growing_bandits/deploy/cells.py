@@ -273,6 +273,62 @@ def make_cell(
     )
 
 
+def make_matched_cell(
+    split: str,
+    env_id: str,
+    horizon: int,
+    cap: int,
+    n_replicates: int,
+    seed_cap: int | str = 64,
+    alpha: float = 0.05,
+) -> CellSpec:
+    """A K-matched control cell (NEXT-STEPS 2.4): the ``(env, T, seed_cap)`` cell's seed, at `cap`.
+
+    The control -- `always_search` capped at a learned policy's own realised K_final -- is a
+    control only if it runs on the SAME episodes as the learned policy did, so the cell
+    keeps `base_seed(split, env_id, horizon, seed_cap)` and overrides nothing but the cap.
+    A cell of its own in the grid (the `EXTRA_CAPS` mechanism) would draw fresh episodes
+    and throw the pairing away. Consequently a matched cell has no `cell_id`; it is never
+    part of the study's grid and its name (``<env>_T<T>_cap<K>``) must not collide with
+    one -- which it cannot, since a K that equals a grid cap IS that grid cell.
+
+    `cap` must be reachable: at least `n_initial_arms + 1` (there must be a SEARCH to cap)
+    and at most the horizon.
+    """
+    cap = int(cap)
+    if not 3 <= cap <= int(horizon):
+        raise ValueError(f"matched cap must be in [3, T={horizon}]; got {cap}")
+    if env_id not in ALL_ENVS:
+        raise KeyError(f"unknown environment {env_id!r}; known={ENV_ORDER}")
+    return CellSpec(
+        env_id=env_id,
+        env_spec=ALL_ENVS[env_id],
+        horizon=int(horizon),
+        cap=cap,
+        base_seed=base_seed(split, env_id, horizon, seed_cap),
+        n_replicates=int(n_replicates),
+        alpha=float(alpha),
+    )
+
+
+def cell_at_cap(
+    split: str, env_id: str, horizon: int, cap: int | str, n_replicates: int, alpha: float = 0.05
+) -> CellSpec:
+    """The cell for tuning or selecting constants at `cap` on `split`.
+
+    Caps of the study's grid (`CAPS`, `EXTRA_CAPS`) resolve through `make_cell` as always,
+    so every existing tuning row keeps its seed. Any other cap -- the paired sweep's
+    ladder (`run_deployment.CAPP_HORIZON_CAPS`) -- runs on the cap-64 cell's seed for
+    that split (`make_matched_cell`): the constants selected at cap 48 are then selected
+    on the same episodes as those at cap 64, which is the pairing the sweep deploys them
+    under.
+    """
+    try:
+        return make_cell(split, env_id, horizon, cap, n_replicates, alpha)
+    except ValueError:
+        return make_matched_cell(split, env_id, horizon, int(cap), n_replicates, seed_cap=64, alpha=alpha)
+
+
 # ---- seed-disjointness guard --------------------------------------------------------
 
 #: RUNBOOK.md section 1: the arguments the corpus was generated with.

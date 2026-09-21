@@ -97,6 +97,14 @@ A_NAMED_TABLES: frozenset[str] = frozenset(
     {"offline_vs_deployed", "surrogate_validity", "tau_curves", "recommender_sensitivity",
      "recommender_kendall", "onpolicy_parity", "onpolicy_parity_detail", "ood_flags"}
 )
+#: The tables built from EVERY recommender's rows at once. They are written only by a
+#: `--recommender all` run; nothing backfills a missing recommender from disk (finding
+#: 4.4 -- the backfill had no freshness check and would have mixed a corrected episode
+#: set with a contaminated one).
+CROSS_RECOMMENDER_TABLES: tuple[str, ...] = (
+    "offline_vs_deployed", "surrogate_validity", "tau_curves",
+    "recommender_sensitivity", "recommender_kendall",
+)
 PER_TEST_TABLE_NAMES: dict[str, str] = {
     "D": "transfer_D", "C": "heldout_C", "B": "regime_B", "cap": "cap_sweep",
 }
@@ -110,8 +118,17 @@ def _seed(*parts) -> int:
     return int(zlib.crc32("|".join(str(p) for p in parts).encode("utf-8")))
 
 
+#: Set by `main` when ``--accept-unmanifested`` is passed. Every table written under that
+#: escape carries ``accepted_unmanifested`` so a reader can tell that the episode tree was
+#: *not* reconciled against the manifest for these numbers (`reconcile_episodes`).
+_ACCEPT_UNMANIFESTED = False
+
+
 def write_csv(df: pd.DataFrame, path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if _ACCEPT_UNMANIFESTED:
+        df = df.copy()
+        df["accepted_unmanifested"] = True
     tmp = path.with_suffix(path.suffix + ".tmp")
     df.to_csv(tmp, index=False)
     os.replace(tmp, path)
@@ -158,14 +175,160 @@ def recommenders_in(frame: pd.DataFrame) -> list[str]:
     return [r for r in RECOMMENDER_NAMES if f"regret_{r}" in frame.columns]
 
 
-def load_cells(out_dir: Path, test: str) -> list[Cell]:
+def _is_cell_dir(path: Path) -> bool:
+    """Whether a directory under ``episodes/<test>`` is a cell.
+
+    Quarantined orphans live in a sibling of ``episodes/`` (``episodes_quarantine/``)
+    and are already outside this glob, but a quarantine directory parked *inside* the
+    tree must not be read as a cell either -- that would re-import the very files it was
+    created to hold back.
+    """
+    return path.is_dir() and "quarantine" not in path.name.lower() and not path.name.startswith(".")
+
+
+def episode_files_on_disk(out_dir: Path, test: str) -> dict[tuple[str, str], Path]:
+    """``(cell, policy) -> parquet path`` for every episode file of `test` on disk.
+
+    Globs ``*.parquet`` only, so a ``*.parquet.tmp`` left by a worker that was killed
+    mid-write is not an episode (`run_deployment.OrphanedWorker`).
+    """
+    root = out_dir / "episodes" / test
+    found: dict[tuple[str, str], Path] = {}
+    if not root.is_dir():
+        return found
+    for cell_dir in sorted(p for p in root.iterdir() if _is_cell_dir(p)):
+        for pq in sorted(cell_dir.glob("*.parquet")):
+            found[(cell_dir.name, pq.stem)] = pq
+    return found
+
+
+def reconcile_episodes(
+    out_dir: Path, test: str, manifest: dict[tuple[str, str, str], dict]
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """``(orphans, holes)``: files no manifest line claims, and lines with no file.
+
+    This is the guard that rulings 17 and 22 were missing. The parquet write happens in
+    a pool worker and the manifest append in the parent (`run_deployment.run_items`), so
+    a killed parent leaves complete episode files that no line mentions -- and this
+    function's caller used to ``glob("*.parquet")`` with no reconciliation at all. Nine
+    such files would have lifted Test D's common support from 16 policies to 19, undone
+    a deliberate exclusion and moved a published headline; both batches were caught only
+    by hand.
+
+    An **orphan** is a file on disk whose latest manifest line is absent *or* is an
+    exclusion (`run_deployment.KIND_EXCLUSION`): an item recorded as deliberately not
+    run has no business having episodes. A **hole** is a completion line whose file is
+    gone -- the quarantine case, where the tree can no longer reproduce the manifest.
+
+    Reads only directory entries, never a parquet: 3,510 files in ~0.2 s.
+    """
+    disk = set(episode_files_on_disk(out_dir, test))
+    completions: set[tuple[str, str]] = set()
+    excluded: set[tuple[str, str]] = set()
+    for (rec_test, cell, policy), rec in manifest.items():
+        if rec_test != test:
+            continue
+        if rd.record_kind(rec) == rd.KIND_EXCLUSION:
+            excluded.add((cell, policy))
+        else:
+            completions.add((cell, policy))
+    orphans = sorted((disk - completions) | (disk & excluded))
+    holes = sorted(completions - disk)
+    return orphans, holes
+
+
+def sim_shas_in(manifest: dict[tuple[str, str, str], dict], test: str) -> tuple[set[str], int]:
+    """``(distinct sim_sha values, how many completion lines carry none)``.
+
+    `run_deployment.sim_surface_sha` fingerprints the source that determines an episode.
+    Two values in one test means the cells were produced by two different simulators and
+    nothing downstream can tell which row came from which.
+    """
+    stamped: set[str] = set()
+    unstamped = 0
+    for (rec_test, _cell, _policy), rec in manifest.items():
+        if rec_test != test or rd.record_kind(rec) == rd.KIND_EXCLUSION:
+            continue
+        sha = rec.get("sim_sha")
+        if sha:
+            stamped.add(str(sha))
+        else:
+            unstamped += 1
+    return stamped, unstamped
+
+
+def _reconciliation_message(test: str, orphans: list, holes: list) -> str:
+    lines = [
+        f"test {test}: the episode tree and manifest_{test}.jsonl disagree "
+        f"({len(orphans)} orphan file(s), {len(holes)} manifest hole(s)).",
+    ]
+    if orphans:
+        lines.append("  ORPHANS (on disk, not claimed by a completion line) -- a killed "
+                     "--resume leaves these; quarantine them, do not analyse them:")
+        lines += [f"    {c}/{p}.parquet" for c, p in orphans]
+    if holes:
+        lines.append("  HOLES (a completion line whose parquet is gone) -- the tree no "
+                     "longer reproduces the manifest:")
+        lines += [f"    {c}/{p}" for c, p in holes]
+    lines.append("  Resolve it, or re-run with --accept-unmanifested (which stamps "
+                 "accepted_unmanifested on every table this run writes).")
+    return "\n".join(lines)
+
+
+def load_cells(
+    out_dir: Path,
+    test: str,
+    manifest: dict[tuple[str, str, str], dict] | None = None,
+    *,
+    accept_unmanifested: bool = False,
+    allow_mixed_sim: bool = False,
+) -> list[Cell]:
     """Every cell of `test` from ``episodes/<test>``; frames sorted by episode and checked
-    to share the seed and episode set (the CRN pairing the paired statistics assume)."""
+    to share the seed and episode set (the CRN pairing the paired statistics assume).
+
+    `manifest` is `run_deployment.latest_records` of ``manifest_<test>.jsonl``. When it
+    is given -- which the CLI always does -- the tree is reconciled against it first and
+    a disagreement is a `SystemExit` (`reconcile_episodes`), because an unmanifested
+    episode file silently changes the common support and therefore the headline numbers.
+    ``None`` is for hand-built fixtures that have no manifest; it is *not* a CLI option,
+    and `test_cli_always_reconciles_against_the_manifest` holds that line.
+
+    The same pass refuses a test whose episodes span more than one
+    `run_deployment.sim_surface_sha` (``--allow-mixed-sim`` to override): a table built
+    from two simulators cannot say which row came from which.
+    """
+    if manifest is not None:
+        orphans, holes = reconcile_episodes(out_dir, test, manifest)
+        if orphans or holes:
+            message = _reconciliation_message(test, orphans, holes)
+            if not accept_unmanifested:
+                raise SystemExit(message)
+            log.error("--accept-unmanifested: analysing anyway.\n%s", message)
+        stamped, unstamped = sim_shas_in(manifest, test)
+        if len(stamped) > 1:
+            message = (
+                f"test {test}: its episodes span {len(stamped)} simulation surfaces "
+                f"({', '.join(sorted(stamped))}). Rows produced by different code are "
+                "being pooled into one table; re-run the odd cells, or pass "
+                "--allow-mixed-sim if you have checked that the difference cannot "
+                "change an episode."
+            )
+            if not allow_mixed_sim:
+                raise SystemExit(message)
+            log.error("--allow-mixed-sim: analysing anyway. %s", message)
+        if stamped and unstamped:
+            log.warning(
+                "test %s: %d item(s) predate the simulation-surface fingerprint and are "
+                "pooled with %d that carry %s; their code version is unknown",
+                test, unstamped, len(manifest) - unstamped, ", ".join(sorted(stamped)),
+            )
+        elif stamped:
+            log.info("test %s: one simulation surface, %s", test, next(iter(stamped)))
     root = out_dir / "episodes" / test
     if not root.is_dir():
         raise FileNotFoundError(f"no episodes for test {test!r} under {root}")
     cells: list[Cell] = []
-    for cell_dir in sorted(p for p in root.iterdir() if p.is_dir()):
+    for cell_dir in sorted(p for p in root.iterdir() if _is_cell_dir(p)):
         frames: dict[str, pd.DataFrame] = {}
         groups: dict[str, str] = {}
         meta: dict | None = None
@@ -220,6 +383,12 @@ def mark_untuned_baselines(
 
     Three sources are consulted, so neither a stale manifest nor a stale JSON can hide one:
 
+    A cell's live-arm cap is part of this. Every constant in `baseline_params.json` was
+    selected at one cap (``meta.cap`` = 64), so the cap sweep deploys tuned-looking
+    constants at caps 32, 128 and T that were never selected there -- and every shipped
+    manifest line predates the `policy_table.PARAMS_CAP` stamp, so the mismatch is
+    re-derived here from the table rather than read back (finding 4.5 / ruling 20).
+
     * `policy_table.resolve_params` stamps ``params_tuned: False`` on the item it resolves,
       read back here from the manifest;
     * `policy_table.baseline_is_tuned` re-derives the same answer from today's
@@ -241,18 +410,18 @@ def mark_untuned_baselines(
         untuned = set()
         for policy in c.policies:
             params = recorded.get((c.name, policy))
-            if not pt.baseline_is_tuned(policy, c.horizon, baseline_params):
+            if not pt.baseline_is_tuned(policy, c.horizon, baseline_params, cap=c.cap):
                 untuned.add(policy)
             elif params is not None and not pt.params_are_tuned(params):
                 untuned.add(policy)
             elif params is not None and not pt.deployed_params_are_current(
-                policy, c.horizon, params, baseline_params
+                policy, c.horizon, params, baseline_params, cap=c.cap
             ):
                 log.warning(
                     "%s/%s deployed %s, but the policy table resolves %s today: the episodes "
                     "on disk are not the tuned comparator",
                     c.name, policy, params,
-                    pt.resolve_params(policy, c.horizon, baseline_params=baseline_params),
+                    pt.resolve_params(policy, c.horizon, cap=c.cap, baseline_params=baseline_params),
                 )
                 untuned.add(policy)
         c.untuned = frozenset(untuned)
@@ -398,6 +567,14 @@ class Stratum:
     #: it) is comparable across policies. ``None`` means "not computed" and is read as
     #: `cells` (a stratum built by hand, e.g. in a test).
     common: tuple[str, ...] | None = None
+    #: The live-arm cap this stratum is specific to, or ``"all"`` when it pools every cap
+    #: present. A test that varies the cap (the cap sweep) must not pool four caps into
+    #: one `family_horizon` row: the constants were tuned at one cap, so the caps are
+    #: different comparators, not repetitions of the same one (finding 4.5). A test with
+    #: a single cap has nothing to disambiguate and keeps ``"all"``, which leaves every
+    #: other test's strata exactly as they were. Declared last so the positional
+    #: construction in `strata_of` and in tests is unaffected.
+    cap: str = "all"
 
 
 def common_cells(cells: list[Cell], names: tuple[str, ...]) -> tuple[str, ...]:
@@ -418,14 +595,25 @@ def common_cells(cells: list[Cell], names: tuple[str, ...]) -> tuple[str, ...]:
 def strata_of(cells: list[Cell]) -> list[Stratum]:
     families = sorted({c.family for c in cells})
     horizons = sorted({c.horizon for c in cells})
+    caps = sorted({c.cap for c in cells})
     out: list[Stratum] = []
     for c in cells:
-        out.append(Stratum("cell", c.family, str(c.horizon), c.name, (c.name,), (c.name,)))
+        out.append(Stratum("cell", c.family, str(c.horizon), c.name, (c.name,), (c.name,), str(c.cap)))
+    # `family_horizon` splits by cap whenever the test has more than one, the same way
+    # `family` and `horizon` below exist only when there is more than one horizon or
+    # family. Pooling caps 32, 64, 128 and T into one row put a NaN `cap` column on four
+    # different comparators (finding 4.5).
     for f in families:
         for T in horizons:
-            names = tuple(c.name for c in cells if c.family == f and c.horizon == T)
-            if names:
-                out.append(Stratum("family_horizon", f, str(T), "", names, common_cells(cells, names)))
+            for cap in caps if len(caps) > 1 else (None,):
+                names = tuple(
+                    c.name for c in cells
+                    if c.family == f and c.horizon == T and (cap is None or c.cap == cap)
+                )
+                if names:
+                    out.append(Stratum("family_horizon", f, str(T), "", names,
+                                       common_cells(cells, names),
+                                       "all" if cap is None else str(cap)))
     if len(horizons) > 1:
         for f in families:
             names = tuple(c.name for c in cells if c.family == f)
@@ -452,23 +640,93 @@ def strata_of(cells: list[Cell]) -> list[Stratum]:
 #: ones restricted to a stratum's common support (`common_cells`).
 LEVEL_QUANTITIES: frozenset[str] = frozenset({"regret", "regret_disc", "regret_sel"})
 
-#: Fewest environments at which the percentile cluster bootstrap is still an interval
-#: rather than a range (finding F1).
+#: Fewest environments at which an environment-level interval is emitted at all
+#: (finding F1, then NEXT-STEPS 2.1).
 #:
-#: `stats.cluster_bootstrap_over_envs` resamples ``n`` environments with replacement and
-#: takes the 2.5th and 97.5th percentiles. The resample that draws the *same* environment
-#: ``n`` times has probability ``n**-n``: 25% at n=2, 3.7% at n=3, 0.39% at n=4. While
-#: that exceeds 2.5%, the 2.5th percentile IS the smallest environment mean and the
-#: 97.5th IS the largest, so the "95% interval" is exactly [min env mean, max env mean]
-#: and "cluster-significant" degrades to "every environment agrees in sign". The bounds
-#: are still emitted -- shipped text already cites them -- but every table that carries
-#: them also carries ``cluster_degenerate`` so a reader can tell the two apart.
+#: Below this the percentile cluster bootstrap is not an interval: the resample that
+#: draws the *same* environment ``n`` times has probability ``n**-n`` (25% at n=2, 3.7% at
+#: n=3), which exceeds 2.5%, so the "95% interval" is exactly [min env mean, max env
+#: mean] and "cluster-significant" degrades to "every environment agrees in sign". A
+#: t interval at n=3 has 2 degrees of freedom and the exact sign test a floor of 0.25,
+#: so neither is worth shipping either. `cluster_bounds` therefore emits only the range,
+#: under its own names ``cluster_min_env`` / ``cluster_max_env``, and every column that
+#: could be read as a test is NaN; ``cluster_degenerate`` flags the row.
 CLUSTER_MIN_ENVS = 4
 
 
 def cluster_is_degenerate(n_envs: int, lo: float) -> bool:
     """Whether an emitted cluster interval is the [min, max] range (`CLUSTER_MIN_ENVS`)."""
     return bool(np.isfinite(lo)) and int(n_envs) < CLUSTER_MIN_ENVS
+
+
+#: Every cluster column a table carries, so a caller can NaN them all out in one place.
+#:
+#: ``cluster_lo`` / ``cluster_hi`` are the PRIMARY environment-level interval: the
+#: Student-t interval on the environment means (`stats.env_mean_t_interval`), with its
+#: standard error ``cluster_se`` and two-sided p ``cluster_p``. ``cluster_p_sign`` is the
+#: exact sign-flip p (`stats.permutation_over_envs`, floor ``2 / 2**n_envs``);
+#: ``cluster_boot_t_*`` the studentized bootstrap-t check; ``cluster_pct_*`` the percentile
+#: cluster bootstrap the study shipped before 2.1, kept so the two can be compared on the
+#: same row. ``cluster_method`` names what ``cluster_lo`` / ``cluster_hi`` are.
+CLUSTER_KEYS: tuple[str, ...] = (
+    "cluster_lo", "cluster_hi", "cluster_se", "cluster_p", "cluster_p_sign",
+    "cluster_boot_t_lo", "cluster_boot_t_hi", "cluster_pct_lo", "cluster_pct_hi",
+    "cluster_min_env", "cluster_max_env", "cluster_degenerate", "cluster_method",
+)
+
+#: A row with no environment-level interval at all (a single cell, a missing policy).
+EMPTY_CLUSTER: dict = {
+    **{k: np.nan for k in CLUSTER_KEYS}, "cluster_degenerate": False, "cluster_method": "none",
+}
+
+
+def cluster_bounds(cm: pd.DataFrame, *, n_boot: int, seed: int) -> dict:
+    """The environment-level interval for `cm` (columns ``env_id``, ``value``).
+
+    The interval is the Student-t on the environment means. Measured against the
+    30-environment robustness population, the percentile cluster bootstrap the study
+    first shipped covers 0.719 / 0.796 / 0.863 / 0.893 at n = 3 / 4 / 6 / 8 against
+    nominal 0.95, where the t interval covers 0.918 / 0.922 / 0.935 / 0.943; every
+    adjusted p derived from the percentile interval was therefore too small. The
+    percentile interval still ships as ``cluster_pct_lo`` / ``cluster_pct_hi`` and the
+    studentized bootstrap-t as ``cluster_boot_t_lo`` / ``cluster_boot_t_hi``, so a reader
+    can see all three on one row; ``cluster_method`` says which one ``cluster_lo`` is.
+
+    Below `CLUSTER_MIN_ENVS` no interval is emitted. Flagging a degenerate one was not
+    enough -- a careful reader still quoted one as a 95% interval (ledger correction C7:
+    "C's reported cluster CI [-0.003446, -0.000079] IS [min env mean, max env mean] to
+    full float precision"). So the range ships under DIFFERENTLY NAMED columns,
+    ``cluster_min_env`` / ``cluster_max_env``, and every test-like column is NaN: the
+    wrong reading is unavailable rather than merely disclosed, and a downstream script
+    that quotes ``cluster_lo`` gets NaN instead of a number that means something else.
+    ``cluster_degenerate`` stays, so the old flag still reads True on those rows.
+
+    The range is taken from the environment means directly, not from the bootstrap's
+    percentiles, so it says what it is named regardless of resample count.
+    """
+    n_envs = int(cm["env_id"].nunique())
+    out = {"n_envs": n_envs, **EMPTY_CLUSTER}
+    if n_envs < 2:
+        return out
+    if n_envs < CLUSTER_MIN_ENVS:
+        env_means = cm.groupby("env_id")["value"].mean()
+        out["cluster_min_env"] = float(env_means.min())
+        out["cluster_max_env"] = float(env_means.max())
+        out["cluster_degenerate"] = True
+        out["cluster_method"] = "range"
+        return out
+    t = stats.env_mean_t_interval(cm, "env_id", "value")
+    bt = stats.cluster_bootstrap_t_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed)
+    pct = stats.cluster_bootstrap_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed)
+    out.update({
+        "cluster_lo": t["lo"], "cluster_hi": t["hi"], "cluster_se": t["se"], "cluster_p": t["p"],
+        "cluster_boot_t_lo": bt["lo"], "cluster_boot_t_hi": bt["hi"],
+        "cluster_pct_lo": pct["lo"], "cluster_pct_hi": pct["hi"],
+        "cluster_method": "env_mean_t",
+    })
+    if n_envs <= stats.PERMUTATION_MAX_ENVS:
+        out["cluster_p_sign"] = stats.permutation_over_envs(cm, "env_id", "value")["p"]
+    return out
 
 
 def contrast_reference(quantity: str) -> str | None:
@@ -528,8 +786,9 @@ def aggregate(
     have = [per_cell[c] for c in present]
     if not have:
         return {"mean": np.nan, "lo": np.nan, "hi": np.nan, "se": np.nan, "win": np.nan,
-                "n_cells": 0, "n_episodes": 0, "n_envs": 0, "cluster_lo": np.nan,
-                "cluster_hi": np.nan, "cluster_degenerate": False, **flags}
+                "n_cells": 0, "n_episodes": 0, "n_envs": 0,
+                **EMPTY_CLUSTER,
+                **flags}
     means = np.array([cs.mean[key] for cs in have])
     ses = np.array([cs.se[key] for cs in have])
     boot = np.mean([cs.boot[key].astype(np.float64) for cs in have], axis=0)
@@ -543,20 +802,37 @@ def aggregate(
         "n_cells": len(have),
         "n_episodes": int(sum(cs.cell.n for cs in have)),
         "n_envs": len({cs.cell.env_id for cs in have}),
-        "cluster_lo": np.nan,
-        "cluster_hi": np.nan,
+        **EMPTY_CLUSTER,
         **flags,
     }
     envs = [cs.cell.env_id for cs in have]
-    if len(set(envs)) >= 2 and stratum.level != "cell":
+    if stratum.level != "cell":
         cm = pd.DataFrame({"env_id": envs, "value": means})
-        cb = stats.cluster_bootstrap_over_envs(
-            cm, "env_id", "value", n_boot=min(have[0].boot[key].shape[0], 10_000),
+        bounds = cluster_bounds(
+            cm, n_boot=min(have[0].boot[key].shape[0], 10_000),
             seed=_seed("cluster", stratum.level, stratum.family, stratum.horizon, policy, quantity),
         )
-        out["cluster_lo"], out["cluster_hi"] = cb["lo"], cb["hi"]
-    out["cluster_degenerate"] = cluster_is_degenerate(out["n_envs"], out["cluster_lo"])
+        out.update({k: bounds[k] for k in CLUSTER_KEYS})
     return out
+
+
+#: Every key `descriptive_means` produces, so an empty stratum can be written as a row of
+#: NaNs with the same columns as a populated one.
+DESCRIPTIVE_KEYS: tuple[str, ...] = (
+    *DESCRIPTIVE_MEANS, "q", "n_rec", "n_demoted", "t_cap_hit_given_hit",
+)
+
+
+def stratum_is_empty(stratum: Stratum) -> bool:
+    """Whether the stratum's common support is empty, so no row of it is comparable.
+
+    `common_cells` keeps only the cells that carry *every* policy deployed anywhere in
+    the stratum; disjoint coverage empties that intersection. Before this the stratum
+    then vanished from the CSV with nothing visible in it and only a log warning (ledger
+    ruling 23) -- a table silently missing a stratum, which is the failure that is
+    impossible to notice downstream.
+    """
+    return stratum.common is not None and len(stratum.common) == 0
 
 
 def descriptive_for(per_cell: dict[str, CellStats], stratum: Stratum, policy: str) -> dict:
@@ -569,7 +845,7 @@ def descriptive_for(per_cell: dict[str, CellStats], stratum: Stratum, policy: st
     names = _level_cells(stratum)
     have = [per_cell[c] for c in names if c in per_cell and policy in per_cell[c].descriptive]
     if not have:
-        return {}
+        return dict.fromkeys(DESCRIPTIVE_KEYS, float("nan")) if stratum_is_empty(stratum) else {}
     keys = list(have[0].descriptive[policy])
     out: dict[str, float] = {}
     for k in keys:
@@ -585,7 +861,9 @@ def _stratum_meta(test: str, rec: str, s: Stratum, cells_by_name: dict[str, Cell
         c = cells_by_name[s.cell]
         meta.update({"env_id": c.env_id, "cap": c.cap, "base_seed": c.base_seed})
     else:
-        meta.update({"env_id": "", "cap": "", "base_seed": ""})
+        # `cap` is the stratum's, not blank: "all" where caps are pooled and the cap
+        # itself where the stratum is specific to one (`Stratum.cap`).
+        meta.update({"env_id": "", "cap": s.cap, "base_seed": ""})
     return meta
 
 
@@ -594,6 +872,84 @@ def policy_group(policy: str, cells: list[Cell]) -> str:
         if policy in c.groups:
             return c.groups[policy]
     return pt.POLICIES.get(policy, {}).get("group", "?")
+
+
+#: The only numbers an empty-stratum row keeps: they are the evidence that it is empty
+#: (all zero), not a result anyone could quote. Everything else in such a row is NaN.
+EMPTY_ROW_COUNTS: frozenset[str] = frozenset({"n_cells", "n_envs", "n_episodes", "n_cells_policy"})
+
+
+def _void_empty_strata(frame: pd.DataFrame) -> pd.DataFrame:
+    """NaN every result number of a row whose stratum has an empty common support.
+
+    A contrast is paired within a cell, so `aggregate` can still put a number on such a
+    row (cp0 against itself, say) although the stratum has no comparable support at all.
+    Leaving it there is how a void stratum gets quoted. The row stays -- that is the
+    whole point of ruling 23 -- and carries `stratum_empty_common_support` plus its zero
+    support counts, but nothing that looks like a result.
+    """
+    if "stratum_empty_common_support" not in frame.columns:
+        return frame
+    mask = frame["stratum_empty_common_support"].to_numpy(dtype=bool)
+    if not mask.any():
+        return frame
+    voided = [
+        c for c in frame.select_dtypes(include="number").columns
+        if c not in EMPTY_ROW_COUNTS and not c.endswith(("_n_cells", "_n_excluded_untuned"))
+    ]
+    frame = frame.copy()
+    frame[voided] = frame[voided].astype(float)
+    frame.loc[mask, voided] = np.nan
+    return frame
+
+
+def _ran_in(policy: str, stratum: Stratum, cells_by_name: dict[str, Cell]) -> bool:
+    """Whether `policy` produced episodes anywhere in the stratum's cells."""
+    return any(
+        policy in cells_by_name[name].frames for name in stratum.cells if name in cells_by_name
+    )
+
+
+def strata_coverage(
+    test: str, cells: list[Cell], strata: list[Stratum], exclusions: dict | None = None
+) -> pd.DataFrame:
+    """One row per stratum: what it pools, what the common support dropped, what is excluded.
+
+    The table a reader consults before quoting a level. It makes three things visible
+    that were previously only in a log line or nowhere at all: how many of a stratum's
+    cells survive the common-support intersection, which policies' ragged coverage
+    caused the drop, and every *deliberate* exclusion recorded in the manifest
+    (`run_deployment.exclusion_record`) that touches the stratum -- so an exclusion
+    cannot be used to make a number look better without leaving a trace beside it.
+    """
+    cells_by_name = {c.name: c for c in cells}
+    active: dict[str, list[str]] = {}
+    for (rec_test, cell, policy), record in (exclusions or {}).items():
+        if rec_test == test:
+            active.setdefault(cell, []).append(f"{policy} ({record.get('reason')})")
+    rows: list[dict] = []
+    for s in strata:
+        names = [n for n in s.cells if n in cells_by_name]
+        common = set(_level_cells(s))
+        everywhere = set.intersection(*(set(cells_by_name[n].frames) for n in names)) if names else set()
+        anywhere = set().union(*(set(cells_by_name[n].frames) for n in names)) if names else set()
+        rows.append({
+            "test": test, "level": s.level, "family": s.family, "horizon": s.horizon,
+            "cap": s.cap, "cell": s.cell,
+            "n_cells": len(s.cells),
+            "n_common": len(common),
+            "n_cells_dropped": len(s.cells) - len(common),
+            "cells_dropped": ";".join(sorted(set(s.cells) - common)),
+            "n_policies_anywhere": len(anywhere),
+            "n_policies_everywhere": len(everywhere),
+            "policies_ragged": ";".join(sorted(anywhere - everywhere)),
+            "stratum_empty_common_support": stratum_is_empty(s),
+            "n_active_exclusions": sum(len(active.get(n, ())) for n in names),
+            "active_exclusions": ";".join(
+                f"{n}/{item}" for n in sorted(names) for item in sorted(active.get(n, ()))
+            ),
+        })
+    return pd.DataFrame(rows)
 
 
 def main_table(
@@ -614,7 +970,16 @@ def main_table(
     policies = sorted({p for c in cells for p in c.policies})
     rows: list[dict] = []
     for s in strata:
+        empty = stratum_is_empty(s)
+        if empty:
+            log.error(
+                "%s %s/%s: EMPTY common support over %d cells; its rows are written with "
+                "every number NaN and stratum_empty_common_support = True",
+                s.level, s.family, s.horizon, len(s.cells),
+            )
         for policy in policies:
+            if empty and not _ran_in(policy, s, cells_by_name):
+                continue
             desc = descriptive_for(per_cell, s, policy)
             if not desc:
                 if any(policy in cells_by_name[c].frames for c in s.cells if c in cells_by_name):
@@ -625,7 +990,8 @@ def main_table(
                     )
                 continue
             row = _stratum_meta(test, rec, s, cells_by_name)
-            row.update({"policy": policy, "group": policy_group(policy, cells)})
+            row.update({"policy": policy, "group": policy_group(policy, cells),
+                        "stratum_empty_common_support": empty})
             reg = aggregate(per_cell, s, policy, "regret")
             row.update({
                 "n_cells": reg["n_cells"], "n_envs": reg["n_envs"], "n_episodes": reg["n_episodes"],
@@ -646,14 +1012,13 @@ def main_table(
                 p = f"d_regret_vs_{ref}"
                 row.update({
                     p: d["mean"], f"{p}_lo": d["lo"], f"{p}_hi": d["hi"], f"{p}_se": d["se"],
-                    f"{p}_win": d["win"], f"{p}_cluster_lo": d["cluster_lo"],
-                    f"{p}_cluster_hi": d["cluster_hi"], f"{p}_n_cells": d["n_cells"],
-                    f"{p}_cluster_degenerate": d["cluster_degenerate"],
+                    f"{p}_win": d["win"], f"{p}_n_cells": d["n_cells"],
+                    **{f"{p}_{k}": d[k] for k in CLUSTER_KEYS},
                     f"{p}_ref_tuned": d["ref_tuned"],
                     f"{p}_n_excluded_untuned": d["n_cells_excluded_untuned"],
                 })
             rows.append(row)
-    return pd.DataFrame(rows)
+    return _void_empty_strata(pd.DataFrame(rows))
 
 
 def decomposition_table(
@@ -665,12 +1030,14 @@ def decomposition_table(
     policies = sorted({p for c in cells for p in c.policies})
     rows: list[dict] = []
     for s in strata:
+        empty = stratum_is_empty(s)
         for policy in policies:
             reg = aggregate(per_cell, s, policy, "regret")
-            if reg["n_cells"] == 0:
+            if reg["n_cells"] == 0 and not (empty and _ran_in(policy, s, cells_by_name)):
                 continue
             row = _stratum_meta(test, rec, s, cells_by_name)
-            row.update({"policy": policy, "group": policy_group(policy, cells),
+            row.update({"stratum_empty_common_support": empty,
+                        "policy": policy, "group": policy_group(policy, cells),
                         "n_cells": reg["n_cells"], "n_episodes": reg["n_episodes"],
                         "n_cells_policy": reg["n_cells_policy"],
                         "common_support": reg["common_support"], "params_tuned": reg["params_tuned"],
@@ -684,7 +1051,7 @@ def decomposition_table(
                     row.update({"cp0_ref_tuned": a["ref_tuned"],
                                 "cp0_n_excluded_untuned": a["n_cells_excluded_untuned"]})
             rows.append(row)
-    return pd.DataFrame(rows)
+    return _void_empty_strata(pd.DataFrame(rows))
 
 
 # ---- contrasts ------------------------------------------------------------------------------
@@ -748,8 +1115,9 @@ def contrast_via_stats(
     if not diffs:
         return {"status": missing_status(cells, s, policy, ref),
                 "delta": np.nan, "lo": np.nan, "hi": np.nan, "se": np.nan, "win": np.nan,
-                "n_cells": 0, "n_episodes": 0, "n_envs": 0, "cluster_lo": np.nan,
-                "cluster_hi": np.nan, "cluster_degenerate": False, **flags}
+                "n_cells": 0, "n_episodes": 0, "n_envs": 0,
+                **EMPTY_CLUSTER,
+                **flags}
     seed = _seed("primary", s.level, s.family, s.horizon, s.cell, policy, ref, rec)
     if len(diffs) == 1:
         d = next(iter(diffs.values()))
@@ -764,16 +1132,11 @@ def contrast_via_stats(
         cell_means = b["cell_means"]
     env_of = {c.name: c.env_id for c in cells}
     cm = pd.DataFrame({"env_id": [env_of[n] for n in cell_means], "value": list(cell_means.values())})
-    cluster_lo = cluster_hi = np.nan
-    if cm["env_id"].nunique() >= 2:
-        cb = stats.cluster_bootstrap_over_envs(cm, "env_id", "value", n_boot=n_boot, seed=seed + 1)
-        cluster_lo, cluster_hi = cb["lo"], cb["hi"]
+    bounds = cluster_bounds(cm, n_boot=n_boot, seed=seed + 1)
     status = "ok" if ref_tuned else "untuned_reference"
-    n_envs = int(cm["env_id"].nunique())
     return {"status": status, "delta": mean, "lo": lo, "hi": hi, "se": se, "win": win,
             "n_cells": len(diffs), "n_episodes": int(sum(d.size for d in diffs.values())),
-            "n_envs": n_envs, "cluster_lo": cluster_lo, "cluster_hi": cluster_hi,
-            "cluster_degenerate": cluster_is_degenerate(n_envs, cluster_lo), **flags}
+            "n_envs": bounds["n_envs"], **{k: bounds[k] for k in CLUSTER_KEYS}, **flags}
 
 
 def primary_contrasts(
@@ -818,9 +1181,8 @@ def secondary_contrasts(
                             "status": "ok" if a["ref_tuned"] else "untuned_reference",
                             "delta": a["mean"], "lo": a["lo"], "hi": a["hi"], "se": a["se"],
                             "win": a["win"], "n_cells": a["n_cells"], "n_episodes": a["n_episodes"],
-                            "n_envs": a["n_envs"], "cluster_lo": a["cluster_lo"],
-                            "cluster_hi": a["cluster_hi"],
-                            "cluster_degenerate": a["cluster_degenerate"], "evaluated": True,
+                            "n_envs": a["n_envs"],
+                            **{k: a[k] for k in CLUSTER_KEYS}, "evaluated": True,
                             "ref_tuned": a["ref_tuned"], "params_tuned": a["params_tuned"],
                             "n_cells_excluded_untuned": a["n_cells_excluded_untuned"]})
                 rows.append(row)
@@ -1232,6 +1594,15 @@ def _env_spec_of(env_id: str) -> dict:
 
 
 def run_diagnostics(items: list[DiagItem], workers: int) -> list[dict]:
+    """Every diagnostics item, returned in a deterministic (cell, policy) order.
+
+    The pool hands results back through `imap_unordered`, so without the final sort the
+    row order of every table built from them -- ``onpolicy_parity_detail``, ``ood_*``,
+    ``reservoir_*`` -- is whatever order the workers happened to finish in. Those tables
+    are under version control precisely so a number can be traced from the tree, and a
+    re-run that reshuffles their rows produces a diff with no information in it and no
+    way to tell at a glance that nothing moved.
+    """
     if not items:
         return []
     results: list[dict] = []
@@ -1240,12 +1611,14 @@ def run_diagnostics(items: list[DiagItem], workers: int) -> list[dict]:
         for i, d in enumerate(items, 1):
             results.append(run_diag_item(d))
             log.info("[%d/%d] %s/%s %.1fs", i, len(items), d.item.cell, d.item.policy, results[-1]["seconds"])
+        results.sort(key=lambda r: (str(r["cell"]), str(r["policy"])))
         return results
     ctx = mp.get_context("spawn")
     with ctx.Pool(int(workers), initializer=_worker_init, initargs=(logging.getLogger().level or logging.INFO,)) as pool:
         for i, r in enumerate(pool.imap_unordered(run_diag_item, items, chunksize=1), 1):
             results.append(r)
             log.info("[%d/%d] %s/%s %.1fs (elapsed %.0fs)", i, len(items), r["cell"], r["policy"], r["seconds"], time.time() - t0)
+    results.sort(key=lambda r: (str(r["cell"]), str(r["policy"])))
     return results
 
 
@@ -1266,7 +1639,10 @@ def prebuild_tables(cells: list[Cell]) -> None:
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--test", required=True, choices=rd.TESTS)
-    p.add_argument("--recommender", default="all", help="all | one of " + ", ".join(RECOMMENDER_NAMES))
+    p.add_argument("--recommender", default="all",
+                   help="all | one of " + ", ".join(RECOMMENDER_NAMES)
+                        + " (a single recommender does NOT write the cross-recommender tables: "
+                        + ", ".join(CROSS_RECOMMENDER_TABLES) + ")")
     p.add_argument("--n-boot", type=int, default=10_000)
     p.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     p.add_argument("--tables-dir", type=Path, default=None, help="default: <out-dir>/tables")
@@ -1284,6 +1660,16 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
                         "onpolicy_parity table (the same policies and feature layer) as the gate")
     p.add_argument("--allow-unverified", action="store_true",
                    help="write main tables even when no on-policy snapshots exist to verify parity")
+    p.add_argument("--allow-empty-strata", action="store_true",
+                   help="do not exit non-zero when a stratum above cell level has an empty "
+                        "common support (its rows are written as NaN either way)")
+    p.add_argument("--allow-mixed-sim", action="store_true",
+                   help="analyse a test whose episodes were produced by more than one "
+                        "simulation-surface fingerprint (run_deployment.sim_surface_sha)")
+    p.add_argument("--accept-unmanifested", action="store_true",
+                   help="analyse an episode tree that disagrees with manifest_<test>.jsonl "
+                        "(orphan files or missing ones); every table written then carries an "
+                        "accepted_unmanifested column")
     p.add_argument("--log-level", default="INFO")
     return p.parse_args(argv)
 
@@ -1300,8 +1686,12 @@ def main(argv: list[str] | None = None) -> dict:
     t_run = time.time()
     written: list[Path] = []
 
-    cells = load_cells(out_dir, test)
+    global _ACCEPT_UNMANIFESTED
+    _ACCEPT_UNMANIFESTED = bool(args.accept_unmanifested)
+
     manifest = rd.latest_records(rd.read_manifest(rd.manifest_path(out_dir, test)))
+    cells = load_cells(out_dir, test, manifest, accept_unmanifested=_ACCEPT_UNMANIFESTED,
+                       allow_mixed_sim=bool(args.allow_mixed_sim))
     mark_untuned_baselines(cells, manifest, pt.load_baseline_params(out_dir / "baseline_params.json"))
     recs_present = recommenders_in(cells[0].frames[cells[0].policies[0]])
     if args.recommender == "all":
@@ -1391,6 +1781,10 @@ def main(argv: list[str] | None = None) -> dict:
 
     # ---- 2. main tables per recommender ------------------------------------------------------
     strata = strata_of(cells)
+    exclusions = rd.active_exclusions(rd.read_manifest(rd.manifest_path(out_dir, test)))
+    written.append(write_csv(strata_coverage(test, cells, strata, exclusions),
+                             tables_dir / f"strata_coverage_{test}.csv"))
+    empty_strata = [s for s in strata if stratum_is_empty(s)]
     main_by_rec: dict[str, pd.DataFrame] = {}
     cells_by_rec: dict[str, pd.DataFrame] = {}
     for rec in recs:
@@ -1412,24 +1806,45 @@ def main(argv: list[str] | None = None) -> dict:
         log.info("recommender %s: tables in %.1fs", rec, time.perf_counter() - t0)
         del per_cell
 
-    main_all, cells_all = cross_recommender_frames(tables_dir, test, recs_present, main_by_rec, cells_by_rec)
+    # ---- 3. cross-recommender tables (only from a complete run) ----------------------------
+    # These five read EVERY recommender's rows. They used to be completed from whatever
+    # per-recommender tables happened to be on disk, with no freshness check of any kind
+    # (`cross_recommender_frames`, deleted). The near-miss is concrete: immediately after
+    # the ruling-22 quarantine, `--test D --recommender primary` would have recomputed
+    # the primary recommender on the corrected 16-policy episode set while silently
+    # backfilling four recommenders computed on the contaminated 19-policy set -- the
+    # same corruption as rulings 17 and 22, one layer up, and invisible to the episode
+    # reconciler because it happens at the table layer. An mtime fingerprint would fire
+    # spuriously on `git checkout` or rsync and acquire a --force that stays on, so the
+    # backfill is simply gone: these tables need --recommender all, which is what the
+    # RUNBOOK already runs for every test.
+    if set(recs) != set(recs_present):
+        log.warning(
+            "--recommender %s: the five cross-recommender tables (%s) are NOT written; "
+            "they need every recommender in one run -- re-run with --recommender all. "
+            "Any copies on disk are left untouched and are now older than these tables.",
+            args.recommender,
+            ", ".join(CROSS_RECOMMENDER_TABLES),
+        )
+    else:
+        main_all = pd.concat([main_by_rec[r] for r in recs], ignore_index=True)
+        cells_all = pd.concat([cells_by_rec[r] for r in recs], ignore_index=True)
+        offline_path = out_dir / "offline_metrics.csv"
+        offline_metrics = pd.read_csv(offline_path) if offline_path.exists() else None
+        ovd, validity = offline_vs_deployed(test, main_all, offline_metrics)
+        written.append(write_csv(ovd, tables_dir / table_name("offline_vs_deployed", test)))
+        written.append(write_csv(validity, tables_dir / table_name("surrogate_validity", test)))
 
-    # ---- 3. cross-cutting tables -------------------------------------------------------------------
-    offline_path = out_dir / "offline_metrics.csv"
-    offline_metrics = pd.read_csv(offline_path) if offline_path.exists() else None
-    ovd, validity = offline_vs_deployed(test, main_all, offline_metrics)
-    written.append(write_csv(ovd, tables_dir / table_name("offline_vs_deployed", test)))
-    written.append(write_csv(validity, tables_dir / table_name("surrogate_validity", test)))
+        ts_path = out_dir / "threshold_selection.csv"
+        ts = pd.read_csv(ts_path) if ts_path.exists() else None
+        if ts is None:
+            log.warning("%s absent: tau_curves holds only the post-hoc test points", ts_path.name)
+        written.append(write_csv(tau_curves(test, main_all, ts, manifest),
+                                 tables_dir / table_name("tau_curves", test)))
 
-    ts_path = out_dir / "threshold_selection.csv"
-    ts = pd.read_csv(ts_path) if ts_path.exists() else None
-    if ts is None:
-        log.warning("%s absent: tau_curves holds only the post-hoc test points", ts_path.name)
-    written.append(write_csv(tau_curves(test, main_all, ts, manifest), tables_dir / table_name("tau_curves", test)))
-
-    ranks, kendall = recommender_sensitivity(test, cells_all)
-    written.append(write_csv(ranks, tables_dir / table_name("recommender_sensitivity", test)))
-    written.append(write_csv(kendall, tables_dir / table_name("recommender_kendall", test)))
+        ranks, kendall = recommender_sensitivity(test, cells_all)
+        written.append(write_csv(ranks, tables_dir / table_name("recommender_sensitivity", test)))
+        written.append(write_csv(kendall, tables_dir / table_name("recommender_kendall", test)))
 
     written.append(write_csv(dynamics_table(out_dir, test, cells), tables_dir / f"dynamics_{test}.csv"))
     written.append(write_csv(cap_demotion_table(test, cells, manifest), tables_dir / f"cap_demotion_{test}.csv"))
@@ -1445,41 +1860,30 @@ def main(argv: list[str] | None = None) -> dict:
         written.append(write_csv(extra, tables_dir / f"{PER_TEST_TABLE_NAMES[test]}.csv"))
 
     log.info("test %s: %d tables in %.1fs", test, len(written), time.time() - t_run)
-    return {"test": test, "gate_ok": gate_ok, "n_states": n_states, "written": [str(p) for p in written]}
-
-
-def cross_recommender_frames(
-    tables_dir: Path,
-    test: str,
-    recs_present: list[str],
-    main_by_rec: dict[str, pd.DataFrame],
-    cells_by_rec: dict[str, pd.DataFrame],
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """The main / cells rows of *every* recommender the frames hold: the ones computed
-    in this run plus any written by an earlier run (`--recommender <one>` must not shrink
-    the cross-recommender tables to one recommender). Missing ones are logged."""
-    mains, cells_tabs, missing = [], [], []
-    for rec in recs_present:
-        if rec in main_by_rec:
-            mains.append(main_by_rec[rec])
-            cells_tabs.append(cells_by_rec[rec])
-            continue
-        m_path = tables_dir / table_name("main", test, rec)
-        c_path = tables_dir / table_name("cells", test, rec)
-        if m_path.exists() and c_path.exists():
-            m = pd.read_csv(m_path)
-            c = pd.read_csv(c_path)
-            for frame in (m, c):
-                for col in ("family", "horizon", "level", "cell", "policy"):
-                    frame[col] = frame[col].astype(str)
-            mains.append(m)
-            cells_tabs.append(c)
-        else:
-            missing.append(rec)
-    if missing:
-        log.warning("cross-recommender tables lack %s (no main/cells table on disk); run with "
-                    "--recommender all to include them", missing)
-    return pd.concat(mains, ignore_index=True), pd.concat(cells_tabs, ignore_index=True)
+    result = {"test": test, "gate_ok": gate_ok, "n_states": n_states,
+              "cross_recommender": set(recs) == set(recs_present),
+              "empty_strata": [f"{s.level} {s.family}/{s.horizon}" for s in empty_strata],
+              "written": [str(p) for p in written]}
+    # Ruling 23: a stratum whose common support emptied used to vanish from the CSV with
+    # nothing visible in it. Its rows are now written, every number NaN and
+    # `stratum_empty_common_support` True -- and the run fails, so the hole cannot be
+    # shipped unnoticed. The refusal is scoped above the cell level, where an empty
+    # stratum moves a headline; at cell level it is a warning, because a default that
+    # everyone passes --allow-empty-strata to get past is worth nothing.
+    hard = [s for s in empty_strata if s.level != "cell"]
+    soft = [s for s in empty_strata if s.level == "cell"]
+    for s in soft:
+        log.warning("cell stratum %s has an empty common support", s.cell)
+    if hard and not args.allow_empty_strata:
+        raise SystemExit(
+            f"test {test}: {len(hard)} stratum/strata above cell level have an EMPTY common "
+            f"support ({', '.join(result['empty_strata'])}). Their rows are in the tables with "
+            f"every number NaN; see strata_coverage_{test}.csv. Pass --allow-empty-strata to "
+            "accept them."
+        )
+    if hard:
+        log.error("--allow-empty-strata: %d empty stratum/strata accepted", len(hard))
+    return result
 
 
 def _per_cell_delta_vs(cells: list[Cell], ref: str, rec: str, n_boot: int) -> pd.DataFrame:

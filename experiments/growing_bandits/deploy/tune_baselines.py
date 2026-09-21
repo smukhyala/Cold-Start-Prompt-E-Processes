@@ -50,11 +50,12 @@ for _p in (ROOT / "src", HERE.parent, HERE):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+import policy_table as pt  # noqa: E402
 from cells import (  # noqa: E402
     HORIZONS,
     assert_seed_disjointness,
+    cell_at_cap,
     env_ids_for,
-    make_cell,
 )
 
 from cold_start.growing.deploy.comparators import episode_reservoir_prefix  # noqa: E402
@@ -198,7 +199,7 @@ class WorkItem:
 
     @property
     def spec(self) -> CellSpec:
-        return make_cell(self.split, self.env_id, self.horizon, self.cap, self.n_replicates)
+        return cell_at_cap(self.split, self.env_id, self.horizon, self.cap, self.n_replicates)
 
 
 def row_key(row) -> tuple:
@@ -556,6 +557,28 @@ def write_csv_atomic(df: pd.DataFrame, path: Path) -> None:
     os.replace(tmp, path)
 
 
+def write_params_for_cap(params: dict, path: Path, cap: int) -> None:
+    """Write this run's constants for `cap` without disturbing another cap's.
+
+    A fresh file, or a run at the file's own tuning cap, is written as before (sorted
+    keys, the historical form). A run at any other cap merges its blocks under
+    ``by_cap["<cap>"]`` of the existing file (`policy_table.merge_cap_block`), so the
+    cap-64 constants every shipped table was built from stay byte-identical and the
+    reader (`baseline_params_for_cap`) picks the block that matches the deployed cap.
+    """
+    existing = json.loads(path.read_text()) if path.exists() else None
+    tuning = pt.tuning_cap(existing) if existing else None
+    if existing is None or tuning is None or int(tuning) == int(cap):
+        write_json_atomic(params, path)
+        return
+    block = {k: v for k, v in params.items() if k in (*TUNED_BLOCKS_WRITTEN, "meta")}
+    pt.write_baseline_params(path, pt.merge_cap_block(existing, int(cap), block))
+
+
+#: The blocks a tuning run produces (the file's other keys belong to other selectors).
+TUNED_BLOCKS_WRITTEN: tuple[str, ...] = ("power", "refine_after_init", "p3_star")
+
+
 def write_json_atomic(obj: dict, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -637,7 +660,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"WARNING: tuning and selection on the same split ({args.split}); "
               "P3* will be optimistic")
     seeds = [
-        make_cell(split, env_id, horizon, args.cap, args.n_replicates).base_seed
+        cell_at_cap(split, env_id, horizon, args.cap, args.n_replicates).base_seed
         for split in {args.split, args.select_split}
         for env_id in env_ids
         for horizon in horizons
@@ -675,7 +698,7 @@ def main(argv: list[str] | None = None) -> None:
         "recommender": PRIMARY_RECOMMENDER,
         "pooling": "equal weight over envs of the cell mean regret",
     }
-    write_json_atomic(params, params_path)
+    write_params_for_cap(params, params_path, args.cap)
     for alpha_key, per_t in params[POWER].items():
         print(f"  power alpha={float(alpha_key):.4f}: "
               + ", ".join(f"T={t}: c={c:.3f}" for t, c in per_t.items()))
@@ -690,7 +713,7 @@ def main(argv: list[str] | None = None) -> None:
         selection, args.select_split, env_ids, args.cap, args.n_replicates, selected_keys(params)
     )
     params["p3_star"] = select_p3_star(selection, env_ids, params)
-    write_json_atomic(params, params_path)
+    write_params_for_cap(params, params_path, args.cap)
     for horizon, best in params["p3_star"].items():
         print(f"  P3* T={horizon}: alpha={best['alpha']:.4f} c={best['c']:.3f} "
               f"pooled regret={best['pooled_regret']:.4f}")

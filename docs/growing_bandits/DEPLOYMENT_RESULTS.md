@@ -72,7 +72,11 @@ arm count, no learned policy beats front-loaded search; the pre-registered Φ an
 A fourth, registered next, says what that is: the k = 4 model also beats the best **fixed K per horizon**
 selected on validation (Δ = −0.004701, p = 1e−6, §12.4), and that fixed K does not beat the schedule. The
 learned model's value is not the timing of SEARCH (§12.2) but **sizing K to the environment** — 14–15 arms
-in the thin-tailed reservoirs, 33–36 in the heavy-tailed ones, where a schedule can only hold 24.
+in the thin-tailed reservoirs, 33–36 in the heavy-tailed ones, where a schedule can only hold 24. Asking
+the model what it reads (§12.6) gave the answer, and the sixth registration closed the programme: **the
+learned policy is a three-number rule.** Recruit to `1.0 · T^0.75 · exp(4 · (0.5 − level))` arms and then
+refine, where *level* is the mean posterior of the arms held; `phi_k4` − that rule is −0.000018
+(p = 0.96, n = 30), and the rule beats the fixed K by the model's own margin (−0.004683, p = 8e−6).
 
 The mechanism is the 64-arm cap: P3\* is already a cap-filling policy at T ≥ 200 (k_final = 64.0 at
 T = 200/500/1000), and Φ joins it only at T = 1000 (k_final 44.2 at T=200, 57.7 at T=500, 64.0 at T=1000;
@@ -1159,12 +1163,70 @@ by 0.0008, about 1.5 selection standard errors; b = 4 and b = 8 are 0.004 and 0.
 indistinguishable from each other and each loses to the learned model by 0.004–0.005 at T ≤ 200, all of
 it at T = 50 and T = 100. So the programme's closing statement is narrower and firmer than §12.4's: **the
 k = 4 model sizes K to the environment (§12.4), and it does not do so by counting how many held arms sit
-near the best — the obvious one-number summary of the tail carries none of it on validation.** What it
-reads instead is not identified here; the 35-column QUALITY group minus this one column, or the
-posterior spread `f_sd_of_means`, are the next candidates, and a rule built on the classifier's own top
-feature by permutation importance would be the honest way to choose one. Three registrations, three
-positives for `phi_k4` on this panel, every one in-distribution at T ≤ 200 and none touching the
-pre-registered `phi_k16`; §12.2 still says the *timing* of its search is worth nothing.
+near the best — the obvious one-number summary of the tail carries none of it on validation.** §12.6
+asks the model itself, and its last registration answers.
+
+### 12.6 What the model reads, and the rule it is
+
+**Asking the model.** `model_reads.py` rebuilds the deployed `phi_k4` and records the exact feature matrix
+it sees at every decision on the 90 H1b′ cells (first 64 episodes per cell — by CRN, the deployed ones):
+167,040 decisions. Per horizon, permutation importance on the decision at τ; across the 30 environments,
+the Spearman correlation of each feature's early-episode mean with the K the model reached there
+(`model_reads_importance.csv`, `model_reads_env_signal.csv`). The answer is one feature at every horizon:
+
+| T | top feature | coef | perm. mean \|ΔP\| | flip rate | ρ(early value, env K_final) |
+|---|---|---|---|---|---|
+| 50 | `est_quantile_0.99` | −0.85 | 0.131 | 0.131 | **−0.958** |
+| 100 | `est_quantile_0.99` | −0.85 | 0.131 | 0.137 | **−0.976** |
+| 200 | `est_quantile_0.99` | −0.85 | 0.141 | 0.227 | **−0.932** |
+
+QUALITY carries ~0.6 of the summed permutation importance, CLOCK ~0.3 (`f_log_K`, `f_K_over_T`),
+EVIDENCE ~0.3 (`f_leader_lcb`). `est_quantile_0.99` at K ≤ 36 arms is the best held arm's posterior mean
+to three decimals, and a logistic rule on it plus log K reproduces 96 / 93 / 85% of the model's decisions.
+But the model stops while every arm has 1–3 pulls (`f_leader_n` ≈ 1.0–1.4 on the early rows, and the
+leader's lower confidence bound at the last SEARCH decision is the 1-pull floor, 0.026, at every horizon).
+At that point "the best posterior mean" is no more than whether first pulls succeeded — an estimate of the
+**reservoir's mean level**, and `f_mean_of_means` tracks K at the same ρ = −0.96 / −0.98 / −0.93. High
+level (thin-tailed reservoir, the best arm near the typical one) → few arms; low level (heavy-tailed,
+excellent arms rare and far above typical) → many. That is the state-dependence, named.
+
+**Two registrations that missed, reported in full** (`DEPLOYMENT_PLAN.md`, Pre-registrations 4 and 5, each
+committed before its code): a K-target scaled by the fraction of held arms within 0.05 of the best (§12.5;
+selection set b = 0), and a gate "SEARCH while best_mean < θ" (`bestmean_star`). The gate was inert: a
+1-pull success has posterior mean 0.667, so every θ ≤ 0.65 closed it after ~2.5 arms on a lucky first pull
+(`beta_good_common` at T = 100: K = 2.6, regret 0.148 against 0.074), and selection escaped to θ = 0.675,
+which the best mean never reaches before the ceiling — the same fixed schedule as §12.5's, with the same
+result (`phi_k4` −0.003941, p = 1e−4, `h1b_bestmean.csv`).
+
+**The registration that closed it** (Pre-registration 6, `level_star`): SEARCH while
+K_t < c · T^α · exp(b · (0.5 − level_t)), level_t the mean posterior over held arms, b = 0 the fixed
+schedule. Selection on validation over 40 candidates chose **α = 0.75, c = 1.0, b = 4** — an interior
+optimum in b, 0.0058 better than every fixed schedule on the validation cells (`level_selection.csv`) —
+and on the robustness panel (`h1b_level.csv`, `h1b_level_secondary.csv`):
+
+| contrast | T | Δ | t-cluster (n = 30) | p | verdict |
+|---|---|---|---|---|---|
+| **`phi_k4` − `level_star`** (primary) | 50–200 | **−0.000018** | **[−0.000711, +0.000676]** | 0.96 | **refuted** |
+| | 50 / 100 / 200 | −0.000012 / −0.000395 / +0.000354 | | 0.99 / 0.37 / 0.22 | |
+| **`level_star` − `fixed_K_star`** (secondary) | 50–200 | **−0.004683** | **[−0.006453, −0.002914]** | 8e−6 | **supported** |
+| | 50 / 100 / 200 | −0.008531 / −0.004772 / −0.000747 | | 3e−6 / 1e−3 / 0.027 | |
+
+**The 62-feature logistic policy trained on 87,148 oracle-labelled states is, on the panel where it beat
+every schedule by 0.004–0.005, indistinguishable from a three-number rule** — to 2e−5 pooled and within
+±0.0004 at every horizon — and that rule beats the fixed K by the model's own margin (−0.004683 against
+−0.004701). The programme's positive result is therefore: *recruit to `T^0.75 · exp(4 · (0.5 − level))`
+arms, then refine.* It sizes K to the environment through the one thing a few pulls per arm can tell you,
+the reservoir's level; §12.2 says the timing of getting there is worth nothing; §12.1 says the cap the
+whole study ran under was too small for it at T ≥ 500.
+
+Read in the registrations' own terms: the sequence 3 → 4 → 5 → 6 is four nulls the learned policy had to
+beat, and it beat the first three because they were the wrong rule, not because it knew more; every null
+added made "the model carries information a rule cannot" harder to sustain, and the fourth refuted it. What
+survives about the learned model is that it *found* the rule — the oracle-labelling pipeline recovered a
+sensible infinite-armed heuristic from data — and that its k = 16 version, the pre-registered one, does
+not (§12.2). What this does not say: whether `level_star` generalizes (Test C rows are deployed, no contrast
+registered), and whether the level is the right statistic at caps where §12.1's K\* is reachable; the
+cap re-tune is next.
 
 ---
 

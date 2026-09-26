@@ -63,9 +63,10 @@ Pool files: `data/empirical_pool/pool_G.yaml`, `pool_F.yaml` (arm id, vector or 
   in the existing JSONL schema plus `pool`, `replicate` and `status` fields.
 - **Resumable:** on start it reads all worker logs and skips (arm, task, replicate) triples with a terminal
   status. A watchdog restarts dead workers (pattern of `scripts/watchdog_*.py`).
-- **Infra failures ≠ task failures.** Server crash, API error, or harness exception → `status: infra_error`,
-  retried up to 2 times; still failing → `status: missing`, excluded (never scored 0). If `RunResult` cannot
-  currently distinguish these, a minimal adapter change makes it do so (tested).
+- **Infra failures ≠ task failures.** A harness exception (server crash, browser crash) or an LLM API error
+  (rate limit, connection, 5xx/529 in the agent's error trace with the agent not done) → `status: infra_error`,
+  retried up to 2 times; still failing → `status: missing`, excluded (never scored 0). **An agent timeout is
+  a task failure** (`success = 0`), exactly as every historical Gmail run scored it.
 - **Budget stop:** the runner sums logged `cost_usd` and halts all workers at **$260**.
 
 ## 4. Pool estimation
@@ -81,7 +82,7 @@ pool uses its own.
 ### 4.2 Deconvolution (primary pools)
 
 The mixing distribution of true prompt rates μᵢ is estimated by the **NPMLE** under
-x̄ᵢ ~ N(μᵢ, σ̂ᵢ²) (Kiefer–Wolfowitz; EM on a fixed 400-point grid on [0, 1], convergence tolerance 1e−8 on
+x̄ᵢ ~ N(μᵢ, σ̂ᵢ²) (Kiefer–Wolfowitz; EM on a fixed 401-point grid on [0, 1] (step 0.0025), convergence tolerance 1e−8 on
 the log-likelihood). The output is a discrete distribution (atoms, weights): `G*` and `F*`, the **primary
 reservoirs**.
 
@@ -89,8 +90,9 @@ reservoirs**.
 
 - **Raw:** atoms = observed x̄ᵢ, equal weights. Over-dispersed by construction — an upper bound on how much
   search can matter.
-- **Parametric:** the study's own families (Beta, `TailReservoir`, `MixtureReservoir`) fit by maximum
-  marginal likelihood under the same noise model; best by AIC. Smooth tail for long horizons.
+- **Parametric:** Beta, `TailReservoir`, and a two-component Beta mixture, each fit by maximum marginal
+  likelihood under the same noise model (the prior's mass on the 401-point grid from `_survival`
+  differences); best by AIC. Smooth tail for long horizons.
 
 ### 4.4 Simulator integration
 
@@ -111,8 +113,9 @@ new `CellSpec` whose reservoir spec points at a frozen pool file.
   - `p3_star`: the corpus-tuned schedule with cap-T constants (Pre-registration 7). Horizons for which
     Pre-registration 7 selected no cap-T constants get them by the same procedure **on the corpus only**,
     committed before G2;
-  - `level_star` (α = 0.75, c = 1.0, b = 4; Pre-registration 6);
-  - `phi_k4` at its selected τ;
+  - `level_star`: the level rule, with its cap-T constants re-selected on the corpus (Pre-registration 7,
+    as Pre-registration 8 deployed it; the cap-64 values α = 0.75, c = 1.0, b = 4 are not used at cap = T);
+  - `phi_k4` at its cap-T τ (Pre-registration 7);
   - `fixed_K` 64 (the inherited cap), for pricing the cap.
 
 ## 6. Pre-registration 9 (committed before the pilot)
@@ -122,8 +125,10 @@ Pre-registration 8.
 
 **Interval of record — prompt bootstrap.** The dominant uncertainty is which 50 prompts were sampled. B = 200
 replicates: resample the 50 prompts of each pool with replacement (with all their task outcomes and any
-replicates), re-estimate v̂ and the NPMLE, rebuild the reservoir, rerun the cells with fresh CRN seeds;
-95% percentile interval of the pooled Δ. The episode-paired CI is reported beside it.
+replicates), re-estimate v̂ and the NPMLE, rebuild the reservoir, rerun the four contrast policies
+(`p3_star`, `fixed_K_star`, `level_star`, `phi_k4`) on the primary horizons with fresh CRN seeds at
+M = 250 (test id `emp_boot`); 95% percentile interval of the pooled Δ. Each replicate's reservoir carries its
+own environment id (`emp_<pool>_npmle_b<NNN>`), so the per-cell comparator cache never mixes replicates. The episode-paired CI is reported beside it.
 
 **Flatness guard.** A primary cell is *informative* iff max − min of `fixed_K` regret over the K-grid
 (K ≤ T) exceeds 5 × MEI = 0.01, judged on the full-sample point estimates (not per bootstrap replicate). If fewer than 2 of the 6 primary cells are informative, every contrast's

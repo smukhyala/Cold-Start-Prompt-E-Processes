@@ -83,6 +83,7 @@ from cold_start.growing.deploy.pairwise_table import (  # noqa: E402
 from cold_start.growing.deploy.recommenders import RECOMMENDER_NAMES  # noqa: E402
 from cold_start.growing.recommend import oracle_prior_from_reservoir  # noqa: E402
 from cold_start.growing.reservoirs import build_reservoir  # noqa: E402
+import cold_start.growing.empirical_reservoir  # noqa: E402,F401  (registers "empirical" in every worker)
 from cold_start.growing.tables import CSTable  # noqa: E402
 
 log = logging.getLogger("deploy.run")
@@ -158,7 +159,7 @@ LOGGED_GROUPS: tuple[str, ...] = ("learned", "rule")
 STANDIN_SEED_BASE = 900_000_000
 STANDIN_SEED_STRIDE = 1_000
 
-FAMILY_OF_TYPE: dict[str, str] = {"beta": "A", "tail": "B", "mixture": "C"}
+FAMILY_OF_TYPE: dict[str, str] = {"beta": "A", "tail": "B", "mixture": "C", "empirical": "E"}
 
 MAX_TASKS_PER_CHILD = 8
 

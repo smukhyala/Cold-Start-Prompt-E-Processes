@@ -85,3 +85,32 @@ def test_refuses_a_missing_policy(run):
     with pytest.raises(FileNotFoundError, match="phi_k1"):
         rc.registered_contrast("phi_k1", "p3_star", test="robust", horizons=(50,), mei=0.002,
                                out_dir=run, n_boot=50)
+
+
+def test_noninferiority_and_not_better_rules_on_the_paired_ci():
+    # Non-inferiority: supported iff the paired upper bound is below +MEI.
+    assert rc.verdict_by_rule("noninferiority", delta=0.0005, lo=-0.001, hi=0.0015, mei=0.002) == "supported"
+    assert rc.verdict_by_rule("noninferiority", delta=0.003, lo=0.0021, hi=0.004, mei=0.002) == "refuted"
+    assert rc.verdict_by_rule("noninferiority", delta=0.0015, lo=0.0, hi=0.003, mei=0.002) == "inconclusive"
+    # Not-better: supported iff the paired lower bound is above -MEI.
+    assert rc.verdict_by_rule("not_better", delta=0.001, lo=-0.001, hi=0.003, mei=0.002) == "supported"
+    assert rc.verdict_by_rule("not_better", delta=-0.004, lo=-0.006, hi=-0.0025, mei=0.002) == "refuted"
+    assert rc.verdict_by_rule("not_better", delta=-0.001, lo=-0.003, hi=0.001, mei=0.002) == "inconclusive"
+    for name in ("capc_primary", "capc_level", "capc_phi"):
+        assert name in rc.REGISTRATIONS and rc.REGISTRATIONS[name]["test"] == "capc"
+    assert rc.REGISTRATIONS["capc_primary"]["rule"] == "noninferiority"
+    assert rc.REGISTRATIONS["capc_level"]["rule"] == "not_better"
+
+
+def test_paired_rule_registration_uses_the_paired_ci_below_cluster_min_envs(tmp_path):
+    """Three environments: the cluster interval is NaN, and a paired-rule registration still decides."""
+    root = tmp_path / "deploy"
+    for i in range(3):
+        for T in (50, 100):
+            _write(root, "capc", f"m{i}", T, 500 + 10 * i + T, {"p3_star": 0.0, "fixed_K_star": 0.0004})
+    out = rc.registered_contrast("p3_star", "fixed_K_star", test="capc", horizons=(50, 100), mei=0.002,
+                                 out_dir=root, n_boot=300, rule="noninferiority")
+    p = out[out["row"] == "primary"].iloc[0]
+    assert np.isnan(p["cluster_p"]) and p["n_envs"] == 3
+    assert p["delta"] == pytest.approx(-0.0004, abs=3e-4) and p["hi"] < 0.002
+    assert p["verdict"] == "supported" and p["rule"] == "noninferiority"

@@ -89,7 +89,7 @@ log = logging.getLogger("deploy.run")
 
 DEFAULT_OUT_DIR = ROOT / "results" / "growing_bandits" / "deploy"
 
-TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch", "capp")
+TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch", "capp", "capc")
 REFERENCES: tuple[str, ...] = ("cp0", "p3_star")
 
 #: Episodes per cell by test (DEPLOYMENT_PLAN.md "Environments / horizons / episodes").
@@ -103,6 +103,7 @@ DEFAULT_REPLICATES: dict[str, int] = {
     "smoke": 100,
     "capmatch": 2000,
     "capp": 2000,
+    "capc": 2000,
 }
 DEFAULT_CAP = 64
 D_HORIZONS: tuple[int, ...] = (200, 1000)
@@ -238,6 +239,9 @@ def _cell_grid(test: str, cells_mod) -> list[tuple[str, int, int, int | None]]:
         grid = [(e, SMOKE_HORIZON, DEFAULT_CAP, None) for e in SMOKE_ENVS]
     elif test == "capp":
         grid = [(e, T, int(cap), None) for e in main_envs for T, caps in CAPP_HORIZON_CAPS.items() for cap in caps]
+    elif test == "capc":
+        # Pre-registration 8: the held-out family, uncapped, on Test C's cap-64 seeds.
+        grid = [(e, T, T, None) for e in heldout for T in CAPP_HORIZON_CAPS]
     else:
         raise ValueError(f"unknown test {test!r}; tests={TESTS}")
     return grid
@@ -338,9 +342,9 @@ def build_cells(
             raise RuntimeError(f"duplicate matched cells for {match}: {names}")
         return specs
     grid = overrides if overrides is not None else _cell_grid(test, cells_mod)
-    if test == "capp":
+    if test in ("capp", "capc"):
         if cells_mod is None:
-            raise RuntimeError("--test capp needs cells.py for the Test-A seeds")
+            raise RuntimeError(f"--test {test} needs cells.py for the cap-64 seeds")
         m = int(n_replicates) if n_replicates is not None else DEFAULT_REPLICATES[test]
         specs = [
             cells_mod.make_matched_cell(TEST_SPLIT, env_id, int(horizon), int(cap), m, seed_cap=DEFAULT_CAP)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -172,3 +173,71 @@ def test_duplicate_emp_cell_for_the_same_key_is_an_error(tmp_path):
             dup_dir / f"{policy_name}.parquet", index=False)
     with pytest.raises(ValueError, match="two cells"):
         _run(tmp_path, expected_n_boot=5)
+
+
+# ---- I8(a): the episode-paired CI beside the interval of record; I7: one data snapshot --------
+
+
+def test_paired_ci_is_reported_beside_the_bootstrap_interval(tmp_path):
+    from cold_start.growing.deploy import stats
+
+    boots = list(np.linspace(-0.001, 0.001, 20))
+    _tree(tmp_path, 0.0, boots, informative={("F", 100), ("F", 200)})
+    row = _run(tmp_path, expected_n_boot=20)
+    diffs, _, _ = rc._diffs(tmp_path, "emp", "p3_star", "fixed_K_star", (100, 200))
+    diffs = {c: d for c, d in diffs.items() if c.startswith("emp_F_npmle")}
+    expected = stats.stratified_pooled(diffs, n_boot=10_000, seed=rc.ad._seed("registered", "p3_star",
+                                                                               "fixed_K_star", "emp"))
+    assert row["paired_lo"] == pytest.approx(expected["lo"]) and row["paired_hi"] == pytest.approx(expected["hi"])
+    assert row["lo"] == pytest.approx(np.percentile(boots, 2.5))  # the verdict still reads the bootstrap
+    assert list(rc.BOOT_COLUMNS).index("paired_lo") == list(rc.BOOT_COLUMNS).index("hi") + 1
+
+
+def _snapshot(root, shas):
+    manifest = root / "manifest.json"
+    manifest.write_text(json.dumps({"reservoirs": shas}))
+    flat = pd.read_csv(root / "tables" / "emp_flatness.csv")
+    flat["reservoir_sha256"] = flat["env_id"].map(lambda e: shas.get(e.removeprefix("emp_"), "?"))
+    flat.to_csv(root / "tables" / "emp_flatness.csv", index=False)
+    for test in ("emp", "emp_boot"):
+        rc.write_reservoir_stamp(root, test, manifest)
+    return manifest
+
+
+def _run_checked(root, manifest):
+    return rc.prompt_bootstrap_contrast("p3_star", "fixed_K_star", horizons=(50, 100, 200), mei=0.002,
+                                        rule="noninferiority", out_dir=root, expected_n_boot=5,
+                                        reservoir_manifest=manifest).iloc[0]
+
+
+def test_matching_snapshot_passes(tmp_path):
+    _tree(tmp_path, 0.0, [0.0] * 5, informative={("F", 100), ("F", 200)})
+    manifest = _snapshot(tmp_path, {"G_npmle": "g", "F_npmle": "f"})
+    assert _run_checked(tmp_path, manifest)["verdict"] == "supported"
+
+
+def test_flatness_from_another_reservoir_is_refused(tmp_path):
+    _tree(tmp_path, 0.0, [0.0] * 5, informative={("F", 100), ("F", 200)})
+    manifest = _snapshot(tmp_path, {"G_npmle": "g", "F_npmle": "f"})
+    manifest.write_text(json.dumps({"reservoirs": {"G_npmle": "g", "F_npmle": "f-new"}}))
+    with pytest.raises(ValueError, match="emp_F_npmle"):
+        _run_checked(tmp_path, manifest)
+
+
+def test_episodes_from_another_manifest_are_refused(tmp_path):
+    _tree(tmp_path, 0.0, [0.0] * 5, informative={("F", 100), ("F", 200)})
+    manifest = _snapshot(tmp_path, {"G_npmle": "g", "F_npmle": "f"})
+    (tmp_path / "tables" / "emp_boot_reservoir_stamp.json").write_text('{"manifest_sha256": "old"}')
+    with pytest.raises(ValueError, match="emp_boot"):
+        _run_checked(tmp_path, manifest)
+    (tmp_path / "tables" / "emp_reservoir_stamp.json").unlink()
+    with pytest.raises(ValueError, match="emp_reservoir_stamp"):
+        _run_checked(tmp_path, manifest)
+
+
+def test_flatness_without_shas_is_refused_when_a_manifest_is_given(tmp_path):
+    _tree(tmp_path, 0.0, [0.0] * 5, informative={("F", 100), ("F", 200)})
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text('{"reservoirs": {}}')
+    with pytest.raises(ValueError, match="reservoir_sha256"):
+        _run_checked(tmp_path, manifest)

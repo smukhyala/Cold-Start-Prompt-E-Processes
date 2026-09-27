@@ -80,13 +80,13 @@ REGISTRATIONS: dict[str, dict] = {
     # PROMPT-BOOTSTRAP interval (B = 200 NPMLE re-estimates; `prompt_bootstrap_contrast`).
     "emp_primary": {"policy": "p3_star", "reference": "fixed_K_star", "test": "emp",
                     "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_primary.csv", "rule": "noninferiority",
-                    "interval": "prompt_bootstrap"},
+                    "interval": "prompt_bootstrap", "n_boot": 200},
     "emp_level": {"policy": "level_star", "reference": "p3_star", "test": "emp",
                   "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_level.csv", "rule": "not_better",
-                  "interval": "prompt_bootstrap"},
+                  "interval": "prompt_bootstrap", "n_boot": 200},
     "emp_phi": {"policy": "phi_k4", "reference": "p3_star", "test": "emp",
                 "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_phi.csv", "rule": "not_better",
-                "interval": "prompt_bootstrap"},
+                "interval": "prompt_bootstrap", "n_boot": 200},
 }
 #: Decision rules. ``superiority`` (the default) reads the environment-mean t interval and
 #: is the rule of Pre-registrations 2-6; the two paired-CI rules are Pre-registration 8's,
@@ -268,10 +268,19 @@ def _informative_cells(flatness_path: Path, horizons: tuple[int, ...]) -> set[tu
 
 def prompt_bootstrap_contrast(
     policy: str, reference: str, *, horizons: tuple[int, ...], mei: float, rule: str, out_dir: Path,
-    flatness_path: Path | None = None,
+    expected_n_boot: int, flatness_path: Path | None = None,
 ) -> pd.DataFrame:
     """Pre-registration 9: the full-sample Δ on informative primary cells, with the 95% percentile
-    interval of the same statistic over the prompt-bootstrap replicates (test ``emp_boot``)."""
+    interval of the same statistic over the prompt-bootstrap replicates (test ``emp_boot``).
+
+    Pre-registration 9 fixes B = `expected_n_boot` (200) replicates. The replicate indices
+    present must be exactly ``{0, ..., expected_n_boot - 1}`` -- trailing replicates lost to a
+    boot run that died early, or an `emp_boot` tree with no data at all, raise rather than
+    silently inferring a smaller B or falling through to an "inconclusive" verdict. Cell
+    coverage (both `emp` and `emp_boot`) is checked by key, not count: the informative cells
+    used must be exactly the informative set, and two cells claiming the same (env_id, horizon)
+    raise instead of one silently overwriting the other.
+    """
     out_dir = Path(out_dir)
     horizons = tuple(int(h) for h in horizons)
     informative = _informative_cells(flatness_path or out_dir / "tables" / "emp_flatness.csv", horizons)
@@ -289,9 +298,18 @@ def prompt_bootstrap_contrast(
         return pd.DataFrame([row])[list(BOOT_COLUMNS)]
 
     diffs, env_of, horizon_of = _diffs(out_dir, "emp", policy, reference, horizons)
-    point = [float(d.mean()) for c, d in diffs.items() if (env_of[c], horizon_of[c]) in informative]
-    if len(point) != len(informative):
-        raise ValueError(f"emp holds {len(point)} of the {len(informative)} informative cells")
+    point_by_key: dict[tuple[str, int], float] = {}
+    for c, d in diffs.items():
+        key = (env_of[c], horizon_of[c])
+        if key not in informative:
+            continue
+        if key in point_by_key:
+            raise ValueError(f"emp holds two cells for the informative key {key} (last: {c})")
+        point_by_key[key] = float(d.mean())
+    missing_point = sorted(informative - set(point_by_key))
+    if missing_point:
+        raise ValueError(f"emp is missing informative cells {missing_point}")
+    point = [point_by_key[k] for k in sorted(informative)]
 
     bdiffs, benv, bhor = _diffs(out_dir, BOOT_TEST, policy, reference, horizons)
     by_boot: dict[int, dict[tuple[str, int], float]] = {}
@@ -300,20 +318,37 @@ def prompt_bootstrap_contrast(
         if m is None:
             raise ValueError(f"{c}: env id {benv[c]!r} is not a bootstrap replicate")
         key = (m.group("base"), bhor[c])
-        if key in informative:
-            by_boot.setdefault(int(m.group("b")), {})[key] = float(d.mean())
-    n_boot = max(by_boot) + 1 if by_boot else 0
+        if key not in informative:
+            continue
+        b = int(m.group("b"))
+        cells_b = by_boot.setdefault(b, {})
+        if key in cells_b:
+            raise ValueError(f"emp_boot holds two cells for b{b:03d}'s informative key {key} (last: {c})")
+        cells_b[key] = float(d.mean())
+
+    present, expected = set(by_boot), set(range(expected_n_boot))
+    if present != expected:
+        parts = []
+        missing_b = sorted(expected - present)
+        extra_b = sorted(present - expected)
+        if missing_b:
+            parts.append(f"missing {[f'b{b:03d}' for b in missing_b]}")
+        if extra_b:
+            parts.append(f"unexpected {[f'b{b:03d}' for b in extra_b]}")
+        raise ValueError(f"emp_boot does not hold exactly replicates b000..b{expected_n_boot - 1:03d}: "
+                         + "; ".join(parts))
+
     stats_b = []
-    for b in range(n_boot):
-        cells_b = by_boot.get(b, {})
-        missing = sorted(informative - set(cells_b))
-        if missing:
-            raise ValueError(f"bootstrap replicate b{b:03d} lacks informative cells {missing}")
+    for b in range(expected_n_boot):
+        cells_b = by_boot[b]
+        missing_cells = sorted(informative - set(cells_b))
+        if missing_cells:
+            raise ValueError(f"bootstrap replicate b{b:03d} lacks informative cells {missing_cells}")
         stats_b.append(float(np.mean([cells_b[k] for k in sorted(informative)])))
 
     delta = float(np.mean(point))
-    lo, hi = (float(np.percentile(stats_b, 2.5)), float(np.percentile(stats_b, 97.5))) if stats_b else (np.nan, np.nan)
-    row.update({"delta": delta, "lo": lo, "hi": hi, "n_boot": n_boot,
+    lo, hi = float(np.percentile(stats_b, 2.5)), float(np.percentile(stats_b, 97.5))
+    row.update({"delta": delta, "lo": lo, "hi": hi, "n_boot": expected_n_boot,
                 "verdict": verdict_by_rule(rule, delta=delta, lo=lo, hi=hi, mei=mei)})
     return pd.DataFrame([row])[list(BOOT_COLUMNS)]
 
@@ -340,7 +375,7 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
                 if args.horizons else tuple(reg["horizons"]))
     if reg.get("interval") == "prompt_bootstrap":
         out = prompt_bootstrap_contrast(args.policy, args.reference, horizons=horizons, mei=args.mei,
-                                        rule=reg["rule"], out_dir=args.out_dir)
+                                        rule=reg["rule"], out_dir=args.out_dir, expected_n_boot=reg["n_boot"])
         path = args.out or (args.out_dir / "tables" / reg["out"])
         path.parent.mkdir(parents=True, exist_ok=True)
         out.to_csv(path, index=False)

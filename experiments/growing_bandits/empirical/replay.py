@@ -24,6 +24,7 @@ import json
 import logging
 import multiprocessing as mp
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -36,6 +37,7 @@ for _p in (ROOT / "src", HERE.parent / "deploy", HERE):
         sys.path.insert(0, str(_p))
 
 import k_star_envelope as kse  # noqa: E402
+import policy_table as pt  # noqa: E402
 import run_deployment as rd  # noqa: E402
 
 import cold_start.growing.empirical_reservoir  # noqa: E402,F401  (registers "empirical" in workers)
@@ -43,6 +45,7 @@ from cold_start.growing import empirical as emp  # noqa: E402
 from cold_start.growing.deploy.harness import CellSpec  # noqa: E402
 from cold_start.growing.empirical_reservoir import EmpiricalReservoir  # noqa: E402
 from cold_start.growing.reservoirs import build_reservoir  # noqa: E402
+from cold_start.growing.tables import CSTable  # noqa: E402
 
 log = logging.getLogger("empirical.replay")
 
@@ -58,6 +61,9 @@ N_BOOT = 200
 BOOT_SEED = 20260926
 CONTRAST_POLICIES: tuple[str, ...] = ("p3_star", "fixed_K_star", "level_star", "phi_k4")
 NOISE_BOOT = 1000
+#: `phi_k4`'s model variant (`policy_table.POLICIES["phi_k4"]["params"]["artifact"]`), i.e.
+#: the key `thresholds.json["by_cap"]["<cap>"]` must carry for `missing_cap_constants`.
+PHI_K4_VARIANT: str = pt.POLICIES["phi_k4"]["params"]["artifact"]
 
 DATA_DIR = ROOT / "data" / "empirical_pool"
 LOG_DIR = ROOT / "logs" / "empirical_pool"
@@ -176,6 +182,12 @@ def _kgrid_item(item: kse.Item) -> dict:
 
 def kgrid(cells: list[CellSpec], *, workers: int, k_grid: tuple[int, ...] = kse.DEFAULT_K_GRID) -> pd.DataFrame:
     items = [kse.Item(split="emp", spec=c, K=int(K)) for c in cells for K in k_grid if int(K) <= c.horizon]
+    # Built once, here, in the parent: `CSTable.load_or_build` writes through a fixed
+    # `.tmp` name (`run_deployment.prebuild_shared_tables` does the same for the study's
+    # own cells), so two pool workers racing to build the same (T, alpha) table for the
+    # first time could tear each other's write.
+    for horizon, alpha in sorted({(int(c.horizon), float(c.alpha)) for c in cells}):
+        CSTable.load_or_build(horizon, alpha)
     if workers <= 1:
         rows = [_kgrid_item(i) for i in items]
     else:
@@ -189,6 +201,90 @@ def kgrid(cells: list[CellSpec], *, workers: int, k_grid: tuple[int, ...] = kse.
 def point_cells() -> list[CellSpec]:
     return [make_emp_cell(p, v, T, load_reservoir(RES_DIR / f"{p}_{v}.json"), EMP_REPLICATES)
             for p in POOLS for v in VARIANTS for T in ALL_HORIZONS]
+
+
+# ---- cap-T constants preflight ----------------------------------------------------------
+
+
+def missing_cap_constants(
+    baseline_params: dict | None, thresholds: dict | None, horizons: Iterable[int]
+) -> list[str]:
+    """Every cap-T requirement `point`/`boot` would otherwise silently substitute a
+    placeholder (or a different cap's constant) for, over `horizons`.
+
+    Every `emp`/`emp_boot` cell is uncapped (`make_emp_cell` sets ``cap = horizon``), so
+    cap and T are the same number here. `baseline_params.json["by_cap"]` today (2026-09-26)
+    has blocks only for cap 200 and 1000 -- 50, 100, 500 are added by a later retune -- and
+    without this check `pt.baseline_params_for_cap` falls back to the cap-64 block for the
+    missing ones, stamping only ``params_tuned: False`` deep in the manifest rather than
+    stopping the run. This mirrors exactly what `pt.resolve_params`/`pt.tau_for_cap` look
+    up (`pt._lookup_by_number`, the same tolerant numeric-key match), so a cap this
+    reports clean is a cap those functions cannot silently fall back on. Returns ``[]``
+    when `point`/`boot` may run; otherwise one named entry per missing piece.
+    """
+    problems: list[str] = []
+    by_cap = (baseline_params or {}).get(pt.BY_CAP_KEY) or {}
+    thresh_by_cap = (thresholds or {}).get(pt.BY_CAP_KEY) or {}
+    for T in horizons:
+        cap = int(T)
+        block = pt._lookup_by_number(by_cap, cap)
+        if not block:
+            problems.append(f"baseline_params.json: by_cap has no block for cap {cap}")
+        else:
+            p3 = pt._lookup_by_number(block.get("p3_star") or {}, cap)
+            if not p3 or "alpha" not in p3 or "c" not in p3:
+                problems.append(f"baseline_params.json: by_cap[{cap}].p3_star has no entry for T={cap}")
+            fixed_k = pt._lookup_by_number(block.get("fixed_K_star") or {}, cap)
+            if not fixed_k or "K" not in fixed_k:
+                problems.append(f"baseline_params.json: by_cap[{cap}].fixed_K_star has no entry for T={cap}")
+            level = block.get("level_star") or {}
+            if not all(k in level for k in ("alpha", "c", "b")):
+                problems.append(f"baseline_params.json: by_cap[{cap}].level_star is missing alpha/c/b")
+        tau_block = thresh_by_cap.get(str(cap)) or {}
+        if not tau_block.get(PHI_K4_VARIANT):
+            problems.append(f"thresholds.json: by_cap has no {PHI_K4_VARIANT} threshold for cap {cap}")
+    return problems
+
+
+def _require_cap_constants(out_dir: Path, horizons: Iterable[int], stage: str) -> None:
+    baseline_params = pt.load_baseline_params(Path(out_dir) / "baseline_params.json")
+    thresholds = pt.load_thresholds(Path(out_dir) / "thresholds.json")
+    problems = missing_cap_constants(baseline_params, thresholds, horizons)
+    if problems:
+        raise SystemExit(
+            f"replay.py {stage}: cap-T constants are incomplete; every uncapped emp cell's "
+            "p3_star/fixed_K_star/level_star and phi_k4 threshold must be present for its "
+            "own cap, or the deployment silently substitutes the cap-64 tuning:\n  "
+            + "\n  ".join(problems)
+        )
+
+
+# ---- comparator cache -------------------------------------------------------------------
+
+
+def purge_stale_emp_comparators(out_dir: str | Path) -> int:
+    """Delete every cached comparator prefix/metadata file for an emp/emp_boot cell.
+
+    `run_deployment.prepare_cell_constants` caches the reservoir prefix by
+    ``<cell>_seed<seed>_M<M>`` alone (shared with the shipped deployment tests, so that
+    key is deliberately not touched here): a cell's name and seed are the same before and
+    after `estimate` re-fits a reservoir from more data, so a prefix cached under the old
+    reservoir survives untouched and `harness.run_cell`'s CRN check then fails against the
+    freshly estimated one. Every emp cell's `env_id` starts with ``"emp_"``, point or
+    bootstrapped alike, so one glob under ``comparators/`` finds every stale file. Called
+    on every `estimate` run (not only when a reservoir's spec actually changed): a
+    dict/float comparison could miss a change that matters, or flag one that does not,
+    and a wasted recompute of a cached prefix is far cheaper than a silently stale one.
+    """
+    comparators_dir = Path(out_dir) / "comparators"
+    if not comparators_dir.exists():
+        return 0
+    n = 0
+    for path in comparators_dir.glob("emp_*"):
+        if path.suffix in (".npy", ".json"):
+            path.unlink()
+            n += 1
+    return n
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -209,7 +305,11 @@ def main(argv: list[str] | None = None) -> None:
         for (pool, variant), res in reservoirs.items():
             log.info("%s %-10s mean %.4f sd %.4f atoms %d %s", pool, variant, res.mean(), res.sd(),
                      res.atoms.size, res.validation_error or "")
+        n_purged = purge_stale_emp_comparators(args.out_dir)
+        log.info("purged %d stale emp comparator file(s) under %s (new reservoirs invalidate any "
+                 "prefix cached under the previous ones)", n_purged, Path(args.out_dir) / "comparators")
     elif args.stage == "point":
+        _require_cap_constants(args.out_dir, ALL_HORIZONS, "point")
         rd.main(["--test", "emp", "--workers", str(args.workers), "--out-dir", str(args.out_dir)],
                 cells=point_cells())
     elif args.stage == "kgrid":
@@ -219,6 +319,7 @@ def main(argv: list[str] | None = None) -> None:
         frame.to_csv(out, index=False)
         log.info("wrote %s (%d rows)", out, len(frame))
     else:
+        _require_cap_constants(args.out_dir, PRIMARY_HORIZONS, "boot")
         outcomes = emp.terminal_outcomes(emp.load_attempts(sorted(LOG_DIR.glob("worker_*.jsonl"))))
         noise = json.loads((RES_DIR / "noise.json").read_text())
         cells = []

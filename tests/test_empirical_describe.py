@@ -58,7 +58,7 @@ def test_cross_pool_prediction():
         {"pool": "F", "variant": "npmle", "horizon": 50, "k_star": 32},
     ])
     out = describe.cross_pool_prediction({"G": 0.7, "F": 0.5}, kstar).iloc[0]
-    assert out["low_pool"] == "F" and bool(out["sign_agrees"])
+    assert out["low_pool"] == "F" and bool(out["sign_agrees"]) and not bool(out["tie"])
     assert out["ratio_observed"] == pytest.approx(2.0)
     assert out["ratio_predicted"] == pytest.approx(np.exp(4 * 0.2))
 
@@ -76,3 +76,44 @@ def test_locate_ranks_against_the_corpus():
     out = describe.locate(pools, corpus).iloc[0]
     assert out["sd_pct_below"] == pytest.approx(0.0)
     assert out["level_pct_below"] == pytest.approx(4 / 8)
+
+
+def test_cross_pool_tie_is_not_agreement():
+    kstar = pd.DataFrame([
+        {"pool": "G", "variant": "npmle", "horizon": 50, "k_star": 16},
+        {"pool": "F", "variant": "npmle", "horizon": 50, "k_star": 16},
+    ])
+    out = describe.cross_pool_prediction({"G": 0.7, "F": 0.5}, kstar).iloc[0]
+    assert not bool(out["sign_agrees"]) and bool(out["tie"])
+
+
+def _envelope():
+    rows = []
+    for i, k in enumerate([8, 12, 16, 24, 48]):
+        for K in (8, 16):  # one row per K in the real table; k_star repeats within an (env, T)
+            rows.append({"level": "env", "env_id": f"e{i}", "horizon": 50, "cap": 50, "K": K, "k_star": k})
+        rows.append({"level": "env", "env_id": f"e{i}", "horizon": 50, "cap": 64, "K": 8, "k_star": 999})
+    rows.append({"level": "pooled", "env_id": "all", "horizon": 50, "cap": 50, "K": 8, "k_star": 24})
+    return pd.DataFrame(rows)
+
+
+def test_locate_k_star_against_the_corpus_envelope():
+    kstar = pd.DataFrame([{"env_id": "emp_G_npmle", "pool": "G", "variant": "npmle", "horizon": 50, "k_star": 16},
+                          {"env_id": "emp_F_npmle", "pool": "F", "variant": "npmle", "horizon": 100, "k_star": 32}])
+    out = describe.locate_k_star(kstar, _envelope())
+    g = out.iloc[0]
+    assert g["corpus_n_envs"] == 5  # capped and pooled rows are not corpus environments
+    assert g["corpus_pct_below"] == pytest.approx(2 / 5) and g["corpus_pct_at_or_below"] == pytest.approx(3 / 5)
+    assert g["corpus_k_star_min"] == 8 and g["corpus_k_star_median"] == 16 and g["corpus_k_star_max"] == 48
+    assert bool(g["inside_corpus_range"])
+    f = out.iloc[1]
+    assert f["corpus_n_envs"] == 0 and not bool(f["inside_corpus_range"])
+
+
+def test_corpus_k_star_matches_the_real_envelope_layout():
+    path = ROOT / "results" / "growing_bandits" / "deploy" / "tables" / "k_star_envelope_all33.csv"
+    if not path.exists():
+        pytest.skip("corpus envelope not present")
+    corpus = describe.corpus_k_star(pd.read_csv(path))
+    assert set(corpus["horizon"]) == {50, 100, 200, 500, 1000}
+    assert corpus.groupby("horizon")["env_id"].nunique().max() <= 33

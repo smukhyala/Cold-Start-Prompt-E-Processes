@@ -2,8 +2,9 @@
 
     .venv/bin/python experiments/growing_bandits/empirical/describe.py
 
-reads ``tables/emp_kgrid.csv``, the reservoirs and the ``emp`` episodes, and writes
-``tables/emp_{pool_location,kstar,flatness,cross_pool,cap64,rule_gaps}.csv``.
+reads ``tables/emp_kgrid.csv``, the reservoirs, the ``emp`` episodes and the corpus K*
+envelope (``tables/k_star_envelope_all33.csv``), and writes
+``tables/emp_{pool_location,kstar,kstar_location,flatness,cross_pool,cap64,rule_gaps}.csv``.
 
 K* here is an in-sample argmin on the pool's own reservoir: a ceiling, never a deployable
 policy. A cell is *informative* iff fixed-K regret moves by more than 5 x MEI = 0.01 over
@@ -74,7 +75,7 @@ def cross_pool_prediction(levels: dict[str, float], kstar: pd.DataFrame) -> pd.D
         if low not in k or high not in k:
             continue
         rows.append({"horizon": int(T), "low_pool": low, "high_pool": high, "k_star_low": k[low],
-                     "k_star_high": k[high], "sign_agrees": k[low] >= k[high],
+                     "k_star_high": k[high], "sign_agrees": k[low] > k[high], "tie": k[low] == k[high],
                      "ratio_observed": k[low] / k[high],
                      "ratio_predicted": float(np.exp(LEVEL_RULE_B * (levels[high] - levels[low])))})
     return pd.DataFrame(rows)
@@ -104,6 +105,35 @@ def rule_gaps(out_dir: Path, kstar: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def corpus_k_star(envelope: pd.DataFrame) -> pd.DataFrame:
+    """One K*(T) per corpus environment and horizon from ``k_star_envelope_all33.csv`` (uncapped rows)."""
+    env = envelope[(envelope["level"] == "env") & (envelope["cap"] == envelope["horizon"])]
+    per = env.groupby(["env_id", "horizon"])["k_star"].agg(["nunique", "first"]).reset_index()
+    bad = per[per["nunique"] != 1]
+    if len(bad):
+        raise ValueError(f"envelope has more than one k_star for {bad[['env_id', 'horizon']].to_dict('records')[:3]}")
+    return per.rename(columns={"first": "k_star"})[["env_id", "horizon", "k_star"]]
+
+
+def locate_k_star(kstar: pd.DataFrame, envelope: pd.DataFrame) -> pd.DataFrame:
+    """Where each pool's K*(T) falls in the corpus environments' K*(T) distribution (spec section 6, item 4)."""
+    corpus = corpus_k_star(envelope)
+    rows = []
+    for r in kstar.to_dict("records"):
+        ks = corpus.loc[corpus["horizon"] == r["horizon"], "k_star"].to_numpy(dtype=float)
+        k = float(r["k_star"])
+        n = ks.size
+        rows.append({"env_id": r["env_id"], "pool": r["pool"], "variant": r["variant"], "horizon": int(r["horizon"]),
+                     "k_star": int(r["k_star"]), "corpus_n_envs": int(n),
+                     "corpus_k_star_min": float(ks.min()) if n else np.nan,
+                     "corpus_k_star_median": float(np.median(ks)) if n else np.nan,
+                     "corpus_k_star_max": float(ks.max()) if n else np.nan,
+                     "corpus_pct_below": float(np.mean(ks < k)) if n else np.nan,
+                     "corpus_pct_at_or_below": float(np.mean(ks <= k)) if n else np.nan,
+                     "inside_corpus_range": bool(n and ks.min() <= k <= ks.max())})
+    return pd.DataFrame(rows)
+
+
 def locate(pool_rows: pd.DataFrame, corpus_rows: pd.DataFrame) -> pd.DataFrame:
     out = []
     for r in pool_rows.to_dict("records"):
@@ -119,6 +149,8 @@ def locate(pool_rows: pd.DataFrame, corpus_rows: pd.DataFrame) -> pd.DataFrame:
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR)
+    ap.add_argument("--envelope", type=Path, default=None,
+                    help="corpus K* envelope (default: <out-dir>/tables/k_star_envelope_all33.csv)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     tables = args.out_dir / "tables"
@@ -138,6 +170,8 @@ def main(argv: list[str] | None = None) -> None:
 
     locate(pools, corpus).to_csv(tables / "emp_pool_location.csv", index=False)
     kstar.to_csv(tables / "emp_kstar.csv", index=False)
+    envelope = pd.read_csv(args.envelope or tables / "k_star_envelope_all33.csv")
+    locate_k_star(kstar, envelope).to_csv(tables / "emp_kstar_location.csv", index=False)
     flatness(kgrid).to_csv(tables / "emp_flatness.csv", index=False)
     cross_pool_prediction(levels, kstar).to_csv(tables / "emp_cross_pool.csv", index=False)
     cap64_cost(kgrid).to_csv(tables / "emp_cap64.csv", index=False)

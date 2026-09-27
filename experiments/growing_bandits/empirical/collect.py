@@ -15,16 +15,26 @@ failure writes ``missing``, which estimation excludes and never scores 0.
 
 Every worker re-reads the summed ``cost_usd`` of all workers before each attempt and stops
 at the budget, so the overshoot is bounded by the episodes already in flight (8 x ~$0.05).
+
+A worker recycles its server/browser (close + reset) every ``RECYCLE_EVERY`` episodes even
+without an error, since the sibling server's stdout/stderr pipes are never drained and can
+back up over a long-lived process. Recovery (after an infra error or a recycle) retries
+``reset()`` with backoff; a worker that fails to recover several times in a row gives up
+with a clear error rather than spinning forever. A pid lockfile refuses a second collector
+against the same log dir while one is already running.
 """
 
 from __future__ import annotations
 
 import argparse
+import concurrent.futures as cf
 import datetime as dt
 import json
 import logging
 import multiprocessing as mp_
+import os
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,7 +70,18 @@ AGENT = {
 API_ERROR_MARKERS: tuple[str, ...] = (
     "RateLimitError", "APIConnectionError", "APITimeoutError", "InternalServerError", "ServiceUnavailable",
     "Error code: 429", "Error code: 500", "Error code: 502", "Error code: 503", "Error code: 529", "overloaded",
+    # browser-use wraps openai's APIConnectionError/APITimeoutError as ModelProviderError(message=str(e)),
+    # which collapses to just these two sentences (openai/_exceptions.py APIConnectionError/APITimeoutError).
+    "Connection error", "Request timed out", "Rate limit",
 )
+# A WebArena server's stdout/stderr pipes are never drained (webarena-infinity/evaluation/server.py);
+# recycling periodically bounds how long any one server/browser process lives.
+RECYCLE_EVERY = 100
+# `reset()` retry policy for recovering a broken server/browser (after an infra error or a recycle).
+RECOVERY_ATTEMPTS = 3
+RECOVERY_BACKOFF_S: tuple[float, ...] = (10.0, 30.0, 60.0)
+# Consecutive *failed* recoveries (not consecutive infra_error attempts) before a worker gives up.
+MAX_RECOVERY_FAILURES = 3
 
 
 @dataclass(frozen=True)
@@ -74,20 +95,97 @@ class WorkerConfig:
     max_steps: int = MAX_STEPS
 
 
+def _default_failure_streak() -> int:
+    """Consecutive step failures browser-use tolerates before giving up on an episode.
+
+    Mirrors ``browser_use.agent.views.AgentSettings.max_failures`` (5 by default): after
+    that many consecutive provider-error steps, browser-use forces a final "done" action
+    (if ``final_response_after_failure``) and stops. Read live from the installed package
+    rather than hard-coding it, so an upgrade that changes the default doesn't silently
+    desync; falls back to a conservative 3 if browser-use isn't importable or the field
+    moved.
+    """
+    try:
+        from browser_use.agent.views import AgentSettings
+
+        return int(AgentSettings.model_fields["max_failures"].default)
+    except Exception:  # noqa: BLE001 -- any import/attribute drift falls back, never crashes classify
+        return 3
+
+
+def _is_provider_error(msg: str | None) -> bool:
+    return msg is not None and any(marker in str(msg) for marker in API_ERROR_MARKERS)
+
+
+def _ends_in_provider_streak(tail: list, required: int) -> bool:
+    """True iff `tail` (oldest-first, one entry per step, ``None`` = no error that step)
+    ends with `required` consecutive provider-error steps.
+
+    Tolerates exactly one trailing step with no error: browser-use's forced final "done"
+    action after ``max_failures`` has no error of its own, but is still part of the same
+    give-up, not a recovery.
+    """
+    steps = list(tail)
+    if steps and steps[-1] is None:
+        steps = steps[:-1]
+    streak = 0
+    for msg in reversed(steps):
+        if _is_provider_error(msg):
+            streak += 1
+        else:
+            break
+    return streak >= required
+
+
 def classify(result: RunResult | None, exc: BaseException | None) -> str:
+    """``infra_error`` iff the harness raised, or the episode failed and ended in browser-use's
+    give-up streak of provider errors; a single transient error the agent recovered from, or an
+    agent timeout, is a scored task failure, not infra.
+    """
     if exc is not None or result is None:
         return emp.STATUS_INFRA
     trace = result.trace or {}
     if trace.get("timed_out"):
         return emp.STATUS_OK
-    errors = " ".join(str(e) for e in trace.get("errors") or [])
-    if not result.success and not trace.get("is_done", False) and any(m in errors for m in API_ERROR_MARKERS):
+    if result.success:
+        return emp.STATUS_OK
+    tail = trace.get("error_tail") or []
+    if _ends_in_provider_streak(tail, _default_failure_streak()):
         return emp.STATUS_INFRA
     return emp.STATUS_OK
 
 
+def _repair_truncated_tail(path: Path) -> None:
+    """Drop a final line left mid-write by a hard kill (no trailing newline, doesn't parse).
+
+    A worker that dies mid-``_append`` leaves a byte fragment with no terminating newline;
+    left alone, the next read chokes on it (``load_attempts`` is deliberately strict) and the
+    next append glues a new record onto the fragment, corrupting both. A complete line that
+    happens to be malformed (ends in a newline) is left untouched -- that is a real data bug,
+    not a torn write, and must still raise.
+    """
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError:
+        return
+    if not data or data.endswith(b"\n"):
+        return
+    last_nl = data.rfind(b"\n")
+    tail = data[last_nl + 1 :]
+    try:
+        json.loads(tail.decode("utf-8"))
+        return  # parses fine even without a trailing newline; nothing to repair
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        log.warning("dropping a truncated trailing line in %s (%d bytes)", path, len(tail))
+        with open(path, "r+b") as fh:
+            fh.truncate(last_nl + 1)
+
+
 def _log_files(log_dir: Path) -> list[Path]:
-    return sorted(Path(log_dir).glob("worker_*.jsonl"))
+    paths = sorted(Path(log_dir).glob("worker_*.jsonl"))
+    for p in paths:
+        _repair_truncated_tail(p)
+    return paths
 
 
 def spent_usd(log_dir: Path) -> float:
@@ -145,16 +243,38 @@ def _record(item, attempt: int, status: str, result: RunResult | None, exc: Base
 
 
 def _append(path: Path, record: dict) -> None:
+    _repair_truncated_tail(path)  # never glue a new record onto a torn prior write
     with open(path, "a") as fh:
         fh.write(json.dumps(record) + "\n")
         fh.flush()
 
 
 def _recover(adapter) -> None:
+    """Restart `adapter`'s server/browser after an infra error or a proactive recycle.
+
+    `close()`'s own exceptions are swallowed and logged: a broken server/browser is exactly
+    what triggers recovery, so a failing close() must never block the reset() that follows.
+    `reset()` is retried with backoff (a WebArena server can take longer than one shot to
+    come back); if every attempt fails, the last exception is raised so the caller can decide
+    whether to give up the worker.
+    """
     try:
         adapter.close()
-    finally:
-        adapter.reset(seed=0)
+    except Exception as err:  # noqa: BLE001 -- close() failing must never block reset()
+        log.warning("close() raised during recovery (continuing to reset): %r", err)
+
+    last_err: BaseException | None = None
+    for attempt in range(RECOVERY_ATTEMPTS):
+        try:
+            adapter.reset(seed=0)
+            return
+        except Exception as err:  # noqa: BLE001 -- retried, then surfaced to the caller
+            last_err = err
+            log.warning("reset() attempt %d/%d failed: %r", attempt + 1, RECOVERY_ATTEMPTS, err)
+            if attempt < RECOVERY_ATTEMPTS - 1:
+                time.sleep(RECOVERY_BACKOFF_S[attempt])
+    assert last_err is not None
+    raise last_err
 
 
 def run_worker(cfg: WorkerConfig, queue: list[make_pools.QueueItem], prompts: dict[str, make_pools.PoolArm],
@@ -166,6 +286,26 @@ def run_worker(cfg: WorkerConfig, queue: list[make_pools.QueueItem], prompts: di
         adapter.register_prompt(arm_id, prompt.text)
     done, tries = _progress(cfg.log_dir)
     mine = [q for q in queue if q.index % cfg.n_workers == cfg.worker and (q.pilot or not cfg.pilot_only)]
+
+    recovery_failures = 0
+
+    def recover() -> None:
+        """Recover `adapter`, giving up the whole worker after too many failures in a row."""
+        nonlocal recovery_failures
+        try:
+            _recover(adapter)
+            recovery_failures = 0
+        except Exception as err:  # noqa: BLE001 -- counted, then possibly escalated below
+            recovery_failures += 1
+            log.error("worker %d: recovery failed (%d/%d consecutive): %r", cfg.worker,
+                      recovery_failures, MAX_RECOVERY_FAILURES, err)
+            if recovery_failures >= MAX_RECOVERY_FAILURES:
+                raise RuntimeError(
+                    f"worker {cfg.worker} giving up after {recovery_failures} consecutive failed "
+                    f"recoveries: {err!r}"
+                ) from err
+
+    episodes_since_recycle = 0
     for item in mine:
         key = (item.arm_id, item.task_id, item.replicate)
         if key in done:
@@ -182,16 +322,60 @@ def run_worker(cfg: WorkerConfig, queue: list[make_pools.QueueItem], prompts: di
                 result = adapter.run_arm(prompt.arm, task, None, cfg.max_steps)
             except Exception as err:  # noqa: BLE001 -- any harness failure is infra, by definition
                 exc = err
+            episodes_since_recycle += 1
             status = classify(result, exc)
             if status == emp.STATUS_INFRA and attempt >= cfg.max_attempts:
                 status = emp.STATUS_MISSING
             _append(path, _record(item, attempt, status, result, exc, cfg, prompt))
-            if status != emp.STATUS_INFRA:
-                break
-            log.warning("worker %d: %s/%s attempt %d infra error; recovering", cfg.worker, item.arm_id,
-                        item.task_id, attempt)
-            _recover(adapter)
+            if status == emp.STATUS_INFRA:
+                log.warning("worker %d: %s/%s attempt %d infra error; recovering", cfg.worker, item.arm_id,
+                            item.task_id, attempt)
+                recover()
+                episodes_since_recycle = 0
+                continue
+            if episodes_since_recycle >= RECYCLE_EVERY:
+                log.info("worker %d: recycling server/browser after %d episodes", cfg.worker,
+                         episodes_since_recycle)
+                recover()
+                episodes_since_recycle = 0
+            break
     return "done"
+
+
+def _pid_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # process exists, just owned by someone else
+    return True
+
+
+def _acquire_lock(lock_path: Path) -> None:
+    """Refuse to start a second collector against `lock_path`'s log dir.
+
+    A lock naming a live pid means another collector is already running there. A lock
+    naming a dead pid is stale (its owner crashed or was killed without cleaning up) and is
+    silently replaced.
+    """
+    if lock_path.exists():
+        try:
+            owner = int(lock_path.read_text().strip())
+        except (ValueError, OSError):
+            owner = None
+        if owner is not None and _pid_is_alive(owner):
+            raise RuntimeError(f"another collector (pid {owner}) holds {lock_path}; refusing to start a second one")
+        log.warning("removing stale lock %s (pid %s is not running)", lock_path, owner)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(str(os.getpid()))
+
+
+def _release_lock(lock_path: Path) -> None:
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def load_prompts(data_dir: Path) -> dict[str, make_pools.PoolArm]:
@@ -226,7 +410,10 @@ def _worker_main(worker: int, n_workers: int, data_dir: str, log_dir: str, budge
         cfg = WorkerConfig(worker=worker, n_workers=n_workers, log_dir=logs, budget_usd=budget, pilot_only=pilot)
         return run_worker(cfg, queue, prompts, adapter)
     finally:
-        adapter.close()
+        try:
+            adapter.close()
+        except Exception as err:  # noqa: BLE001 -- shutdown cleanup must never mask a real worker error
+            log.warning("worker %d: close() during shutdown raised: %r", worker, err)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -240,23 +427,36 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     args.log_dir.mkdir(parents=True, exist_ok=True)
     status_path = args.log_dir / "STATUS"
+    lock_path = args.log_dir / "collect.lock"
+    _acquire_lock(lock_path)
     status_path.write_text("running\n")
-    load_prompts(args.data)  # fail fast on a moved hash, before any server starts
-    ctx = mp_.get_context("spawn")
-    with ctx.Pool(args.workers) as pool:
-        results = [pool.apply_async(_worker_main, (w, args.workers, str(args.data), str(args.log_dir),
-                                                   args.budget, args.pilot)) for w in range(args.workers)]
-        outcomes = []
-        for w, r in enumerate(results):
-            try:
-                outcomes.append(r.get())
-            except Exception as err:  # noqa: BLE001
-                log.error("worker %d failed: %r", w, err)
-                outcomes.append("failed")
-    final = "budget" if "budget" in outcomes else ("failed" if "failed" in outcomes else "done")
-    status_path.write_text(final + "\n")
-    log.info("collector finished: %s (spent $%.2f)", final, spent_usd(args.log_dir))
-    return {"done": 0, "budget": 3, "failed": 1}[final]
+    # A crashed worker (OOM, segfault, SIGKILL) must never be hidden behind a "budget" stop from
+    # some other worker: "budget" is an expected, benign stop a person would resume from without a
+    # second look, while a crash means an unknown slice of the queue was never safely attempted.
+    final = "failed"
+    try:
+        load_prompts(args.data)  # fail fast on a moved hash, before any server starts
+        ctx = mp_.get_context("spawn")
+        outcomes: list[str] = []
+        with cf.ProcessPoolExecutor(max_workers=args.workers, mp_context=ctx) as pool:
+            futures = {
+                pool.submit(_worker_main, w, args.workers, str(args.data), str(args.log_dir), args.budget,
+                            args.pilot): w
+                for w in range(args.workers)
+            }
+            for fut in cf.as_completed(futures):
+                w = futures[fut]
+                try:
+                    outcomes.append(fut.result())
+                except Exception as err:  # noqa: BLE001 -- covers a raised error and a BrokenProcessPool alike
+                    log.error("worker %d failed: %r", w, err)
+                    outcomes.append("failed")
+        final = "failed" if "failed" in outcomes else ("budget" if "budget" in outcomes else "done")
+        return {"done": 0, "budget": 3, "failed": 1}[final]
+    finally:
+        status_path.write_text(final + "\n")
+        log.info("collector finished: %s (spent $%.2f)", final, spent_usd(args.log_dir))
+        _release_lock(lock_path)
 
 
 if __name__ == "__main__":

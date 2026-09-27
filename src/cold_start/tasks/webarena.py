@@ -36,6 +36,12 @@ _DEFAULT_WEBARENA_ROOT = (
     Path(__file__).resolve().parents[4] / "webarena-infinity"
 )
 
+# `result_dict["errors"]` is browser-use's full, positional, one-per-step error list (`None`
+# for a step with no error); the collector's infra/genuine-failure classification cares about
+# whether the *end* of that list is a give-up streak, so we surface the last several steps
+# verbatim (untruncated) alongside the existing first-few `errors` field kept for back-compat.
+ERROR_TAIL_LEN = 8
+
 _PERSISTENT_LOOP: asyncio.AbstractEventLoop | None = None
 _ARMED_AGENT_CLS: type | None = None
 
@@ -422,6 +428,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         # Token summary was stashed on the armed agent during `agent.run()`.
         tokens = dict(getattr(self._agent, "_last_token_summary", {}) or {})
 
+        raw_errors = result_dict.get("errors") or []
         return RunResult(
             success=bool(result_dict["passed"]),
             reward=float(bool(result_dict["passed"])),
@@ -431,7 +438,8 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
                 "env": "webarena",
                 "verifier_message": result_dict.get("verifier_message", ""),
                 "final_result": result_dict.get("final_result") or "",
-                "errors": (result_dict.get("errors") or [])[:5],
+                "errors": raw_errors[:5],
+                "error_tail": raw_errors[-ERROR_TAIL_LEN:],
                 "is_done": bool(result_dict.get("is_done", False)),
                 "task_dir": str(task_dir),
             },

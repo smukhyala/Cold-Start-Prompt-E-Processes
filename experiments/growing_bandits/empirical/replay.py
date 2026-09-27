@@ -262,25 +262,37 @@ def _require_cap_constants(out_dir: Path, horizons: Iterable[int], stage: str) -
 # ---- comparator cache -------------------------------------------------------------------
 
 
-def purge_stale_emp_comparators(out_dir: str | Path) -> int:
-    """Delete every cached comparator prefix/metadata file for an emp/emp_boot cell.
+def purge_stale_emp_comparators(out_dir: str | Path, *, boot_only: bool = False) -> int:
+    """Delete cached comparator prefix/metadata files for emp/emp_boot cells.
 
     `run_deployment.prepare_cell_constants` caches the reservoir prefix by
     ``<cell>_seed<seed>_M<M>`` alone (shared with the shipped deployment tests, so that
     key is deliberately not touched here): a cell's name and seed are the same before and
-    after `estimate` re-fits a reservoir from more data, so a prefix cached under the old
+    after a reservoir is re-fit from more data, so a prefix cached under the old
     reservoir survives untouched and `harness.run_cell`'s CRN check then fails against the
-    freshly estimated one. Every emp cell's `env_id` starts with ``"emp_"``, point or
-    bootstrapped alike, so one glob under ``comparators/`` finds every stale file. Called
-    on every `estimate` run (not only when a reservoir's spec actually changed): a
+    freshly estimated one. This affects both call sites that re-fit a reservoir in place:
+    `estimate` (the six point reservoirs) and `boot` (the `N_BOOT` bootstrap ones), so
+    each `env_id` starts with ``"emp_"`` -- point or bootstrapped alike -- and one glob
+    under ``comparators/`` finds every stale file for either.
+
+    ``boot_only=True`` (used by the `boot` stage) restricts the glob to a bootstrap
+    cell's stem -- ``emp_<pool>_<variant>_b<NNN>_...`` -- so a re-run of `boot` cannot
+    delete the point cells' caches (`estimate` already owns invalidating those, and they
+    are far more expensive to rebuild: M is 4x `boot`'s and every horizon runs, not just
+    the three primary ones). ``boot_only=False`` (the default, used by `estimate`, which
+    can invalidate *either* kind since it is what changes both) matches every emp
+    comparator file, point and bootstrapped alike.
+
+    Called unconditionally rather than only when a reservoir's spec actually changed: a
     dict/float comparison could miss a change that matters, or flag one that does not,
     and a wasted recompute of a cached prefix is far cheaper than a silently stale one.
     """
     comparators_dir = Path(out_dir) / "comparators"
     if not comparators_dir.exists():
         return 0
+    pattern = "emp_*_b[0-9][0-9][0-9]_*" if boot_only else "emp_*"
     n = 0
-    for path in comparators_dir.glob("emp_*"):
+    for path in comparators_dir.glob(pattern):
         if path.suffix in (".npy", ".json"):
             path.unlink()
             n += 1
@@ -320,6 +332,9 @@ def main(argv: list[str] | None = None) -> None:
         log.info("wrote %s (%d rows)", out, len(frame))
     else:
         _require_cap_constants(args.out_dir, PRIMARY_HORIZONS, "boot")
+        n_purged = purge_stale_emp_comparators(args.out_dir, boot_only=True)
+        log.info("purged %d stale emp_boot comparator file(s) under %s (a re-run re-fits every "
+                 "bootstrap reservoir from the current logs)", n_purged, Path(args.out_dir) / "comparators")
         outcomes = emp.terminal_outcomes(emp.load_attempts(sorted(LOG_DIR.glob("worker_*.jsonl"))))
         noise = json.loads((RES_DIR / "noise.json").read_text())
         cells = []

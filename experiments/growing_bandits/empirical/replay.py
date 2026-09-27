@@ -12,6 +12,14 @@ parametric), the noise model and the parametric fit table under
 ``boot`` re-estimates the NPMLE on B = 200 prompt resamples and deploys the four contrast
 policies at the primary horizons, M = 250.
 
+One data snapshot ties the verdict together: ``estimate`` freezes the terminal outcomes it
+read into ``reservoirs/outcomes_snapshot.jsonl`` and writes ``reservoirs/manifest.json`` with
+the sha256 of that snapshot, ``noise.json``, the fit table and each reservoir. ``boot``
+resamples the snapshot (never the live logs); ``kgrid`` rows carry their reservoir's sha256;
+``point``/``boot`` refuse reservoirs that no longer match the manifest and stamp the
+manifest they ran on (``tables/{emp,emp_boot}_reservoir_stamp.json``), which
+`registered_contrast.prompt_bootstrap_contrast` checks before it rules.
+
 Seeds: every (pool, T) has one seed shared by its three variants (CRN across variants);
 every bootstrap replicate has its own seeds and its own env id, so the per-cell
 comparator cache (`run_deployment.prepare_cell_constants`) can never mix replicates.
@@ -38,6 +46,7 @@ for _p in (ROOT / "src", HERE.parent / "deploy", HERE):
 
 import k_star_envelope as kse  # noqa: E402
 import policy_table as pt  # noqa: E402
+import registered_contrast as rc  # noqa: E402
 import run_deployment as rd  # noqa: E402
 
 import cold_start.growing.empirical_reservoir  # noqa: E402,F401  (registers "empirical" in workers)
@@ -68,6 +77,9 @@ PHI_K4_VARIANT: str = pt.POLICIES["phi_k4"]["params"]["artifact"]
 DATA_DIR = ROOT / "data" / "empirical_pool"
 LOG_DIR = ROOT / "logs" / "empirical_pool"
 RES_DIR = DATA_DIR / "reservoirs"
+SNAPSHOT_FILE = "outcomes_snapshot.jsonl"
+MANIFEST_FILE = "manifest.json"
+SNAPSHOT_COLUMNS: tuple[str, ...] = ("pool", "arm_id", "task_id", "replicate", "attempt", "status", "success")
 
 
 def env_id(pool: str, variant: str, boot: int | None = None) -> str:
@@ -164,6 +176,105 @@ def bootstrap_reservoirs(outcomes: pd.DataFrame, noise: dict, *, n_boot: int = N
     return out
 
 
+# ---- the frozen data snapshot -----------------------------------------------------------
+
+
+def write_snapshot(outcomes: pd.DataFrame, res_dir: Path) -> Path:
+    """The terminal outcomes `estimate` used, one JSON line each, sorted -- deterministic bytes."""
+    frame = outcomes[list(SNAPSHOT_COLUMNS)].sort_values(["pool", "arm_id", "task_id", "replicate"])
+    path = Path(res_dir) / SNAPSHOT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as fh:
+        for r in frame.to_dict("records"):
+            success = r["success"]
+            fh.write(json.dumps({
+                "pool": str(r["pool"]), "arm_id": str(r["arm_id"]), "task_id": str(r["task_id"]),
+                "replicate": int(r["replicate"]), "attempt": int(r["attempt"]), "status": str(r["status"]),
+                "success": None if success is None or pd.isna(success) else int(success),
+            }, sort_keys=True) + "\n")
+    return path
+
+
+def write_manifest(res_dir: Path, reservoir_names: Iterable[str]) -> Path:
+    res_dir = Path(res_dir)
+    manifest = {
+        "outcomes_snapshot": {"file": SNAPSHOT_FILE, "sha256": rc.file_sha256(res_dir / SNAPSHOT_FILE)},
+        "noise": rc.file_sha256(res_dir / "noise.json"),
+        "parametric_fits": rc.file_sha256(res_dir / "parametric_fits.csv"),
+        "reservoirs": {name: rc.file_sha256(res_dir / f"{name}.json") for name in sorted(reservoir_names)},
+    }
+    path = res_dir / MANIFEST_FILE
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
+    return path
+
+
+def load_manifest(res_dir: Path) -> dict:
+    path = Path(res_dir) / MANIFEST_FILE
+    if not path.exists():
+        raise FileNotFoundError(f"no {path}: run `replay.py estimate` first")
+    return json.loads(path.read_text())
+
+
+def load_snapshot(res_dir: Path) -> pd.DataFrame:
+    """The frozen outcomes, after checking their sha256 against the manifest."""
+    manifest = load_manifest(res_dir)
+    path = Path(res_dir) / manifest["outcomes_snapshot"]["file"]
+    got = rc.file_sha256(path)
+    if got != manifest["outcomes_snapshot"]["sha256"]:
+        raise ValueError(f"{path} sha256 {got} != manifest's {manifest['outcomes_snapshot']['sha256']}")
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return pd.DataFrame(rows, columns=list(SNAPSHOT_COLUMNS))
+
+
+def verify_reservoirs(res_dir: Path) -> dict[str, str]:
+    """``{env_id: sha256}`` of the six point reservoirs; raises if any file moved since `estimate`."""
+    shas = load_manifest(res_dir)["reservoirs"]
+    out: dict[str, str] = {}
+    for pool in POOLS:
+        for variant in VARIANTS:
+            name = f"{pool}_{variant}"
+            got = rc.file_sha256(Path(res_dir) / f"{name}.json")
+            if shas.get(name) != got:
+                raise ValueError(f"reservoir {name}.json sha256 {got} != manifest's {shas.get(name)}; "
+                                 "re-run `replay.py estimate`")
+            out[env_id(pool, variant)] = got
+    return out
+
+
+def stamp_kgrid(frame: pd.DataFrame, shas: dict[str, str]) -> pd.DataFrame:
+    """Each K-grid row carries the sha256 of the reservoir its cell ran on."""
+    missing = sorted(set(frame["env_id"]) - set(shas))
+    if missing:
+        raise ValueError(f"no reservoir sha for {missing}")
+    return frame.assign(reservoir_sha256=frame["env_id"].map(shas))
+
+
+def run_estimate(log_dir: Path, res_dir: Path, out_dir: Path) -> dict:
+    """Read the logs once, freeze them, estimate, and write reservoirs + manifest."""
+    outcomes = emp.terminal_outcomes(emp.load_attempts(sorted(Path(log_dir).glob("worker_*.jsonl"))))
+    write_snapshot(outcomes, res_dir)
+    reservoirs, noise, fits = estimate(load_snapshot_unchecked(res_dir))
+    for (pool, variant), res in reservoirs.items():
+        save_reservoir(res, Path(res_dir) / f"{pool}_{variant}.json")
+    (Path(res_dir) / "noise.json").write_text(json.dumps(noise, indent=2))
+    fits.to_csv(Path(res_dir) / "parametric_fits.csv", index=False)
+    write_manifest(res_dir, [f"{p}_{v}" for p, v in reservoirs])
+    for (pool, variant), res in reservoirs.items():
+        log.info("%s %-10s mean %.4f sd %.4f atoms %d %s", pool, variant, res.mean(), res.sd(),
+                 res.atoms.size, res.validation_error or "")
+    n_purged = purge_stale_emp_comparators(out_dir)
+    log.info("purged %d stale emp comparator file(s) under %s (new reservoirs invalidate any "
+             "prefix cached under the previous ones)", n_purged, Path(out_dir) / "comparators")
+    return {"reservoirs": reservoirs, "noise": noise, "fits": fits}
+
+
+def load_snapshot_unchecked(res_dir: Path) -> pd.DataFrame:
+    """The snapshot just written (before a manifest exists): estimate reads what it froze, not the logs."""
+    path = Path(res_dir) / SNAPSHOT_FILE
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    return pd.DataFrame(rows, columns=list(SNAPSHOT_COLUMNS))
+
+
 def save_reservoir(res: EmpiricalReservoir, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(res.to_spec()))
@@ -198,8 +309,9 @@ def kgrid(cells: list[CellSpec], *, workers: int, k_grid: tuple[int, ...] = kse.
     return frame.assign(pool=parts[1], variant=parts[2])
 
 
-def point_cells() -> list[CellSpec]:
-    return [make_emp_cell(p, v, T, load_reservoir(RES_DIR / f"{p}_{v}.json"), EMP_REPLICATES)
+def point_cells(res_dir: Path | None = None) -> list[CellSpec]:
+    res_dir = RES_DIR if res_dir is None else Path(res_dir)
+    return [make_emp_cell(p, v, T, load_reservoir(res_dir / f"{p}_{v}.json"), EMP_REPLICATES)
             for p in POOLS for v in VARIANTS for T in ALL_HORIZONS]
 
 
@@ -308,24 +420,16 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     if args.stage == "estimate":
-        outcomes = emp.terminal_outcomes(emp.load_attempts(sorted(LOG_DIR.glob("worker_*.jsonl"))))
-        reservoirs, noise, fits = estimate(outcomes)
-        for (pool, variant), res in reservoirs.items():
-            save_reservoir(res, RES_DIR / f"{pool}_{variant}.json")
-        (RES_DIR / "noise.json").write_text(json.dumps(noise, indent=2))
-        fits.to_csv(RES_DIR / "parametric_fits.csv", index=False)
-        for (pool, variant), res in reservoirs.items():
-            log.info("%s %-10s mean %.4f sd %.4f atoms %d %s", pool, variant, res.mean(), res.sd(),
-                     res.atoms.size, res.validation_error or "")
-        n_purged = purge_stale_emp_comparators(args.out_dir)
-        log.info("purged %d stale emp comparator file(s) under %s (new reservoirs invalidate any "
-                 "prefix cached under the previous ones)", n_purged, Path(args.out_dir) / "comparators")
+        run_estimate(LOG_DIR, RES_DIR, args.out_dir)
     elif args.stage == "point":
         _require_cap_constants(args.out_dir, ALL_HORIZONS, "point")
+        verify_reservoirs(RES_DIR)
         rd.main(["--test", "emp", "--workers", str(args.workers), "--out-dir", str(args.out_dir)],
                 cells=point_cells())
+        rc.write_reservoir_stamp(args.out_dir, "emp", RES_DIR / MANIFEST_FILE)
     elif args.stage == "kgrid":
-        frame = kgrid(point_cells(), workers=args.workers)
+        shas = verify_reservoirs(RES_DIR)
+        frame = stamp_kgrid(kgrid(point_cells(), workers=args.workers), shas)
         out = args.out_dir / "tables" / "emp_kgrid.csv"
         out.parent.mkdir(parents=True, exist_ok=True)
         frame.to_csv(out, index=False)
@@ -335,7 +439,9 @@ def main(argv: list[str] | None = None) -> None:
         n_purged = purge_stale_emp_comparators(args.out_dir, boot_only=True)
         log.info("purged %d stale emp_boot comparator file(s) under %s (a re-run re-fits every "
                  "bootstrap reservoir from the current logs)", n_purged, Path(args.out_dir) / "comparators")
-        outcomes = emp.terminal_outcomes(emp.load_attempts(sorted(LOG_DIR.glob("worker_*.jsonl"))))
+        outcomes = load_snapshot(RES_DIR)  # the frozen snapshot `estimate` used, never the live logs
+        if rc.file_sha256(RES_DIR / "noise.json") != load_manifest(RES_DIR)["noise"]:
+            raise ValueError("noise.json no longer matches the reservoir manifest; re-run `replay.py estimate`")
         noise = json.loads((RES_DIR / "noise.json").read_text())
         cells = []
         for b, pool, res in bootstrap_reservoirs(outcomes, noise):
@@ -343,6 +449,7 @@ def main(argv: list[str] | None = None) -> None:
             cells.extend(make_emp_cell(pool, "npmle", T, res, BOOT_REPLICATES, boot=b) for T in PRIMARY_HORIZONS)
         rd.main(["--test", "emp_boot", "--workers", str(args.workers), "--out-dir", str(args.out_dir),
                  "--skip-summary"], cells=cells)
+        rc.write_reservoir_stamp(args.out_dir, "emp_boot", RES_DIR / MANIFEST_FILE)
 
 
 if __name__ == "__main__":

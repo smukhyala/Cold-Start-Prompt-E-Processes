@@ -249,3 +249,77 @@ def test_kgrid_prebuilds_cs_tables_before_spawning_workers(monkeypatch):
     cells = [replay.make_emp_cell("G", "npmle", 21, RES, 4)]
     replay.kgrid(cells, workers=1, k_grid=(2, 4))
     assert (21, 0.05) in calls
+
+
+# ---- I7: one frozen data snapshot ties estimate, kgrid and boot together ----------------------
+
+
+def _write_logs(log_dir, outcomes):
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with open(log_dir / "worker_0.jsonl", "w") as fh:
+        for r in outcomes.to_dict("records"):
+            fh.write(json.dumps({"schema": "empirical_pool/1", "cost_usd": 0.01, **r}) + "\n")
+
+
+def _estimated(tmp_path, seed=0):
+    logs, res, out = tmp_path / "logs", tmp_path / "res", tmp_path / "out"
+    outcomes = _outcomes(np.random.default_rng(seed), n_arms=12, n_tasks=30, n_reps=40)
+    _write_logs(logs, outcomes)
+    replay.run_estimate(logs, res, out)
+    return logs, res, out, outcomes
+
+
+def test_estimate_freezes_a_snapshot_and_a_manifest(tmp_path):
+    logs, res, out, outcomes = _estimated(tmp_path)
+    manifest = replay.load_manifest(res)
+    assert manifest["outcomes_snapshot"]["sha256"] == replay.rc.file_sha256(res / replay.SNAPSHOT_FILE)
+    assert set(manifest["reservoirs"]) == {f"{p}_{v}" for p in replay.POOLS for v in replay.VARIANTS}
+    snap = replay.load_snapshot(res)
+    assert len(snap) == len(outcomes)
+    shas = replay.verify_reservoirs(res)
+    assert set(shas) == {replay.env_id(p, v) for p in replay.POOLS for v in replay.VARIANTS}
+    first = (res / replay.MANIFEST_FILE).read_bytes()
+    replay.run_estimate(logs, res, out)  # same logs -> byte-identical snapshot and manifest
+    assert (res / replay.MANIFEST_FILE).read_bytes() == first
+
+
+def test_a_tampered_snapshot_or_reservoir_is_refused(tmp_path):
+    _, res, _, _ = _estimated(tmp_path)
+    (res / "G_npmle.json").write_text((res / "G_npmle.json").read_text().replace("}", ", \"x\": 1}", 1))
+    with pytest.raises(ValueError, match="G_npmle"):
+        replay.verify_reservoirs(res)
+    with open(res / replay.SNAPSHOT_FILE, "a") as fh:
+        fh.write("\n")
+    with pytest.raises(ValueError, match="sha256"):
+        replay.load_snapshot(res)
+
+
+def test_boot_reads_the_snapshot_not_the_live_logs(tmp_path, monkeypatch):
+    logs, res, out, _ = _estimated(tmp_path)
+    for f in logs.iterdir():  # the live logs move on (or vanish) after estimate
+        f.unlink()
+    captured = {}
+    real_boot = replay.bootstrap_reservoirs
+
+    def small_boot(outcomes, noise, **kw):
+        captured["n_rows"] = len(outcomes)
+        return real_boot(outcomes, noise, n_boot=2, seed=3)
+
+    monkeypatch.setattr(replay, "LOG_DIR", logs)
+    monkeypatch.setattr(replay, "RES_DIR", res)
+    monkeypatch.setattr(replay, "bootstrap_reservoirs", small_boot)
+    monkeypatch.setattr(replay, "_require_cap_constants", lambda *a: None)
+    monkeypatch.setattr(replay.rd, "main", lambda argv, cells: captured.setdefault("cells", cells))
+    replay.main(["boot", "--out-dir", str(out), "--workers", "1"])
+    assert captured["n_rows"] == len(replay.load_snapshot(res))
+    assert len(captured["cells"]) == 2 * len(replay.POOLS) * len(replay.PRIMARY_HORIZONS)
+    stamp = json.loads((out / "tables" / "emp_boot_reservoir_stamp.json").read_text())
+    assert stamp["manifest_sha256"] == replay.rc.file_sha256(res / replay.MANIFEST_FILE)
+
+
+def test_kgrid_rows_carry_their_reservoir_sha(tmp_path):
+    frame = pd.DataFrame({"env_id": ["emp_G_npmle", "emp_F_raw"], "K": [2, 4], "regret": [0.1, 0.2]})
+    out = replay.stamp_kgrid(frame, {"emp_G_npmle": "aa", "emp_F_raw": "bb"})
+    assert out["reservoir_sha256"].tolist() == ["aa", "bb"]
+    with pytest.raises(ValueError, match="emp_F_raw"):
+        replay.stamp_kgrid(frame, {"emp_G_npmle": "aa"})

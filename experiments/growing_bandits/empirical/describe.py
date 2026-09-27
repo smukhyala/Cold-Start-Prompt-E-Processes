@@ -51,19 +51,40 @@ def pool_summary(res: Reservoir) -> dict:
 
 
 def k_star_table(kgrid: pd.DataFrame) -> pd.DataFrame:
+    """K* and the regret range per cell; carries the cell's ``reservoir_sha256`` when the K-grid has one."""
+    has_sha = "reservoir_sha256" in kgrid.columns
     rows = []
     for (env, pool, variant, T), sub in kgrid.groupby(["env_id", "pool", "variant", "horizon"]):
         sub = sub.sort_values("K")
         best = sub.iloc[int(np.argmin(sub["regret"].to_numpy()))]
         rng_ = float(sub["regret"].max() - sub["regret"].min())
-        rows.append({"env_id": env, "pool": pool, "variant": variant, "horizon": int(T), "k_star": int(best["K"]),
-                     "regret_at_k_star": float(best["regret"]), "regret_max": float(sub["regret"].max()),
-                     "regret_range": rng_, "informative": rng_ > FLATNESS_THRESHOLD})
+        row = {"env_id": env, "pool": pool, "variant": variant, "horizon": int(T), "k_star": int(best["K"]),
+               "regret_at_k_star": float(best["regret"]), "regret_max": float(sub["regret"].max()),
+               "regret_range": rng_, "informative": rng_ > FLATNESS_THRESHOLD}
+        if has_sha:
+            shas = sub["reservoir_sha256"].unique()
+            if len(shas) != 1:
+                raise ValueError(f"{env} T={T}: K-grid rows from {len(shas)} different reservoirs")
+            row["reservoir_sha256"] = str(shas[0])
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
 def flatness(kgrid: pd.DataFrame) -> pd.DataFrame:
-    return k_star_table(kgrid)[["env_id", "pool", "variant", "horizon", "regret_range", "informative"]]
+    table = k_star_table(kgrid)
+    cols = ["env_id", "pool", "variant", "horizon", "regret_range", "informative"]
+    return table[cols + (["reservoir_sha256"] if "reservoir_sha256" in table.columns else [])]
+
+
+def check_kgrid_snapshot(kgrid: pd.DataFrame, shas: dict[str, str]) -> None:
+    """Raise unless every K-grid row ran on the reservoir the manifest names for its cell."""
+    if "reservoir_sha256" not in kgrid.columns:
+        raise ValueError("emp_kgrid.csv has no reservoir_sha256 column: re-run `replay.py kgrid`")
+    stale = sorted({str(e) for e, sha in zip(kgrid["env_id"], kgrid["reservoir_sha256"], strict=True)
+                    if shas.get(str(e)) != str(sha)})
+    if stale:
+        raise ValueError(f"emp_kgrid.csv rows for {stale} ran on reservoirs other than the current manifest's; "
+                         "re-run `replay.py kgrid`")
 
 
 def cross_pool_prediction(levels: dict[str, float], kstar: pd.DataFrame) -> pd.DataFrame:
@@ -155,6 +176,7 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     tables = args.out_dir / "tables"
     kgrid = pd.read_csv(tables / "emp_kgrid.csv")
+    check_kgrid_snapshot(kgrid, replay.verify_reservoirs(replay.RES_DIR))
 
     import cells
 

@@ -117,3 +117,15 @@ def test_corpus_k_star_matches_the_real_envelope_layout():
     corpus = describe.corpus_k_star(pd.read_csv(path))
     assert set(corpus["horizon"]) == {50, 100, 200, 500, 1000}
     assert corpus.groupby("horizon")["env_id"].nunique().max() <= 33
+
+
+def test_flatness_carries_the_reservoir_sha_and_stale_kgrids_are_refused():
+    kg = _kgrid().assign(reservoir_sha256=lambda f: f["env_id"].map({"emp_G_npmle": "g1", "emp_F_npmle": "f1"}))
+    flat = describe.flatness(kg)
+    assert dict(zip(flat["env_id"], flat["reservoir_sha256"], strict=False)) == {"emp_G_npmle": "g1",
+                                                                                "emp_F_npmle": "f1"}
+    describe.check_kgrid_snapshot(kg, {"emp_G_npmle": "g1", "emp_F_npmle": "f1"})
+    with pytest.raises(ValueError, match="emp_F_npmle"):
+        describe.check_kgrid_snapshot(kg, {"emp_G_npmle": "g1", "emp_F_npmle": "f2"})
+    with pytest.raises(ValueError, match="reservoir_sha256"):
+        describe.check_kgrid_snapshot(_kgrid(), {"emp_G_npmle": "g1"})

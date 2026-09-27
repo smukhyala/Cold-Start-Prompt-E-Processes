@@ -55,6 +55,25 @@ def _launch(extra: list[str], log_dir: Path) -> subprocess.Popen:
                             cwd=ROOT, start_new_session=True)
 
 
+def _kill_and_wait_process(proc: subprocess.Popen) -> None:
+    """Kill process group, escalating to SIGKILL if needed. Never raises."""
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        proc.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pilot", action="store_true")
@@ -79,8 +98,7 @@ def main(argv: list[str] | None = None) -> int:
             (LOG_DIR / "WATCHDOG_GAVE_UP").write_text(f"{relaunches} relaunches\n")
             return 1
         if action == "kill_and_relaunch" and proc.poll() is None:
-            os.killpg(proc.pid, signal.SIGTERM)
-            proc.wait(timeout=60)
+            _kill_and_wait_process(proc)
         relaunches += 1
         print(f"relaunch {relaunches}: {action} at {lines} lines", flush=True)
         proc, last_progress = _launch(extra, LOG_DIR), time.time()

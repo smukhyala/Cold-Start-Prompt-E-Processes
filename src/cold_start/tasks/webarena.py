@@ -335,6 +335,36 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
             },
         )
 
+    def prompt_for(self, arm: Arm) -> str:
+        """The system-prompt extension sent for `arm`: pinned text if registered, else rendered."""
+        extension = self._prompt_cache.get(arm.arm_id)
+        if extension is None:
+            extension = render_arm_prompt(arm, self._axes, self._template_path)
+            self._prompt_cache[arm.arm_id] = extension
+        return extension
+
+    def register_prompt(self, arm_id: str, text: str) -> None:
+        """Pin the exact extension for `arm_id`, bypassing this adapter's template.
+
+        The empirical-pool collector renders each pool with its own template and freezes
+        the text by sha256; pinning it here means the agent receives those bytes and no
+        others, whichever template this adapter was built with.
+        """
+        self._prompt_cache[arm_id] = text
+
+    def task_ids(self) -> list[str]:
+        if self._tasks is None:
+            raise RuntimeError("reset() must be called before task_ids()")
+        return [str(raw["id"]) for raw in self._tasks]
+
+    def task_by_id(self, task_id: str) -> Task:
+        if self._tasks is None:
+            raise RuntimeError("reset() must be called before task_by_id()")
+        for idx, raw in enumerate(self._tasks):
+            if str(raw["id"]) == task_id:
+                return self.sample_task(idx + 1)
+        raise KeyError(f"task {task_id!r} is not in the {self._task_suite} bank")
+
     def run_arm(
         self,
         arm: Arm,
@@ -345,10 +375,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         del runner  # browser agent drives its own LLM; text-only runner is unused
         _, _, tasks_mod = _import_webarena()
 
-        extension = self._prompt_cache.get(arm.arm_id)
-        if extension is None:
-            extension = render_arm_prompt(arm, self._axes, self._template_path)
-            self._prompt_cache[arm.arm_id] = extension
+        extension = self.prompt_for(arm)
 
         assert self._agent is not None, "reset() must be called before run_arm()"
         self._agent.set_prompt_extension(extension)

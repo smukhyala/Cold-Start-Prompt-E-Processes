@@ -51,7 +51,7 @@ MIN_WEIGHT = 1e-6
 
 
 def load_attempts(paths: Iterable[str | Path]) -> pd.DataFrame:
-    """Every attempt line from the collector's JSONL files, in file order."""
+    """Every attempt line from the collector's JSONL files, in file order (strict: any bad line raises)."""
     rows: list[dict] = []
     for path in paths:
         with open(path) as fh:
@@ -59,6 +59,11 @@ def load_attempts(paths: Iterable[str | Path]) -> pd.DataFrame:
                 line = line.strip()
                 if line:
                     rows.append(json.loads(line))
+    return attempts_frame(rows)
+
+
+def attempts_frame(rows: list[dict]) -> pd.DataFrame:
+    """Attempt records as a frame with `RECORD_COLUMNS` first (present even when empty)."""
     frame = pd.DataFrame(rows)
     for col in RECORD_COLUMNS:
         if col not in frame.columns:
@@ -199,18 +204,27 @@ def _moments(scores: PromptScores, v: float) -> tuple[float, float]:
     return m, max(var, 1e-4)
 
 
+#: Nelder-Mead explores log-parameters freely; exp(710) overflows a float64. Clipping to
+#: +-30 (e^30 ~ 1e13) keeps every shape parameter finite without constraining any fit
+#: that could matter -- a Beta with a parameter near 1e13 is already a point mass.
+THETA_CLIP = 30.0
+
+
+def _pos(theta: np.ndarray, i: int) -> float:
+    return float(np.exp(np.clip(theta[i], -THETA_CLIP, THETA_CLIP)))
+
+
 def _beta(theta: np.ndarray) -> Reservoir:
-    return BetaReservoir(float(np.exp(theta[0])), float(np.exp(theta[1])), validate=False)
+    return BetaReservoir(_pos(theta, 0), _pos(theta, 1), validate=False)
 
 
 def _tail(theta: np.ndarray) -> Reservoir:
-    return TailReservoir(float(np.exp(theta[0])), float(special.expit(theta[1])), float(np.exp(theta[2])),
-                         validate=False)
+    return TailReservoir(_pos(theta, 0), float(special.expit(theta[1])), _pos(theta, 2), validate=False)
 
 
 def _beta_mixture(theta: np.ndarray) -> Reservoir:
-    comps = [BetaReservoir(float(np.exp(theta[0])), float(np.exp(theta[1])), validate=False),
-             BetaReservoir(float(np.exp(theta[2])), float(np.exp(theta[3])), validate=False)]
+    comps = [BetaReservoir(_pos(theta, 0), _pos(theta, 1), validate=False),
+             BetaReservoir(_pos(theta, 2), _pos(theta, 3), validate=False)]
     w = float(special.expit(theta[4]))
     return MixtureReservoir(comps, [w, 1.0 - w], validate=False)
 

@@ -295,6 +295,9 @@ TEST_POLICIES: dict[str, tuple[str, ...]] = {
     # Pre-registration 8: the held-out family with the cap lifted; the same eight.
     "capc": ("always_search", "cp0", "refine_after_init", "p3_star", "fixed_K_star", "level_star",
              "phi_k4", "phi_k16"),
+    # Pre-registration 9: the real prompt pools, uncapped; cap-T constants selected on the corpus only.
+    "emp": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4"),
+    "emp_boot": ("p3_star", "fixed_K_star", "level_star", "phi_k4"),
 }
 
 

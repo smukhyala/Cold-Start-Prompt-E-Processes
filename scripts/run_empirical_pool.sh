@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Launch the empirical-pool collector under its watchdog, detached and awake.
-#   scripts/run_empirical_pool.sh --pilot   # the 660-episode pilot (gate G2)
-#   scripts/run_empirical_pool.sh           # everything left in the queue (resumes the pilot)
+#   scripts/run_empirical_pool.sh --pilot --budget 40   # the 660-episode pilot (gate G2), capped at $40
+#   scripts/run_empirical_pool.sh                       # everything left in the queue (resumes the pilot)
+# Every argument (--pilot, --workers N, --budget USD) goes to the watchdog, which forwards it to collect.py.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p logs/empirical_pool

@@ -14,6 +14,7 @@ for sub in ("empirical", "deploy"):
     sys.path.insert(0, str(ROOT / "experiments" / "growing_bandits" / sub))
 
 import gates  # noqa: E402
+import make_pools as mp  # noqa: E402
 import rehearsal  # noqa: E402
 
 from cold_start.growing.reservoirs import BetaReservoir  # noqa: E402
@@ -34,8 +35,22 @@ def _attempts(n_ok=100, n_missing=2, cost=0.03, anchor_successes=40, workers=2):
     return pd.DataFrame(rows)
 
 
+def _queue(attempts, extra=0, pilot=True):
+    """The queue the attempts came from (all pilot items), plus `extra` never-attempted items."""
+    keys = list(dict.fromkeys(zip(attempts["pool"], attempts["arm_id"], attempts["task_id"], attempts["replicate"],
+                                  strict=True)))
+    keys += [("G", "G_09", f"never{i}", 0) for i in range(extra)]
+    return [mp.QueueItem(index=i, pool=p, arm_id=a, task_id=t, replicate=int(r), pilot=pilot)
+            for i, (p, a, t, r) in enumerate(keys)]
+
+
+def _pilot(attempts, queue=None, relaunches=0, n_workers=2):
+    return gates.pilot_gate(attempts, _queue(attempts) if queue is None else queue, n_workers=n_workers,
+                            anchor_arm="anchor_baseline", anchor_rate=0.66, relaunches=relaunches)
+
+
 def test_pilot_gate_passes_a_clean_pilot():
-    g = gates.pilot_gate(_attempts(), n_workers=2, anchor_arm="anchor_baseline", anchor_rate=0.66)
+    g = _pilot(_attempts())
     assert g.passed, g.report()
 
 
@@ -46,13 +61,62 @@ def test_pilot_gate_passes_a_clean_pilot():
     ({"workers": 1}, "every_worker_produced"),
 ])
 def test_pilot_gate_fails_each_check(kw, failing):
-    g = gates.pilot_gate(_attempts(**kw), n_workers=2, anchor_arm="anchor_baseline", anchor_rate=0.66)
+    g = _pilot(_attempts(**kw))
     assert not g.passed and not g.checks[failing]["passed"]
+    assert all(c["passed"] for k, c in g.checks.items() if k != failing), g.report()
 
 
 def test_collection_gate():
-    assert gates.collection_gate(_attempts()).passed
-    assert not gates.collection_gate(_attempts(n_missing=20)).passed
+    a = _attempts()
+    assert gates.collection_gate(a, _queue(a)).passed
+    a = _attempts(n_missing=20)
+    assert not gates.collection_gate(a, _queue(a)).passed
+
+
+def test_never_attempted_queue_items_count_as_missing():
+    a = _attempts(n_missing=0)  # 160 terminal records, all ok
+    g = gates.collection_gate(a, _queue(a, extra=5))
+    assert g.passed and "5 with no terminal record" in g.checks["missing_rate"]["detail"]
+    g = gates.collection_gate(a, _queue(a, extra=20))  # 20 / 180 = 11% never attempted
+    assert not g.checks["missing_rate"]["passed"]
+    assert "160 ok + 0 missing + 20 with no terminal record" in g.checks["missing_rate"]["detail"]
+    g = _pilot(a, queue=_queue(a, extra=20))
+    assert not g.checks["missing_rate"]["passed"]
+
+
+def test_terminal_records_outside_the_queue_fail():
+    a = _attempts()
+    q = [item for item in _queue(a) if item.task_id != "t0"]
+    assert not gates.collection_gate(a, q).checks["records_in_queue"]["passed"]
+
+
+def test_pilot_scope_is_the_pilot_items_only():
+    a = _attempts(n_missing=0)
+    q = _queue(a) + [mp.QueueItem(index=10_000 + i, pool="F", arm_id="F_00", task_id=f"later{i}", replicate=0,
+                                  pilot=False) for i in range(50)]
+    assert _pilot(a, queue=q).passed  # 50 unattempted non-pilot items are not the pilot's business
+
+
+def test_pilot_gate_requires_zero_watchdog_relaunches(tmp_path):
+    a = _attempts()
+    assert not _pilot(a, relaunches=1).checks["no_watchdog_relaunch"]["passed"]
+    assert not _pilot(a, relaunches=None).checks["no_watchdog_relaunch"]["passed"]
+    assert _pilot(a, relaunches=0).checks["no_watchdog_relaunch"]["passed"]
+
+
+def test_count_relaunches_reads_the_watchdogs_own_lines(tmp_path, monkeypatch):
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import watchdog_empirical_pool as wd
+
+    log = tmp_path / wd.RELAUNCH_LOG
+    assert gates.count_relaunches(log) is None
+    log.touch()
+    assert gates.count_relaunches(log, mode="pilot") == 0
+    wd._record_relaunch(tmp_path, 1, "stale_workers:3", "pilot")
+    wd._record_relaunch(tmp_path, 2, "global_stall", "full")
+    assert gates.RELAUNCH_LOG == wd.RELAUNCH_LOG
+    assert gates.count_relaunches(log, mode="pilot") == 1
+    assert gates.count_relaunches(log) == 2
 
 
 def test_rehearsal_gate():

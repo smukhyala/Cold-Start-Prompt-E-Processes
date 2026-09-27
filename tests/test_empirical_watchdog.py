@@ -169,3 +169,195 @@ def test_main_loop_stalled_process_triggers_kill_and_relaunch(tmp_path, monkeypa
 
     assert result == 0
     assert len(kill_calls) == 1  # Should have called kill_and_wait once
+
+
+# ---- final-review fix wave: per-worker staleness, launching, provider_down, --budget ---------
+
+
+@pytest.mark.parametrize("status, alive, stale, expected", [
+    ("provider_down", False, (), "finished"),
+    ("provider_down", True, (), "finished"),
+    ("launching", True, (), "wait"),
+    ("launching", False, (), "relaunch"),
+    ("running", True, (3,), "kill_and_relaunch"),
+    ("launching", True, (3,), "wait"),  # workers are not judged until the collector says it is running
+])
+def test_decide_new_states(status, alive, stale, expected):
+    assert wd.decide(status, alive, 1.0, stale) == expected
+
+
+def test_worker_clocks():
+    limit = wd.WORKER_STALL_MINUTES * 60.0
+    clocks = wd.WorkerClocks(3, now=0.0)
+    clocks.observe({0: None, 1: None, 2: None}, now=10.0)
+    assert clocks.stale(limit - 1, exempt=set()) == ()  # no file yet: fresh until up for the limit
+    assert clocks.stale(limit + 1, exempt=set()) == (0, 1, 2)
+    clocks.observe({0: 100, 1: None, 2: 50}, now=60.0)
+    clocks.observe({0: 200, 1: None, 2: 50}, now=600.0)  # worker 2 stops growing at t=60
+    assert clocks.stale(60.0 + limit + 1, exempt=set()) == (1, 2)
+    assert clocks.stale(60.0 + limit + 1, exempt={2}) == (1,)
+    clocks.restart(now=5000.0)
+    assert clocks.stale(5000.0 + limit - 1, exempt=set()) == ()
+
+
+def test_finished_workers_exempts_only_clean_exits(tmp_path):
+    (tmp_path / "worker_0.exit").write_text("done\n")
+    (tmp_path / "worker_1.exit").write_text("failed\n")
+    (tmp_path / "worker_2.exit").write_text("provider_down\n")
+    (tmp_path / "worker_3.exit").write_text("budget\n")
+    assert wd.finished_workers(tmp_path) == {0, 2, 3}
+
+
+def test_worker_sizes(tmp_path):
+    (tmp_path / "worker_1.jsonl").write_text("{}\n")
+    assert wd.worker_sizes(tmp_path, 3) == {0: None, 1: 3, 2: None}
+
+
+class _Clock:
+    """time.time/time.sleep for the loop: each sleep advances the clock."""
+
+    def __init__(self):
+        self.t = 1_000.0
+
+    def time(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
+
+
+def _loop_env(tmp_path, monkeypatch, procs):
+    log_dir = tmp_path / "logs" / "empirical_pool"
+    log_dir.mkdir(parents=True)
+    clock = _Clock()
+    monkeypatch.setattr(wd, "LOG_DIR", log_dir)
+    monkeypatch.setattr("time.time", clock.time)
+    monkeypatch.setattr("time.sleep", clock.sleep)
+    launches = []
+
+    def launch(extra, log_dir_):
+        launches.append({"extra": list(extra), "status_at_launch": (log_dir_ / "STATUS").read_text().strip()})
+        return procs[min(len(launches), len(procs)) - 1]
+
+    monkeypatch.setattr(wd, "_launch", launch)
+    kills = []
+    monkeypatch.setattr(wd, "_kill_and_wait_process", lambda proc: kills.append(proc))
+    return log_dir, clock, launches, kills
+
+
+def _proc(alive: bool):
+    p = mock.Mock(spec=subprocess.Popen)
+    p.poll.return_value = None if alive else 1
+    p.pid = 4242
+    return p
+
+
+def test_one_hung_worker_triggers_a_relaunch_and_a_machine_readable_line(tmp_path, monkeypatch):
+    alive, finisher = _proc(True), _proc(True)
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [alive, finisher])
+    grow = {"n": 0}
+
+    def status(log_dir_):
+        if len(launches) > 1:
+            return "done"
+        return "running"
+
+    monkeypatch.setattr(wd, "_status", status)
+    real_sizes = wd.worker_sizes
+
+    def sizes(log_dir_, n):
+        grow["n"] += 1
+        out = real_sizes(log_dir_, n)
+        out[0] = grow["n"]  # worker 0 keeps writing, so the global line count never stalls
+        out[1] = 7          # worker 1 wrote once and hung
+        return out
+
+    monkeypatch.setattr(wd, "worker_sizes", sizes)
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: grow["n"])
+    assert wd.main(["--workers", "2", "--pilot"]) == 0
+    assert kills == [alive]
+    lines = (log_dir / wd.RELAUNCH_LOG).read_text().splitlines()
+    assert len(lines) == 1 and lines[0].startswith("RELAUNCH 1 stale_workers:1 mode=pilot at=")
+    assert [x["status_at_launch"] for x in launches] == ["launching", "launching"]
+
+
+def test_a_finished_worker_is_not_mistaken_for_a_hung_one(tmp_path, monkeypatch):
+    proc = _proc(True)
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [proc])
+    polls = {"n": 0}
+
+    def status(log_dir_):
+        polls["n"] += 1
+        return "done" if polls["n"] > 20 else "running"  # 20 polls x 2 min = 40 min
+
+    def sizes(log_dir_, n):
+        return {0: polls["n"], 1: 5}
+
+    monkeypatch.setattr(wd, "_status", status)
+    monkeypatch.setattr(wd, "worker_sizes", sizes)
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: polls["n"])
+    real_prepare = wd._prepare_launch
+
+    def prepare(log_dir_):
+        real_prepare(log_dir_)
+        (log_dir_ / "worker_1.exit").write_text("done\n")  # the collector marks worker 1 finished
+
+    monkeypatch.setattr(wd, "_prepare_launch", prepare)
+    assert wd.main(["--workers", "2"]) == 0
+    assert kills == [] and len(launches) == 1
+
+
+def test_a_stale_done_status_from_the_pilot_cannot_end_the_next_launch(tmp_path, monkeypatch):
+    """I5: STATUS still says done from the pilot; the new collector dies before writing running."""
+    dead, finisher = _proc(False), _proc(True)
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [dead, finisher])
+    (log_dir / "STATUS").write_text("done\n")
+    calls = {"n": 0}
+    real_status = wd._status
+
+    def status(log_dir_):
+        calls["n"] += 1
+        if len(launches) > 1 and calls["n"] > 2:
+            return "done"
+        return real_status(log_dir_)  # the file the watchdog itself wrote: "launching"
+
+    monkeypatch.setattr(wd, "_status", status)
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+    assert wd.main(["--workers", "1"]) == 0
+    assert len(launches) == 2  # relaunched, not "finished" at the first poll
+    assert (log_dir / wd.RELAUNCH_LOG).read_text().startswith("RELAUNCH 1 collector_exited:launching mode=full")
+
+
+def test_provider_down_is_terminal_without_a_relaunch(tmp_path, monkeypatch, capsys):
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [_proc(False)])
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "provider_down")
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+    assert wd.main(["--workers", "8"]) == 2
+    assert len(launches) == 1 and kills == []
+    assert "provider_down" in capsys.readouterr().out
+    assert (log_dir / wd.RELAUNCH_LOG).read_text() == ""
+
+
+def test_budget_is_forwarded_to_the_collector(tmp_path, monkeypatch):
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [_proc(False)])
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "done")
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+    assert wd.main(["--pilot", "--budget", "40", "--workers", "8"]) == 0
+    assert launches[0]["extra"] == ["--workers", "8", "--budget", "40.0", "--pilot"]
+    assert wd.collector_args(8, False, None) == ["--workers", "8"]
+
+
+def test_forwarded_args_parse_in_the_collector(tmp_path, monkeypatch):
+    """What the watchdog forwards (including --budget, which used to crash it) parses in collect.py."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments" / "growing_bandits" / "empirical"))
+    import collect
+
+    class _Parsed(Exception):
+        pass
+
+    def stop(lock_path):
+        raise _Parsed  # argparse accepted every argument; stop before anything else happens
+
+    monkeypatch.setattr(collect, "_acquire_lock", stop)
+    with pytest.raises(_Parsed):
+        collect.main(wd.collector_args(8, True, 40.0) + ["--log-dir", str(tmp_path)])

@@ -210,6 +210,26 @@ def test_purge_stale_emp_comparators_removes_only_emp_prefixed_files(tmp_path):
     assert all(f.exists() for f in other_files)
 
 
+def test_purge_stale_emp_comparators_boot_only_leaves_point_cells_alone(tmp_path):
+    comparators = tmp_path / "comparators"
+    comparators.mkdir()
+    boot_files = [
+        comparators / "emp_G_npmle_b000_T50_cap50_seed1_M250.npy",
+        comparators / "emp_G_npmle_b000_T50_cap50_seed1_M250.json",
+    ]
+    kept_files = [
+        comparators / "emp_G_npmle_T50_cap50_seed1_M1000.npy",
+        comparators / "emp_G_npmle_T50_cap50_seed1_M1000.json",
+        comparators / "beta_good_common_T50_cap64_seed10262460_M2000.npy",
+    ]
+    for f in boot_files + kept_files:
+        f.write_bytes(b"x")
+    n = replay.purge_stale_emp_comparators(tmp_path, boot_only=True)
+    assert n == len(boot_files)
+    assert all(not f.exists() for f in boot_files)
+    assert all(f.exists() for f in kept_files)
+
+
 def test_purge_stale_emp_comparators_on_a_missing_comparators_dir_is_a_noop(tmp_path):
     assert replay.purge_stale_emp_comparators(tmp_path / "nope") == 0
 

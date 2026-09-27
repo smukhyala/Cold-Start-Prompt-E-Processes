@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -116,3 +117,115 @@ def test_point_replay_writes_paired_episodes(tmp_path):
     path = tmp_path / "episodes" / "emp" / rd.cell_name(cell) / "always_search.parquet"
     frame = pd.read_parquet(path)
     assert len(frame) == 8 and int(frame["base_seed"].iloc[0]) == cell.base_seed
+
+
+# ---- Fix round 1: cap-T constants preflight (Important #1) ----------------------------
+
+
+def _complete_baseline_params(cap: int) -> dict:
+    c = str(int(cap))
+    return {"by_cap": {c: {
+        "p3_star": {c: {"alpha": 0.5, "c": 1.0}},
+        "fixed_K_star": {c: {"K": 16}},
+        "level_star": {"alpha": 0.5, "c": 1.0, "b": 0.1},
+    }}}
+
+
+def _complete_thresholds(cap: int) -> dict:
+    return {"by_cap": {str(int(cap)): {replay.PHI_K4_VARIANT: {"tau_val": 0.5}}}}
+
+
+def test_missing_cap_constants_is_empty_when_every_block_is_present():
+    assert replay.missing_cap_constants(
+        _complete_baseline_params(50), _complete_thresholds(50), [50]
+    ) == []
+
+
+def test_missing_cap_constants_names_a_missing_cap_block():
+    problems = replay.missing_cap_constants({"by_cap": {}}, _complete_thresholds(50), [50])
+    assert any("50" in p and "baseline_params" in p for p in problems)
+
+
+def test_missing_cap_constants_names_an_incomplete_level_star_block():
+    baseline_params = _complete_baseline_params(50)
+    del baseline_params["by_cap"]["50"]["level_star"]["b"]
+    problems = replay.missing_cap_constants(baseline_params, _complete_thresholds(50), [50])
+    assert any("level_star" in p for p in problems)
+
+
+def test_missing_cap_constants_names_a_missing_p3_star_entry():
+    baseline_params = _complete_baseline_params(50)
+    del baseline_params["by_cap"]["50"]["p3_star"]["50"]
+    problems = replay.missing_cap_constants(baseline_params, _complete_thresholds(50), [50])
+    assert any("p3_star" in p for p in problems)
+
+
+def test_missing_cap_constants_names_a_missing_threshold():
+    problems = replay.missing_cap_constants(_complete_baseline_params(50), {"by_cap": {}}, [50])
+    assert any(replay.PHI_K4_VARIANT in p and "thresholds" in p for p in problems)
+
+
+def test_missing_cap_constants_checks_every_horizon_independently():
+    baseline_params = _complete_baseline_params(50)
+    thresholds = _complete_thresholds(50)
+    problems = replay.missing_cap_constants(baseline_params, thresholds, [50, 100])
+    assert problems and all("100" in p for p in problems)
+    assert not any("50" in p for p in problems)
+
+
+def test_require_cap_constants_exits_when_incomplete(tmp_path):
+    replay.pt.write_baseline_params(tmp_path / "baseline_params.json", _complete_baseline_params(50))
+    (tmp_path / "thresholds.json").write_text(json.dumps(_complete_thresholds(50)))
+    with pytest.raises(SystemExit, match="point"):
+        replay._require_cap_constants(tmp_path, [50, 100], "point")
+
+
+def test_require_cap_constants_passes_when_complete(tmp_path):
+    replay.pt.write_baseline_params(tmp_path / "baseline_params.json", _complete_baseline_params(50))
+    (tmp_path / "thresholds.json").write_text(json.dumps(_complete_thresholds(50)))
+    replay._require_cap_constants(tmp_path, [50], "point")  # must not raise
+
+
+# ---- Fix round 1: comparator cache invalidation on re-estimate (Important #2) ----------
+
+
+def test_purge_stale_emp_comparators_removes_only_emp_prefixed_files(tmp_path):
+    comparators = tmp_path / "comparators"
+    comparators.mkdir()
+    emp_files = [
+        comparators / "emp_G_npmle_T50_cap50_seed400010050_M1000.npy",
+        comparators / "emp_G_npmle_T50_cap50_seed400010050_M1000.json",
+        comparators / "emp_F_npmle_b005_T50_cap50_seed420020050_M250.npy",
+    ]
+    other_files = [
+        comparators / "beta_good_common_T50_cap64_seed10262460_M2000.npy",
+        comparators / "beta_good_common_T50_cap64_seed10262460_M2000.json",
+        comparators / "readme.txt",
+    ]
+    for f in emp_files + other_files:
+        f.write_bytes(b"x")
+    n = replay.purge_stale_emp_comparators(tmp_path)
+    assert n == len(emp_files)
+    assert all(not f.exists() for f in emp_files)
+    assert all(f.exists() for f in other_files)
+
+
+def test_purge_stale_emp_comparators_on_a_missing_comparators_dir_is_a_noop(tmp_path):
+    assert replay.purge_stale_emp_comparators(tmp_path / "nope") == 0
+
+
+# ---- Fix round 1: kgrid prebuilds CS tables before spawning workers (folded minor) -----
+
+
+def test_kgrid_prebuilds_cs_tables_before_spawning_workers(monkeypatch):
+    calls: list[tuple[int, float]] = []
+    original = replay.CSTable.load_or_build.__func__
+
+    def spy(cls, horizon, alpha=0.05, **kwargs):
+        calls.append((int(horizon), float(alpha)))
+        return original(cls, horizon, alpha, **kwargs)
+
+    monkeypatch.setattr(replay.CSTable, "load_or_build", classmethod(spy))
+    cells = [replay.make_emp_cell("G", "npmle", 21, RES, 4)]
+    replay.kgrid(cells, workers=1, k_grid=(2, 4))
+    assert (21, 0.05) in calls

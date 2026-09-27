@@ -1,0 +1,556 @@
+pool: G
+template: configs/template.jinja
+meta:
+  seed: 20260926
+  grid_size: 2304
+arms:
+- arm_id: G_00
+  name: G_00
+  vector:
+    planning: 0
+    verification: 3
+    agency: 0
+    expertise: 2
+    format: 0
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 9102ba3938d1c63a6e772e1b382ca2e4d69f6e791fe60556ff926a6123695534
+- arm_id: G_01
+  name: G_01
+  vector:
+    planning: 2
+    verification: 3
+    agency: 0
+    expertise: 2
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 5fc96ef5df9ed583070644767d097815ed50a9d1753c056cd11ebfcd2b2839bf
+- arm_id: G_02
+  name: G_02
+  vector:
+    planning: 3
+    verification: 1
+    agency: 2
+    expertise: 2
+    format: 3
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 28e0a00c1cb7349b771c2dab48a0672777b73a55b043619e026547f4096a26b3
+- arm_id: G_03
+  name: G_03
+  vector:
+    planning: 3
+    verification: 0
+    agency: 2
+    expertise: 3
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: f9eb1bef8dd32295383c863611e042c2657953b4cc4c2736e162bd2ad4e13227
+- arm_id: G_04
+  name: G_04
+  vector:
+    planning: 1
+    verification: 3
+    agency: 2
+    expertise: 3
+    format: 3
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 8ce02c97aba7f7336c426f6ba1cc8d0d082666eca905d6013e1b33d5ad27a4c1
+- arm_id: G_05
+  name: G_05
+  vector:
+    planning: 1
+    verification: 0
+    agency: 1
+    expertise: 3
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 1f0bf26adadcc6c392effd889511e14ee77253b425f8f872d813fc47c7ba4082
+- arm_id: G_06
+  name: G_06
+  vector:
+    planning: 1
+    verification: 3
+    agency: 2
+    expertise: 2
+    format: 1
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: cb36b040cd907e2af392020db5a2a8684fdfaf45fa03754e49430568c6a2af9f
+- arm_id: G_07
+  name: G_07
+  vector:
+    planning: 3
+    verification: 2
+    agency: 1
+    expertise: 3
+    format: 1
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 2e26eaad240489a920817b88716930584ed61f79c71314acfcafac7020097d7a
+- arm_id: G_08
+  name: G_08
+  vector:
+    planning: 2
+    verification: 3
+    agency: 0
+    expertise: 2
+    format: 3
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: d3adbac4519c9348928c630eec4ad03b3a44e23fd781f08a318c8a87e03c20f4
+- arm_id: G_09
+  name: G_09
+  vector:
+    planning: 2
+    verification: 0
+    agency: 2
+    expertise: 3
+    format: 2
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 0de768a7e90b303e11e19a49895904935e24f396c6722c85f950b4df217c7bd6
+- arm_id: G_10
+  name: G_10
+  vector:
+    planning: 3
+    verification: 1
+    agency: 1
+    expertise: 0
+    format: 2
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 1f913908d06fa94406810187a5adfc1424022f976a355ac4eccb12b8b7366540
+- arm_id: G_11
+  name: G_11
+  vector:
+    planning: 1
+    verification: 3
+    agency: 0
+    expertise: 0
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 299f9a93c2a730ea3c0b508ebc75ee2639bacea160dd8e0d22c35b259b198b4d
+- arm_id: G_12
+  name: G_12
+  vector:
+    planning: 2
+    verification: 2
+    agency: 0
+    expertise: 3
+    format: 3
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: f03a2dd3590ea1157487789f0c6a1a743b14b6c8ecc05dd020e2d98469abdd19
+- arm_id: G_13
+  name: G_13
+  vector:
+    planning: 3
+    verification: 0
+    agency: 2
+    expertise: 0
+    format: 2
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 0dd721702509fdd46c884efe6693df21b7b2fc325eb2fa7e5d4bd08c24ea3f20
+- arm_id: G_14
+  name: G_14
+  vector:
+    planning: 2
+    verification: 0
+    agency: 0
+    expertise: 0
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 53628bce12fa223efa400c07e7178f31bec0766bdc43a035fc727a881100a780
+- arm_id: G_15
+  name: G_15
+  vector:
+    planning: 1
+    verification: 1
+    agency: 2
+    expertise: 2
+    format: 0
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 15ff923155a7df1ce3d7b8846781766351f1b8e53b5af0dee24c9692333eb97f
+- arm_id: G_16
+  name: G_16
+  vector:
+    planning: 0
+    verification: 1
+    agency: 2
+    expertise: 2
+    format: 0
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 210357cca94db780192c48ab14963cb5a6d8a96724acd9445e0b150e31a1cc38
+- arm_id: G_17
+  name: G_17
+  vector:
+    planning: 3
+    verification: 1
+    agency: 0
+    expertise: 1
+    format: 1
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 5311113b0d1e9b8a35e6981691980f7f0e61b23904730cc86c89bd0b2a7969b6
+- arm_id: G_18
+  name: G_18
+  vector:
+    planning: 1
+    verification: 1
+    agency: 0
+    expertise: 2
+    format: 0
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 6ed8bfab6cada244aca80664e1162946178686b26b6ae8535aaa74f8fcf2e2c8
+- arm_id: G_19
+  name: G_19
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 2
+    format: 3
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: c04e36aaaba8546366a31fd73a7abea0a0c33b16e9266e4fa3ff8186d4045341
+- arm_id: G_20
+  name: G_20
+  vector:
+    planning: 0
+    verification: 1
+    agency: 1
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 460883f4260a83c6eb5bbf69f7edf321458badc280898b320bbe1d9760c98bb0
+- arm_id: G_21
+  name: G_21
+  vector:
+    planning: 2
+    verification: 3
+    agency: 1
+    expertise: 3
+    format: 0
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 721ad02a83c33b445effeea884dae5cfa256effb84e8af64698aaaee9d603d5b
+- arm_id: G_22
+  name: G_22
+  vector:
+    planning: 0
+    verification: 1
+    agency: 0
+    expertise: 2
+    format: 2
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 9b6328e00963a75baf8144f49af5a61e184f3ec20544d15c948c0764d7970352
+- arm_id: G_23
+  name: G_23
+  vector:
+    planning: 0
+    verification: 2
+    agency: 2
+    expertise: 2
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 22522e848c4e1bb6e176f1c5df6e15baacff828801b6cb8d1b4d9946247e912a
+- arm_id: G_24
+  name: G_24
+  vector:
+    planning: 0
+    verification: 3
+    agency: 0
+    expertise: 1
+    format: 1
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: c848699b27bacaeba27fe40c1e2d165294d82996c1e5a59c53c176dc6295bc13
+- arm_id: G_25
+  name: G_25
+  vector:
+    planning: 2
+    verification: 1
+    agency: 1
+    expertise: 3
+    format: 0
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 29b0cbda721b87b9aa63112ce9199f1bf04bd03009bcb05e9c0ac6eb341a3e84
+- arm_id: G_26
+  name: G_26
+  vector:
+    planning: 2
+    verification: 2
+    agency: 1
+    expertise: 2
+    format: 2
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 787e8166af20aa04e885ebe6a4f154dece40153bac21e7cd0625f65cf0c5f87f
+- arm_id: G_27
+  name: G_27
+  vector:
+    planning: 0
+    verification: 2
+    agency: 0
+    expertise: 1
+    format: 1
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 5c0b168ea1e3385fd7204603c03e55682b45b509e2376a7d1a9f1f413ca9eaa6
+- arm_id: G_28
+  name: G_28
+  vector:
+    planning: 3
+    verification: 1
+    agency: 2
+    expertise: 3
+    format: 2
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 8d48924b457b11dbce6cd58077a7d92fcaadf7fad084f2bb9e7972ca5068c41b
+- arm_id: G_29
+  name: G_29
+  vector:
+    planning: 3
+    verification: 1
+    agency: 1
+    expertise: 1
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 581bf133abbaf2c33bba45413fa017a988796ba32cef24a39cbfe1ba190d0933
+- arm_id: G_30
+  name: G_30
+  vector:
+    planning: 3
+    verification: 1
+    agency: 0
+    expertise: 1
+    format: 3
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 337754202a8635f8c2ee46c51c60e5646124c0428ad8f814c2d19c223890a6f2
+- arm_id: G_31
+  name: G_31
+  vector:
+    planning: 2
+    verification: 3
+    agency: 2
+    expertise: 2
+    format: 0
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: b9aeba103acae01ba4eaeedca9ed56b5c599dae126a7fd5fb6b0f1fe813e0b86
+- arm_id: G_32
+  name: G_32
+  vector:
+    planning: 3
+    verification: 3
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 5e430ffeed1d63e58beda039455235a68843b08a1fa11865ee3956dce176e5c8
+- arm_id: G_33
+  name: G_33
+  vector:
+    planning: 2
+    verification: 1
+    agency: 0
+    expertise: 0
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 76c1fae7c296ae47c085c3d65b85999fea031f8c913c9248736a54adfeb5db5b
+- arm_id: G_34
+  name: G_34
+  vector:
+    planning: 3
+    verification: 1
+    agency: 2
+    expertise: 0
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 1019c84d4601e6311a2153faf0ad49f73b722bc411b4d27c7cb081bc7cbb5e32
+- arm_id: G_35
+  name: G_35
+  vector:
+    planning: 1
+    verification: 2
+    agency: 0
+    expertise: 1
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 689161ae9a873e994b53f41ba90100cbed71c5846f74599d9233dcf7f2a5072d
+- arm_id: G_36
+  name: G_36
+  vector:
+    planning: 3
+    verification: 0
+    agency: 2
+    expertise: 3
+    format: 1
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: ed74404a35a825f17ed930115fa66b8c02dc4fd62ffb621653bdaeed28213702
+- arm_id: G_37
+  name: G_37
+  vector:
+    planning: 3
+    verification: 2
+    agency: 1
+    expertise: 3
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: d8bc287c190bf6f8df6f321d7df57c690b9275cc164823511a013706cf08d36b
+- arm_id: G_38
+  name: G_38
+  vector:
+    planning: 0
+    verification: 3
+    agency: 2
+    expertise: 3
+    format: 1
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 0769ad6d741374fd19f7cc7f0c94eca44b7d3152639eaa3e87341dc9ba20ad82
+- arm_id: G_39
+  name: G_39
+  vector:
+    planning: 2
+    verification: 1
+    agency: 1
+    expertise: 2
+    format: 3
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 5e1167c14105f5fc654f54ada155e503c5c4275fa75f88f53ca1b5a3d8b3720d
+- arm_id: G_40
+  name: G_40
+  vector:
+    planning: 2
+    verification: 1
+    agency: 0
+    expertise: 0
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 23268600e6e906c2206ff95c98a4ad81e4e6ab62f9b61e17ece5215e362b5035
+- arm_id: G_41
+  name: G_41
+  vector:
+    planning: 3
+    verification: 0
+    agency: 1
+    expertise: 1
+    format: 1
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: f3f977adf8fe528f29b601fad0e0eb675478fc5abb6a47d956a16765dbdc2b05
+- arm_id: G_42
+  name: G_42
+  vector:
+    planning: 1
+    verification: 3
+    agency: 2
+    expertise: 2
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: ac3100c5eec3af162d7e5e651c314f9de491e015b95513b30def72a39a5fd5fe
+- arm_id: G_43
+  name: G_43
+  vector:
+    planning: 2
+    verification: 2
+    agency: 1
+    expertise: 0
+    format: 2
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 5b8390854af08e645db9a5b55ddf129f589ddd586f57cf07a965b719554b9eac
+- arm_id: G_44
+  name: G_44
+  vector:
+    planning: 1
+    verification: 2
+    agency: 1
+    expertise: 3
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: e7e5a4c0964850d1dac39a65a08618d594a66e707764b229587514d1b81272a6
+- arm_id: G_45
+  name: G_45
+  vector:
+    planning: 1
+    verification: 3
+    agency: 1
+    expertise: 1
+    format: 1
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 11679dc52cff5c806d5f227d3f7428482d2db864305cb32a97a3744db87be977
+- arm_id: G_46
+  name: G_46
+  vector:
+    planning: 3
+    verification: 3
+    agency: 0
+    expertise: 3
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 229e16a983bd6aab7829bada964b7df7fd77df6da5c305c348bce80ccce4d7ad
+- arm_id: G_47
+  name: G_47
+  vector:
+    planning: 3
+    verification: 2
+    agency: 1
+    expertise: 2
+    format: 0
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 7b5daa91251a23349f8f0e107687beba34a8a5fb6421266a82a99c857e5f0184
+- arm_id: G_48
+  name: G_48
+  vector:
+    planning: 3
+    verification: 0
+    agency: 2
+    expertise: 0
+    format: 3
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 900511a2b2e97e144bf728895146beeb583166f408edb7087f56a89a666d33db
+- arm_id: G_49
+  name: G_49
+  vector:
+    planning: 3
+    verification: 2
+    agency: 2
+    expertise: 0
+    format: 3
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: f999794fe1d343f8777c51bf919e1d48714c3125d9a866bf485cde3816ae944c

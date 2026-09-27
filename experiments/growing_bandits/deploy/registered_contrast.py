@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -75,6 +76,17 @@ REGISTRATIONS: dict[str, dict] = {
                    "horizons": (200, 1000), "mei": 0.002, "out": "capc_level.csv", "rule": "not_better"},
     "capc_phi": {"policy": "phi_k4", "reference": "p3_star", "test": "capc",
                  "horizons": (200, 1000), "mei": 0.002, "out": "capc_phi.csv", "rule": "not_better"},
+    # Pre-registration 9: the real prompt pools, uncapped, informative primary cells only, on the
+    # PROMPT-BOOTSTRAP interval (B = 200 NPMLE re-estimates; `prompt_bootstrap_contrast`).
+    "emp_primary": {"policy": "p3_star", "reference": "fixed_K_star", "test": "emp",
+                    "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_primary.csv", "rule": "noninferiority",
+                    "interval": "prompt_bootstrap"},
+    "emp_level": {"policy": "level_star", "reference": "p3_star", "test": "emp",
+                  "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_level.csv", "rule": "not_better",
+                  "interval": "prompt_bootstrap"},
+    "emp_phi": {"policy": "phi_k4", "reference": "p3_star", "test": "emp",
+                "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_phi.csv", "rule": "not_better",
+                "interval": "prompt_bootstrap"},
 }
 #: Decision rules. ``superiority`` (the default) reads the environment-mean t interval and
 #: is the rule of Pre-registrations 2-6; the two paired-CI rules are Pre-registration 8's,
@@ -237,6 +249,75 @@ def registered_contrast(
     return pd.DataFrame(rows)[list(COLUMNS)]
 
 
+#: Pre-registration 9's flatness guard: below this many informative primary cells, every
+#: contrast's verdict is "uninformative" -- K barely matters on the real pools.
+FLATNESS_MIN_INFORMATIVE = 2
+BOOT_TEST = "emp_boot"
+_BOOT_ENV = re.compile(r"^(?P<base>emp_[A-Za-z]+_npmle)_b(?P<b>\d{3})$")
+BOOT_COLUMNS: tuple[str, ...] = (
+    "row", "policy", "reference", "test", "horizon", "delta", "lo", "hi", "n_informative", "informative_cells",
+    "n_boot", "mei", "rule", "verdict", "as_registered",
+)
+
+
+def _informative_cells(flatness_path: Path, horizons: tuple[int, ...]) -> set[tuple[str, int]]:
+    flat = pd.read_csv(flatness_path)
+    flat = flat[(flat["variant"] == "npmle") & flat["horizon"].isin(horizons)]
+    return {(str(r.env_id), int(r.horizon)) for r in flat.itertuples() if bool(r.informative)}
+
+
+def prompt_bootstrap_contrast(
+    policy: str, reference: str, *, horizons: tuple[int, ...], mei: float, rule: str, out_dir: Path,
+    flatness_path: Path | None = None,
+) -> pd.DataFrame:
+    """Pre-registration 9: the full-sample Δ on informative primary cells, with the 95% percentile
+    interval of the same statistic over the prompt-bootstrap replicates (test ``emp_boot``)."""
+    out_dir = Path(out_dir)
+    horizons = tuple(int(h) for h in horizons)
+    informative = _informative_cells(flatness_path or out_dir / "tables" / "emp_flatness.csv", horizons)
+    as_registered = any(
+        (policy, reference, horizons, float(mei), rule) == (r["policy"], r["reference"], tuple(r["horizons"]),
+                                                             float(r["mei"]), r.get("rule"))
+        for r in REGISTRATIONS.values() if r.get("interval") == "prompt_bootstrap"
+    )
+    row = {"row": "primary", "policy": policy, "reference": reference, "test": "emp", "horizon": "all",
+           "n_informative": len(informative), "informative_cells": ";".join(f"{e}@{t}" for e, t in sorted(informative)),
+           "mei": float(mei), "rule": rule, "as_registered": as_registered,
+           "delta": np.nan, "lo": np.nan, "hi": np.nan, "n_boot": 0}
+    if len(informative) < FLATNESS_MIN_INFORMATIVE:
+        row["verdict"] = "uninformative"
+        return pd.DataFrame([row])[list(BOOT_COLUMNS)]
+
+    diffs, env_of, horizon_of = _diffs(out_dir, "emp", policy, reference, horizons)
+    point = [float(d.mean()) for c, d in diffs.items() if (env_of[c], horizon_of[c]) in informative]
+    if len(point) != len(informative):
+        raise ValueError(f"emp holds {len(point)} of the {len(informative)} informative cells")
+
+    bdiffs, benv, bhor = _diffs(out_dir, BOOT_TEST, policy, reference, horizons)
+    by_boot: dict[int, dict[tuple[str, int], float]] = {}
+    for c, d in bdiffs.items():
+        m = _BOOT_ENV.match(benv[c])
+        if m is None:
+            raise ValueError(f"{c}: env id {benv[c]!r} is not a bootstrap replicate")
+        key = (m.group("base"), bhor[c])
+        if key in informative:
+            by_boot.setdefault(int(m.group("b")), {})[key] = float(d.mean())
+    n_boot = max(by_boot) + 1 if by_boot else 0
+    stats_b = []
+    for b in range(n_boot):
+        cells_b = by_boot.get(b, {})
+        missing = sorted(informative - set(cells_b))
+        if missing:
+            raise ValueError(f"bootstrap replicate b{b:03d} lacks informative cells {missing}")
+        stats_b.append(float(np.mean([cells_b[k] for k in sorted(informative)])))
+
+    delta = float(np.mean(point))
+    lo, hi = (float(np.percentile(stats_b, 2.5)), float(np.percentile(stats_b, 97.5))) if stats_b else (np.nan, np.nan)
+    row.update({"delta": delta, "lo": lo, "hi": hi, "n_boot": n_boot,
+                "verdict": verdict_by_rule(rule, delta=delta, lo=lo, hi=hi, mei=mei)})
+    return pd.DataFrame([row])[list(BOOT_COLUMNS)]
+
+
 def main(argv: list[str] | None = None) -> pd.DataFrame:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--registration", default="h1b_prime", choices=sorted(REGISTRATIONS),
@@ -257,6 +338,18 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
             setattr(args, key, reg[key])
     horizons = (tuple(int(x) for x in args.horizons.split(",") if x.strip())
                 if args.horizons else tuple(reg["horizons"]))
+    if reg.get("interval") == "prompt_bootstrap":
+        out = prompt_bootstrap_contrast(args.policy, args.reference, horizons=horizons, mei=args.mei,
+                                        rule=reg["rule"], out_dir=args.out_dir)
+        path = args.out or (args.out_dir / "tables" / reg["out"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        out.to_csv(path, index=False)
+        p = out.iloc[0]
+        log.info("%s: %s vs %s on emp (informative %d): delta=%+.6f prompt-bootstrap [%+.6f, %+.6f] B=%d -> %s",
+                 args.registration, args.policy, args.reference, p["n_informative"], p["delta"], p["lo"], p["hi"],
+                 p["n_boot"], str(p["verdict"]).upper())
+        log.info("wrote %s", path)
+        return out
     out = registered_contrast(args.policy, args.reference, test=args.test, horizons=horizons,
                               mei=args.mei, out_dir=args.out_dir, n_boot=args.n_boot,
                               rule=reg.get("rule", "superiority"))

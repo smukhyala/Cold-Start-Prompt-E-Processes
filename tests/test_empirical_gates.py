@@ -86,3 +86,35 @@ def test_synthesize_outcomes_matches_the_collector_schema():
     assert len(out[out["replicate"] == 0]) == 2 * 10 * 60
     again = rehearsal.synthesize_outcomes(truth, n_prompts=10, n_replicates=30, seed=0)
     pd.testing.assert_frame_equal(out, again)
+
+
+def test_synthesize_outcomes_records_mu_true():
+    truth = {"G": BetaReservoir(159.4, 106.3, validate=False), "F": BetaReservoir.from_preset("good_common")}
+    out = rehearsal.synthesize_outcomes(truth, n_prompts=10, n_replicates=30, seed=0)
+    assert "mu_true" in out.columns
+    d = rehearsal.task_offsets(rehearsal.TASK_RATES)
+    rep0 = out[out["replicate"] == 0]
+    for (pool, arm), sub in rep0.groupby(["pool", "arm_id"]):
+        values = sub["mu_true"].unique()
+        assert len(values) == 1, "mu_true must be constant within an arm"
+        mu_true = float(values[0])
+        assert 0.0 <= mu_true <= 1.0
+        a = rehearsal.solve_level(mu_true, d)
+        assert np.mean(rehearsal.expit(a + d)) == pytest.approx(mu_true, abs=1e-9)
+    # replicate-1 rows carry the same mu_true as their arm's replicate-0 rows.
+    lookup = rep0.groupby(["pool", "arm_id"])["mu_true"].first()
+    for row in out[out["replicate"] == 1].itertuples():
+        assert row.mu_true == pytest.approx(lookup[(row.pool, row.arm_id)])
+
+
+def test_realized_sd_matches_the_spread_of_the_drawn_true_rates():
+    truth = {"G": BetaReservoir(159.4, 106.3, validate=False), "F": BetaReservoir.from_preset("good_common")}
+    out = rehearsal.synthesize_outcomes(truth, n_prompts=8, n_replicates=5, seed=1)
+    for pool in ("G", "F"):
+        got = rehearsal.realized_sd(out, pool)
+        per_arm = out[out["pool"] == pool].groupby("arm_id")["mu_true"].first().to_numpy()
+        assert got == pytest.approx(float(np.std(per_arm, ddof=0)))
+    # A pool's realized spread need not equal (and, for a small n_prompts, should not
+    # generally equal) the reservoir's population spread -- that gap is exactly why
+    # `run_rehearsal` compares the NPMLE fit against `realized_sd`, not the population.
+    assert rehearsal.realized_sd(out, "G") != rehearsal._sd(truth["G"])

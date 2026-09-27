@@ -141,7 +141,12 @@ def generate_freeform(client, n: int = N_PER_POOL) -> tuple[list[str], dict]:
         messages=[{"role": "user", "content": prompt}],
     )
     text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
-    raw = {"model": GENERATOR_MODEL, "max_tokens": GENERATOR_MAX_TOKENS, "prompt": prompt, "response_text": text}
+    stop_reason = getattr(response, "stop_reason", None)
+    if stop_reason == "max_tokens":
+        raise ValueError(f"the generator's response was cut off at max_tokens={GENERATOR_MAX_TOKENS}; "
+                         "refusing to freeze a truncated pool F")
+    raw = {"model": GENERATOR_MODEL, "max_tokens": GENERATOR_MAX_TOKENS, "prompt": prompt,
+           "stop_reason": stop_reason, "response_text": text}
     return parse_freeform(text, n), raw
 
 
@@ -259,15 +264,18 @@ def main(argv: list[str] | None = None) -> None:
 
     axes = load_axes(AXES_PATH)
     g_arms = [grid_arm(f"G_{i:02d}", v) for i, v in enumerate(sample_grid_vectors(axes, N_PER_POOL, args.seed))]
-    write_pool(pools["G"], "G", g_arms, GRID_TEMPLATE, AXES_PATH, meta={"seed": args.seed, "grid_size": 2304})
 
-    from dotenv import load_dotenv
+    # Generate (and validate) F before writing ANY file: a failed or truncated generation must
+    # leave the directory untouched, not a half-frozen set that needs --force to rebuild.
     import anthropic
+    from dotenv import load_dotenv
 
     load_dotenv(ROOT / ".env")
     texts, raw = generate_freeform(anthropic.Anthropic(), N_PER_POOL)
-    (out / "f_generation_raw.json").write_text(json.dumps(raw, indent=2, ensure_ascii=False))
     f_arms = [freeform_arm(f"F_{i:02d}", t) for i, t in enumerate(texts)]
+
+    write_pool(pools["G"], "G", g_arms, GRID_TEMPLATE, AXES_PATH, meta={"seed": args.seed, "grid_size": 2304})
+    (out / "f_generation_raw.json").write_text(json.dumps(raw, indent=2, ensure_ascii=False))
     write_pool(pools["F"], "F", f_arms, FREEFORM_TEMPLATE, AXES_PATH, meta={"generator": GENERATOR_MODEL})
 
     anchor = [grid_arm(ANCHOR_ARM_ID, PromptVector(**BASELINE_VECTOR))]

@@ -118,3 +118,36 @@ def test_queue_is_deterministic_and_round_trips(tmp_path):
     path = tmp_path / "queue.jsonl"
     mp.write_queue(path, a)
     assert mp.read_queue(path) == a
+
+
+def test_generate_freeform_refuses_a_response_cut_off_at_max_tokens():
+    class Messages:
+        def create(self, **kw):
+            return SimpleNamespace(stop_reason="max_tokens",
+                                   content=[SimpleNamespace(type="text", text=json.dumps(_texts(60)))])
+
+    with pytest.raises(ValueError, match="max_tokens"):
+        mp.generate_freeform(SimpleNamespace(messages=Messages()), n=50)
+
+
+def test_generate_freeform_records_the_stop_reason():
+    class Messages:
+        def create(self, **kw):
+            return SimpleNamespace(stop_reason="end_turn",
+                                   content=[SimpleNamespace(type="text", text=json.dumps(_texts(60)))])
+
+    _, raw = mp.generate_freeform(SimpleNamespace(messages=Messages()), n=50)
+    assert raw["stop_reason"] == "end_turn"
+
+
+def test_a_failed_f_generation_writes_no_pool_file(tmp_path, monkeypatch):
+    import anthropic
+
+    def boom(client, n):
+        raise ValueError("only 12 valid distinct instructions; need 50")
+
+    monkeypatch.setattr(anthropic, "Anthropic", lambda: object())
+    monkeypatch.setattr(mp, "generate_freeform", boom)
+    with pytest.raises(ValueError, match="valid"):
+        mp.main(["--out", str(tmp_path)])
+    assert list(tmp_path.iterdir()) == []  # nothing frozen: a retry needs no --force

@@ -62,21 +62,25 @@ def synthesize_outcomes(truth: dict[str, Reservoir], *, n_prompts: int = 50, n_r
                         seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     d = task_offsets(TASK_RATES)
-    rows, probs = [], {}
+    rows, probs, mu_true_of = [], {}, {}
     for pool in sorted(truth):
         mus = truth[pool].sample(rng, n_prompts)
         for i, mu in enumerate(mus):
-            p = expit(solve_level(float(np.clip(mu, 0.005, 0.995)), d) + d)
+            mu_true = float(np.clip(mu, 0.005, 0.995))
+            p = expit(solve_level(mu_true, d) + d)
             arm = f"{pool}_{i:02d}"
+            mu_true_of[(pool, arm)] = mu_true
             for j, pj in enumerate(p):
                 probs[(pool, arm, f"t{j:02d}")] = pj
                 rows.append({"pool": pool, "arm_id": arm, "task_id": f"t{j:02d}", "replicate": 0, "attempt": 1,
-                             "status": emp.STATUS_OK, "success": int(rng.random() < pj), "cost_usd": 0.0})
+                             "status": emp.STATUS_OK, "success": int(rng.random() < pj), "cost_usd": 0.0,
+                             "mu_true": mu_true})
     keys = sorted(probs)
     for k in rng.choice(len(keys), size=n_replicates, replace=False):
         pool, arm, task = keys[int(k)]
         rows.append({"pool": pool, "arm_id": arm, "task_id": task, "replicate": 1, "attempt": 1,
-                     "status": emp.STATUS_OK, "success": int(rng.random() < probs[keys[int(k)]]), "cost_usd": 0.0})
+                     "status": emp.STATUS_OK, "success": int(rng.random() < probs[keys[int(k)]]), "cost_usd": 0.0,
+                     "mu_true": mu_true_of[(pool, arm)]})
     return pd.DataFrame(rows)
 
 
@@ -85,13 +89,26 @@ def _sd(res: Reservoir) -> float:
     return float(np.std(res.sample_from_uniforms(u)))
 
 
+def realized_sd(outcomes: pd.DataFrame, pool: str) -> float:
+    """SD (ddof=0) of `pool`'s realized per-prompt true rates (one `mu_true` per arm).
+
+    G1's NPMLE-recovery check must compare against what these ``n_prompts`` draws
+    actually landed on, not the reservoir's population SD: on the wide pool the sample
+    SD of 50 iid draws misses the population SD by more than 0.01 about half the time,
+    which would make the +-0.01 gate a coin flip independent of estimator quality.
+    """
+    per_arm = outcomes.loc[outcomes["pool"] == pool].groupby("arm_id")["mu_true"].first()
+    return float(np.std(per_arm.to_numpy(dtype=float), ddof=0))
+
+
 def run_rehearsal(seed: int = 20260926, workers: int = 12, m: int = 1000) -> dict:
     truth = {"G": BetaReservoir(159.4, 106.3, validate=False), "F": BetaReservoir.from_preset("good_common")}
     outcomes = synthesize_outcomes(truth, seed=seed)
     reservoirs, noise, _ = replay.estimate(outcomes)
     results: dict = {"noise": noise, "k_grid": [K for K in kse.DEFAULT_K_GRID if K <= REHEARSAL_T]}
     for name, pool in (("flat", "G"), ("wide", "F")):
-        results[name] = {"sd_true": _sd(truth[pool]), "sd_npmle": reservoirs[(pool, "npmle")].sd(),
+        results[name] = {"sd_true": realized_sd(outcomes, pool), "sd_population": _sd(truth[pool]),
+                         "sd_npmle": reservoirs[(pool, "npmle")].sd(),
                          "sd_raw": reservoirs[(pool, "raw")].sd(), "mean_true": float(truth[pool].mean()),
                          "mean_npmle": reservoirs[(pool, "npmle")].mean()}
     true_wide = EmpiricalReservoir(emp.GRID, emp.grid_masses(truth["F"]), label="F_truth")

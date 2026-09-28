@@ -1,0 +1,16 @@
+{
+  "noise": "0ff58ca8a3c693089b6e819c8d2c0eaa957aad01292f29ab649d1bd90feee21a",
+  "outcomes_snapshot": {
+    "file": "outcomes_snapshot.jsonl",
+    "sha256": "a0c09e1b0d27ce57138d293ca6f8482a82dfbd208ad013c4dc306b8c5b615d75"
+  },
+  "parametric_fits": "2281d2ad9ecc6e47fed7d1484227e14ba0337a015418145f90c43f33a69862f0",
+  "reservoirs": {
+    "F_npmle": "828856c6872a25b3b531bf259daea88a5b0e0a611371c12a020def7baff72c15",
+    "F_parametric": "94b5a1887c8a0fe2d90520c1c6a5c83f1915efe373f3b65e549971f777aefee4",
+    "F_raw": "93013a84ed93d0776bfc890168d962cbe3ea21b02106032bfeaa237506da5546",
+    "G_npmle": "3e354ebeb29b3be9451d6078aade1fe3326c82f5efaa1e0d0372b83b4b5e6517",
+    "G_parametric": "75e2968a32173c8bb19aa4f263c5c6647ea86b2172a2f105419c0b398c3fc730",
+    "G_raw": "7c3148af35793984810a035523a907829ae8c87970fcaa23befcd52bccb9dafe"
+  }
+}

@@ -1,0 +1,10 @@
+policy,reference,variant,delta,n_cells
+p3_star,fixed_K_star,raw,0.0007999999374151231,6
+p3_star,fixed_K_star,parametric,0.00021125007669130962,6
+p3_star,fixed_K_star,npmle,0.000378749946753184,6
+level_star,p3_star,raw,-0.001288888658086459,6
+level_star,p3_star,parametric,-0.00026666653156280515,6
+level_star,p3_star,npmle,-0.0002095832924048106,6
+phi_k4,p3_star,raw,-0.002094444404045741,6
+phi_k4,p3_star,parametric,-0.0003758333325386048,6
+phi_k4,p3_star,npmle,-0.0005262499252955119,6

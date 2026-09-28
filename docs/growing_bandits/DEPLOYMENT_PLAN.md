@@ -750,3 +750,114 @@ those mixtures. This registers that statement.
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration capc_level
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration capc_phi
 ```
+
+---
+
+## Pre-registration 9 — real prompt pools on WebArena Gmail (registered 2026-09-27, before any paid episode)
+
+Every result in §1.0 and §12 was measured on synthetic reservoirs. This registers the first test on real
+prompts. Design: `docs/superpowers/specs/2026-09-26-empirical-reservoir-design.md`; implementation plan
+`docs/superpowers/plans/2026-09-26-empirical-reservoir.md`.
+
+### Design
+
+- **Pools (frozen; sha256 in `data/empirical_pool/manifest.json`):** G = 50 prompts sampled from the
+  2,304-point axis grid (seed 20260926); F = 50 instructions written by `claude-opus-4-7` from one fixed
+  prompt that never sees the task bank; anchor = the hand-written `baseline`.
+  `pool_G.yaml` `20da6911d1b79749aa134f8255257bc4393a24c43930d82588d5d44eba62a4f6`,
+  `pool_F.yaml` `b47c2327d0ed6565878ec1c545108587cee3b2fb88ad3fcc250dca87301b15a0`,
+  `pool_anchor.yaml` `9681872cd65cdf43374d18e5dd35be3a606653a9235c1330c691cf177e3238e6`,
+  `f_generation_raw.json` `6ea12a1e7d7ab6132a788c2c5855c408d5b3e6c0e1fe1c51f8496eb5b0deaa4c`,
+  `queue.jsonl` `367cb223a125c1c9c6dbaf74b7d388d3b7e06be5792cffd18b76cd949261aefc`.
+- **Episodes:** every prompt × the 60 Gmail `real-tasks`, once; 300 random (prompt, task) cells a second
+  time; `gpt-5.4-mini`, low effort, 30 steps, 180 s; one shuffled queue, pilot (5 + 5 + anchor = 660
+  episodes) first. An agent timeout is a task failure (0). An infrastructure error — a harness exception, or
+  an episode that did not succeed and ended in a terminal streak of LLM-provider errors — is retried twice,
+  then `missing`, never 0; a transient provider error the agent recovered from is scored normally.
+- **Reservoirs:** primary = the NPMLE of the true-rate distribution under x̄ᵢ ~ N(μᵢ, v̂/nᵢ), v̂ from the
+  replicate pairs (pooled unless the pools differ by more than the bootstrap SE of their difference);
+  sensitivity = raw rates and the best-AIC parametric fit (Beta, TailReservoir, two-component Beta mixture).
+  `replay.py estimate` freezes one outcomes snapshot and a reservoir manifest; every later stage verifies it.
+- **Replay:** cap = T, M = 1,000, CRN seeds from 400,000,000; policies `always_search`, `p3_star`,
+  `fixed_K_star`, `level_star`, `phi_k4` with cap-T constants selected **on the corpus only** (caps 50,
+  100 and 500 selected for this registration, before any episode, by Pre-registration 7's procedure); fixed K
+  over `DEFAULT_K_GRID` for the U-curves.
+- **Interval of record:** the prompt bootstrap — B = 200 resamples of each pool's prompts with their
+  outcomes, v̂ and the NPMLE re-estimated, the four contrast policies redeployed at M = 250 on fresh seeds;
+  95% percentile interval; exactly replicates 0–199 must be present. The episode-paired CI is reported beside.
+- **Flatness guard:** a primary cell (npmle, T ∈ {50, 100, 200}) is informative iff its fixed-K regret
+  range exceeds 5 × MEI = 0.01. Fewer than 2 informative cells → every verdict is **uninformative: K
+  barely matters on real Gmail prompts**. Otherwise contrasts pool the informative cells, equally weighted.
+
+### The registered contrasts (MEI = 0.002)
+
+1. **Primary (non-inferiority):** Δ = `p3_star` − `fixed_K_star`. Supported iff the bootstrap upper bound
+   < +MEI; refuted iff the lower bound ≥ +MEI; else inconclusive. (`emp_primary`)
+2. **Secondary (not-better):** Δ = `level_star` − `p3_star` (`emp_level`) and `phi_k4` − `p3_star`
+   (`emp_phi`). Supported iff the lower bound > −MEI; refuted iff the upper bound ≤ −MEI; else
+   inconclusive. Uncorrected.
+3. **Secondary:** the lower-level pool has the strictly larger K\*(T) at each primary T (ties reported as
+   ties); reported with the ratio against exp(4 · (ℓ_high − ℓ_low)).
+4. **Descriptive:** pool level / sd / q99 − mean against the 33 corpus environments; each pool's K\*(T)
+   located in the corpus K\* envelope (`k_star_envelope_all33.csv`); U-curves; each rule's gap to the
+   pool's K\*; cap-64 cost at T ∈ {500, 1000} (extrapolation beyond 50 prompts).
+5. **Sensitivity:** 1–2 on raw and parametric reservoirs, no verdicts.
+
+### Gates
+
+- **G1 rehearsal — passed** (`results/growing_bandits/empirical/rehearsal.json`): flat pool NPMLE sd 0.0199
+  vs realized 0.0271 (raw 0.0431); wide pool 0.1555 vs 0.1579; K\*(T = 200) estimated 24 vs true 32 (one
+  grid step). Noted: on a flat pool the NPMLE under-states the spread by about a quarter.
+- **G2 pilot:** cost ≤ $0.05 per episode; missing ≤ 5% counting never-attempted pilot items; all 8 workers
+  productive; anchor inside the Binomial(n, 0.66) 95% band; **zero watchdog relaunches**. Budget cap $40.
+- **G3 collection:** missing ≤ 5% counting never-attempted queue items. Hard budget stop $260; a worker
+  that sees 3 consecutive provider-caused `missing` items stops the run with STATUS `provider_down`.
+
+### Run
+
+```
+scripts/run_empirical_pool.sh --pilot --budget 40 && .venv/bin/python experiments/growing_bandits/empirical/gates.py pilot
+scripts/run_empirical_pool.sh --budget 260        && .venv/bin/python experiments/growing_bandits/empirical/gates.py collection
+.venv/bin/python experiments/growing_bandits/empirical/replay.py estimate
+.venv/bin/python experiments/growing_bandits/empirical/replay.py point --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/replay.py kgrid --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/describe.py
+.venv/bin/python experiments/growing_bandits/empirical/replay.py boot --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration emp_primary
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration emp_level
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration emp_phi
+```
+
+### Pre-registration 9 — Amendment 1 (2026-09-27, after a paused pilot, before any analysis)
+
+**Why.** The pilot was paused at 197 of 660 episodes ($20.21) because real cost is ~$0.10–0.11 per
+episode, not the $0.036 the budget assumed from the hand-written arms' historical runs; the diverse
+prompts produce longer episodes (≥ 20 steps: 30% of episodes, 66% of spend). The full design would have
+cost ~$660. Sanjay chose to halve the task bank. **The change is driven by cost alone.**
+
+**Disclosure.** Before this amendment the controller saw, while diagnosing cost, the pilot's aggregate
+success rates by pool (G 0.726 over 95 episodes, F 0.684 over 76, anchor 0.60 over 20) and per-step-bucket
+success rates. No per-prompt score, reservoir, K-grid or contrast was computed. The task subset below is
+chosen by the pool seed, stratified by difficulty, without reference to any outcome.
+
+**What changes.**
+- **Task bank:** every prompt runs a fixed 30 of the 60 Gmail tasks — 10 easy, 10 medium, 10 hard,
+  sampled by the pool seed (20260926), stratum by stratum (`make_pools.select_tasks`): task_e2, task_e10, task_e11, task_e12, task_e13, task_e14, task_e15, task_e16, task_e19, task_e20, task_m3, task_m4, task_m7, task_m13, task_m14, task_m15, task_m16, task_m17, task_m18, task_m20, task_h6, task_h8, task_h10, task_h12, task_h13, task_h15, task_h16, task_h17, task_h19, task_h20.
+- **Queue:** 2 × 50 × 30 + 30 anchor = 3,030 main episodes + 300 replicate cells = 3,330; pilot 330.
+  `queue.jsonl` sha256 `4b68eafde264b0ed52cddbc266f5935872731757a680ce355b2282213dec0f33`; `manifest.json` records `n_tasks`, `task_subset`, `amendment`.
+  The pool files and `f_generation_raw.json` are unchanged (hashes above verified).
+- **Pilot records:** the 108 pilot records on subset tasks count; the 89 on other tasks are moved verbatim
+  to `logs/empirical_pool/archive/` (not used in estimation; their cost still counts toward the budget).
+- **Noise:** σ̂ᵢ² = v̂ / nᵢ with nᵢ ≤ 30 (≈ ±0.056 per prompt instead of ±0.039).
+- **G1, amended.** The single-seed ±0.01 spread check fails at 30 tasks (flat pool NPMLE sd 0.0510 vs
+  realized 0.0318, `rehearsal.json`), and it failed on 17% of seeds even at 60 tasks. It is replaced —
+  after that failure, and said so — by a multi-seed check of the estimator (`g1_multiseed.py`, 12 seeds):
+  |mean error| ≤ 0.005 and RMS error ≤ 0.02 on both pools. Result at 30 tasks: flat mean −0.0003, RMS
+  0.0151; wide mean −0.0001, RMS 0.0081 → **pass** (60 tasks: flat RMS 0.0102). The K\*(T = 200) check
+  still passes at 30 tasks (estimated 24 vs true 32, one grid step). Consequence stated in advance: a
+  flat pool's spread is resolved to about ±0.015; flat and wide pools remain clearly distinguishable.
+- **G2:** cost limit $0.15 per episode (the $0.05 limit encoded the mistaken budget); pilot budget cap
+  $50 cumulative (includes the $20.21 already spent). Other G2 checks unchanged, anchor band over n = 30.
+- **Budget:** estimated total ≈ $345; the hard stop stays $260 and is raised by Sanjay when reached.
+- Everything else in Pre-registration 9 — pools, estimator, cells, policies, flatness guard, contrasts,
+  MEI, B = 200 — is unchanged.

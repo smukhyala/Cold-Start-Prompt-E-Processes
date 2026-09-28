@@ -1,0 +1,16 @@
+pool: anchor
+template: configs/template.jinja
+meta:
+  historical_arm: baseline
+arms:
+- arm_id: anchor_baseline
+  name: anchor_baseline
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: ae8c7c7fb6984ed82d52d8dd454e6672e8d7a1bf544cd727affdb35cb539ef82

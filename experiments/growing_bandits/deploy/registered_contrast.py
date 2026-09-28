@@ -26,7 +26,10 @@ else produces a different contrast and the output says which.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -75,6 +78,17 @@ REGISTRATIONS: dict[str, dict] = {
                    "horizons": (200, 1000), "mei": 0.002, "out": "capc_level.csv", "rule": "not_better"},
     "capc_phi": {"policy": "phi_k4", "reference": "p3_star", "test": "capc",
                  "horizons": (200, 1000), "mei": 0.002, "out": "capc_phi.csv", "rule": "not_better"},
+    # Pre-registration 9: the real prompt pools, uncapped, informative primary cells only, on the
+    # PROMPT-BOOTSTRAP interval (B = 200 NPMLE re-estimates; `prompt_bootstrap_contrast`).
+    "emp_primary": {"policy": "p3_star", "reference": "fixed_K_star", "test": "emp",
+                    "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_primary.csv", "rule": "noninferiority",
+                    "interval": "prompt_bootstrap", "n_boot": 200},
+    "emp_level": {"policy": "level_star", "reference": "p3_star", "test": "emp",
+                  "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_level.csv", "rule": "not_better",
+                  "interval": "prompt_bootstrap", "n_boot": 200},
+    "emp_phi": {"policy": "phi_k4", "reference": "p3_star", "test": "emp",
+                "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_phi.csv", "rule": "not_better",
+                "interval": "prompt_bootstrap", "n_boot": 200},
 }
 #: Decision rules. ``superiority`` (the default) reads the environment-mean t interval and
 #: is the rule of Pre-registrations 2-6; the two paired-CI rules are Pre-registration 8's,
@@ -237,6 +251,170 @@ def registered_contrast(
     return pd.DataFrame(rows)[list(COLUMNS)]
 
 
+#: Pre-registration 9's flatness guard: below this many informative primary cells, every
+#: contrast's verdict is "uninformative" -- K barely matters on the real pools.
+FLATNESS_MIN_INFORMATIVE = 2
+BOOT_TEST = "emp_boot"
+_BOOT_ENV = re.compile(r"^(?P<base>emp_[A-Za-z]+_npmle)_b(?P<b>\d{3})$")
+BOOT_COLUMNS: tuple[str, ...] = (
+    "row", "policy", "reference", "test", "horizon", "delta", "lo", "hi", "paired_lo", "paired_hi",
+    "n_informative", "informative_cells", "n_boot", "mei", "rule", "verdict", "as_registered",
+)
+#: The reservoir manifest `replay.py estimate` writes beside the frozen outcomes snapshot.
+EMP_RESERVOIR_MANIFEST = ROOT / "data" / "empirical_pool" / "reservoirs" / "manifest.json"
+#: `replay.py point`/`boot` stamp the manifest they ran against, per test, under ``tables/``.
+RESERVOIR_STAMP = "{test}_reservoir_stamp.json"
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def write_reservoir_stamp(out_dir: Path, test: str, manifest_path: Path) -> Path:
+    """Record which reservoir manifest the `test` episodes were generated from."""
+    path = Path(out_dir) / "tables" / RESERVOIR_STAMP.format(test=test)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"test": test, "manifest_sha256": file_sha256(manifest_path)}, indent=2))
+    return path
+
+
+def check_reservoir_snapshot(out_dir: Path, flatness: pd.DataFrame, manifest_path: Path,
+                             horizons: tuple[int, ...]) -> None:
+    """Raise unless every input to the verdict comes from the reservoirs in `manifest_path`.
+
+    The flatness rows used (npmle, primary horizons) must carry the sha256 of the reservoir
+    their K-grid ran on, equal to the manifest's; the ``emp`` and ``emp_boot`` episodes must be
+    stamped with this manifest's sha256. A re-run of ``replay.py estimate`` after any of them
+    therefore fails loudly instead of mixing two data snapshots in one verdict.
+    """
+    manifest = json.loads(Path(manifest_path).read_text())
+    shas = manifest["reservoirs"]
+    rows = flatness[(flatness["variant"] == "npmle") & flatness["horizon"].isin(horizons)]
+    if "reservoir_sha256" not in rows.columns:
+        raise ValueError("emp_flatness.csv has no reservoir_sha256 column: re-run replay.py kgrid and describe.py")
+    stale = sorted({str(r.env_id) for r in rows.itertuples()
+                    if shas.get(str(r.env_id).removeprefix("emp_")) != str(r.reservoir_sha256)})
+    if stale:
+        raise ValueError(f"emp_flatness.csv rows {stale} were computed on reservoirs other than {manifest_path}; "
+                         "re-run replay.py kgrid and describe.py")
+    want = file_sha256(manifest_path)
+    for test in ("emp", BOOT_TEST):
+        stamp_path = Path(out_dir) / "tables" / RESERVOIR_STAMP.format(test=test)
+        if not stamp_path.exists():
+            raise ValueError(f"no {stamp_path.name}: the {test} episodes are not tied to a reservoir snapshot")
+        if json.loads(stamp_path.read_text()).get("manifest_sha256") != want:
+            raise ValueError(f"the {test} episodes were generated from a different reservoir manifest than "
+                             f"{manifest_path}; re-run replay.py {'point' if test == 'emp' else 'boot'}")
+
+
+def _informative_cells(flatness_path: Path, horizons: tuple[int, ...]) -> set[tuple[str, int]]:
+    flat = pd.read_csv(flatness_path)
+    flat = flat[(flat["variant"] == "npmle") & flat["horizon"].isin(horizons)]
+    return {(str(r.env_id), int(r.horizon)) for r in flat.itertuples() if bool(r.informative)}
+
+
+def prompt_bootstrap_contrast(
+    policy: str, reference: str, *, horizons: tuple[int, ...], mei: float, rule: str, out_dir: Path,
+    expected_n_boot: int, flatness_path: Path | None = None, reservoir_manifest: Path | None = None,
+    paired_n_boot: int = 10_000,
+) -> pd.DataFrame:
+    """Pre-registration 9: the full-sample Δ on informative primary cells, with the 95% percentile
+    interval of the same statistic over the prompt-bootstrap replicates (test ``emp_boot``).
+
+    Pre-registration 9 fixes B = `expected_n_boot` (200) replicates. The replicate indices
+    present must be exactly ``{0, ..., expected_n_boot - 1}`` -- trailing replicates lost to a
+    boot run that died early, or an `emp_boot` tree with no data at all, raise rather than
+    silently inferring a smaller B or falling through to an "inconclusive" verdict. Cell
+    coverage (both `emp` and `emp_boot`) is checked by key, not count: the informative cells
+    used must be exactly the informative set, and two cells claiming the same (env_id, horizon)
+    raise instead of one silently overwriting the other.
+
+    The episode-paired CI (the cell-stratified paired bootstrap over the informative cells'
+    episode differences, as `_stratum` computes it) is reported beside the interval of record
+    as ``paired_lo``/``paired_hi``; it does not enter the verdict. With `reservoir_manifest`
+    (the CLI always passes it) every input is first checked against that one data snapshot
+    (`check_reservoir_snapshot`).
+    """
+    out_dir = Path(out_dir)
+    horizons = tuple(int(h) for h in horizons)
+    flatness_path = flatness_path or out_dir / "tables" / "emp_flatness.csv"
+    if reservoir_manifest is not None:
+        check_reservoir_snapshot(out_dir, pd.read_csv(flatness_path), reservoir_manifest, horizons)
+    informative = _informative_cells(flatness_path, horizons)
+    as_registered = any(
+        (policy, reference, horizons, float(mei), rule) == (r["policy"], r["reference"], tuple(r["horizons"]),
+                                                             float(r["mei"]), r.get("rule"))
+        for r in REGISTRATIONS.values() if r.get("interval") == "prompt_bootstrap"
+    )
+    row = {"row": "primary", "policy": policy, "reference": reference, "test": "emp", "horizon": "all",
+           "n_informative": len(informative), "informative_cells": ";".join(f"{e}@{t}" for e, t in sorted(informative)),
+           "mei": float(mei), "rule": rule, "as_registered": as_registered,
+           "delta": np.nan, "lo": np.nan, "hi": np.nan, "paired_lo": np.nan, "paired_hi": np.nan, "n_boot": 0}
+    if len(informative) < FLATNESS_MIN_INFORMATIVE:
+        row["verdict"] = "uninformative"
+        return pd.DataFrame([row])[list(BOOT_COLUMNS)]
+
+    diffs, env_of, horizon_of = _diffs(out_dir, "emp", policy, reference, horizons)
+    point_by_key: dict[tuple[str, int], float] = {}
+    paired_cells: dict[str, np.ndarray] = {}
+    for c, d in diffs.items():
+        key = (env_of[c], horizon_of[c])
+        if key not in informative:
+            continue
+        if key in point_by_key:
+            raise ValueError(f"emp holds two cells for the informative key {key} (last: {c})")
+        point_by_key[key] = float(d.mean())
+        paired_cells[c] = d
+    missing_point = sorted(informative - set(point_by_key))
+    if missing_point:
+        raise ValueError(f"emp is missing informative cells {missing_point}")
+    point = [point_by_key[k] for k in sorted(informative)]
+
+    bdiffs, benv, bhor = _diffs(out_dir, BOOT_TEST, policy, reference, horizons)
+    by_boot: dict[int, dict[tuple[str, int], float]] = {}
+    for c, d in bdiffs.items():
+        m = _BOOT_ENV.match(benv[c])
+        if m is None:
+            raise ValueError(f"{c}: env id {benv[c]!r} is not a bootstrap replicate")
+        key = (m.group("base"), bhor[c])
+        if key not in informative:
+            continue
+        b = int(m.group("b"))
+        cells_b = by_boot.setdefault(b, {})
+        if key in cells_b:
+            raise ValueError(f"emp_boot holds two cells for b{b:03d}'s informative key {key} (last: {c})")
+        cells_b[key] = float(d.mean())
+
+    present, expected = set(by_boot), set(range(expected_n_boot))
+    if present != expected:
+        parts = []
+        missing_b = sorted(expected - present)
+        extra_b = sorted(present - expected)
+        if missing_b:
+            parts.append(f"missing {[f'b{b:03d}' for b in missing_b]}")
+        if extra_b:
+            parts.append(f"unexpected {[f'b{b:03d}' for b in extra_b]}")
+        raise ValueError(f"emp_boot does not hold exactly replicates b000..b{expected_n_boot - 1:03d}: "
+                         + "; ".join(parts))
+
+    stats_b = []
+    for b in range(expected_n_boot):
+        cells_b = by_boot[b]
+        missing_cells = sorted(informative - set(cells_b))
+        if missing_cells:
+            raise ValueError(f"bootstrap replicate b{b:03d} lacks informative cells {missing_cells}")
+        stats_b.append(float(np.mean([cells_b[k] for k in sorted(informative)])))
+
+    delta = float(np.mean(point))
+    lo, hi = float(np.percentile(stats_b, 2.5)), float(np.percentile(stats_b, 97.5))
+    paired = stats.stratified_pooled(paired_cells, n_boot=paired_n_boot,
+                                     seed=ad._seed("registered", policy, reference, "emp"))
+    row.update({"delta": delta, "lo": lo, "hi": hi, "paired_lo": float(paired["lo"]),
+                "paired_hi": float(paired["hi"]), "n_boot": expected_n_boot,
+                "verdict": verdict_by_rule(rule, delta=delta, lo=lo, hi=hi, mei=mei)})
+    return pd.DataFrame([row])[list(BOOT_COLUMNS)]
+
+
 def main(argv: list[str] | None = None) -> pd.DataFrame:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--registration", default="h1b_prime", choices=sorted(REGISTRATIONS),
@@ -249,6 +427,8 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
     ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR)
     ap.add_argument("--n-boot", type=int, default=10_000)
     ap.add_argument("--out", type=Path, default=None, help="default: <out-dir>/tables/<registration>.csv")
+    ap.add_argument("--reservoir-manifest", type=Path, default=EMP_RESERVOIR_MANIFEST,
+                    help="prompt-bootstrap registrations: the snapshot every input must match")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     reg = REGISTRATIONS[args.registration]
@@ -257,6 +437,20 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
             setattr(args, key, reg[key])
     horizons = (tuple(int(x) for x in args.horizons.split(",") if x.strip())
                 if args.horizons else tuple(reg["horizons"]))
+    if reg.get("interval") == "prompt_bootstrap":
+        out = prompt_bootstrap_contrast(args.policy, args.reference, horizons=horizons, mei=args.mei,
+                                        rule=reg["rule"], out_dir=args.out_dir, expected_n_boot=reg["n_boot"],
+                                        reservoir_manifest=args.reservoir_manifest)
+        path = args.out or (args.out_dir / "tables" / reg["out"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        out.to_csv(path, index=False)
+        p = out.iloc[0]
+        log.info("%s: %s vs %s on emp (informative %d): delta=%+.6f prompt-bootstrap [%+.6f, %+.6f] B=%d "
+                 "(episode-paired [%+.6f, %+.6f]) -> %s", args.registration, args.policy, args.reference,
+                 p["n_informative"], p["delta"], p["lo"], p["hi"], p["n_boot"], p["paired_lo"], p["paired_hi"],
+                 str(p["verdict"]).upper())
+        log.info("wrote %s", path)
+        return out
     out = registered_contrast(args.policy, args.reference, test=args.test, horizons=horizons,
                               mei=args.mei, out_dir=args.out_dir, n_boot=args.n_boot,
                               rule=reg.get("rule", "superiority"))

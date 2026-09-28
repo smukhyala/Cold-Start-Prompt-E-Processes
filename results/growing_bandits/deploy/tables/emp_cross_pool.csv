@@ -1,0 +1,6 @@
+horizon,low_pool,high_pool,k_star_low,k_star_high,sign_agrees,tie,ratio_observed,ratio_predicted
+50,F,G,32,12,True,False,2.6666666666666665,1.0212740662282336
+100,F,G,8,8,False,True,1.0,1.0212740662282336
+200,F,G,8,8,False,True,1.0,1.0212740662282336
+500,F,G,48,4,True,False,12.0,1.0212740662282336
+1000,F,G,32,12,True,False,2.6666666666666665,1.0212740662282336

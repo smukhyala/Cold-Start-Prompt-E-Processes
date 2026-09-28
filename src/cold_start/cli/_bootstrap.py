@@ -39,6 +39,9 @@ from cold_start.growing import evidence as _growing_evidence  # noqa: F401
 # growing-arm reservoirs (infinite arm pools)
 from cold_start.growing import reservoirs as _reservoirs  # noqa: F401
 
+# reservoirs registered outside cold_start.growing.reservoirs
+from cold_start.growing import empirical_reservoir as _empirical_reservoir  # noqa: F401
+
 # policies
 from cold_start.policies import uniform as _u  # noqa: F401
 from cold_start.policies import epsilon_greedy as _eg  # noqa: F401

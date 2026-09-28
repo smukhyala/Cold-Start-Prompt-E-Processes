@@ -1,0 +1,13 @@
+env_id,pool,variant,horizon,cost,label
+emp_F_npmle,F,npmle,500,2.7499973773900004e-05,extrapolation
+emp_F_npmle,F,npmle,1000,6.499993801120001e-05,extrapolation
+emp_F_parametric,F,parametric,500,1.2499988079100002e-05,extrapolation
+emp_F_parametric,F,parametric,1000,5.499994754789997e-05,extrapolation
+emp_F_raw,F,raw,500,0.0061666666269303005,extrapolation
+emp_F_raw,F,raw,1000,0.0034999991059304,extrapolation
+emp_G_npmle,G,npmle,500,0.0015199997425080001,extrapolation
+emp_G_npmle,G,npmle,1000,0.0007324998378754001,extrapolation
+emp_G_parametric,G,parametric,500,0.0023174988031387,extrapolation
+emp_G_parametric,G,parametric,1000,0.0016424993872643,extrapolation
+emp_G_raw,G,raw,500,0.007633332163095495,extrapolation
+emp_G_raw,G,raw,1000,0.004566666364669802,extrapolation

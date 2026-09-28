@@ -71,6 +71,12 @@ registered follow-ups that re-examined them (§12), is the following.
 5. **Offline model selection did not transfer.** Spearman ρ between offline OOF AUC and deployed regret is
    +0.005 [−0.53, +0.52] over 22 variants (§6); the feature ladder collapses to CLOCK + QUALITY (§3.6).
 
+6. **On real prompts, K barely matters (§13, Pre-registration 9).** Two real pools on WebArena Gmail — 50
+   grid-sampled and 50 free-form prompts — are flatter than every corpus environment (deconvolved sd 0.035
+   and 0.001). No primary cell clears the registered flatness threshold, so all three registered contrasts
+   are *uninformative*; every rule except always-search is within about 0.003 of the ceiling. Items 1–4 are statements about pools
+   that vary; this benchmark's prompts mostly do not.
+
 The rest of §1 states the pre-registered hypotheses as they were tested, at cap 64. They are correct as
 written; §12.7 is what they mean.
 
@@ -1404,6 +1410,102 @@ spans far more than these do at a fixed horizon and no single schedule can be ne
 study, with a different question. This one's answer is the schedule.
 
 ---
+
+## 13. Real prompt pools on WebArena Gmail (Pre-registration 9)
+
+*Registered 2026-09-27 (`DEPLOYMENT_PLAN.md`, Pre-registration 9 and Amendment 1) before any paid episode;
+collected 2026-09-27/28; analysed 2026-09-28. Tables in `results/growing_bandits/deploy/tables/emp_*.csv`,
+reservoirs in `data/empirical_pool/reservoirs/` (manifest sha256 `641d5922…`, stamped on every table).*
+
+Everything above §13 ran on synthetic reservoirs. This section asks the same questions of two real prompt
+pools: G, 50 prompts drawn from the 2,304-point axis grid, and F, 50 free-form instructions written by
+`claude-opus-4-7`, each run on a fixed, difficulty-stratified 30 of the 60 Gmail tasks with `gpt-5.4-mini`.
+
+### 13.1 What was collected
+
+3,330 of 3,330 queued episodes scored `ok` (G 1,500, F 1,500, anchor 30, 300 replicate cells); **0 missing,
+0 infrastructure errors, 0 watchdog relaunches** (G2 and G3 passed). 422 episodes (12.7%) hit the 180 s
+agent timeout and are scored 0 by registration. Spend $333.88, including $8.14 on 89 pilot episodes
+archived when Amendment 1 halved the task bank (cost-driven: $0.098 per episode, not the $0.036 assumed;
+28% of episodes run ≥ 20 steps). The hand-written `baseline` anchor scored 18/30 = 0.60 against its
+historical 0.66, inside the pre-registered band. Raw success rates: G 0.619, F 0.614.
+
+### 13.2 Where the real pools sit
+
+The within-cell outcome variance differs between pools (v̂ = 0.052 for G, 0.087 for F; difference 1.7 SE),
+so each pool uses its own noise model, as registered. After deconvolution (`emp_pool_location.csv`):
+
+| reservoir | level | sd | q99 − mean | corpus envs with smaller sd |
+|---|---|---|---|---|
+| G, NPMLE | 0.619 | **0.035** | 0.018 | 0 of 33 |
+| F, NPMLE | 0.614 | **0.001** | 0.001 | 0 of 33 |
+| G, raw (sensitivity) | 0.619 | 0.053 | 0.081 | 0 of 33 |
+| F, raw (sensitivity) | 0.614 | 0.041 | 0.086 | 0 of 33 |
+
+**Both real pools are flatter than every environment in the simulation corpus.** F's observed spread
+(0.041) is no larger than its measurement noise (√(0.087/30) ≈ 0.054), so the NPMLE puts essentially all
+mass at one rate: fifty differently worded instructions behave, on this benchmark, like one prompt. G keeps a
+small real spread (0.035, resolved to about ±0.015 at 30 tasks — Amendment 1's stated resolution). The
+parametric fit agrees with the NPMLE on both pools. Both F reservoirs fail the corpus's `MIN_SPREAD`
+validity check; that is recorded on the reservoir, not treated as an error. The result for F survives the
+pooled noise model (v̂ = 0.070 gives noise ≈ 0.048, still above F's raw spread).
+
+### 13.3 The U-curves, and the flatness guard
+
+Fixed-K regret over the K-grid, cap = T (`emp_kstar.csv`, variant npmle):
+
+| pool | T = 50 | T = 100 | T = 200 |
+|---|---|---|---|
+| G: regret range over K (K\*) | 0.0063 (12) | 0.0073 (8) | 0.0091 (8) |
+| F: regret range over K (K\*) | 0.0001 (32) | 0.0001 (8) | 0.0001 (8) |
+
+The registered threshold for an informative cell is 0.010. **0 of 6 primary cells are informative**; the
+closest is G at T = 200 (0.0091). F's curve is flat to four decimals because there is nothing to find.
+
+### 13.4 The registered verdicts
+
+By Pre-registration 9's flatness guard (fewer than 2 informative cells), all three contrasts are
+**uninformative** — `emp_primary` (p3_star − fixed_K_star), `emp_level` (level_star − p3_star) and `emp_phi`
+(phi_k4 − p3_star) (`emp_primary.csv`, `emp_level.csv`, `emp_phi.csv`, n_informative = 0). The registered
+headline is therefore: **on real Gmail prompts, K barely matters.** The prompt bootstrap (B = 200, 4,800
+items, 0 failed) ran as registered so that the record is complete; the guard is evaluated first and reads
+none of it.
+
+### 13.5 The cross-pool prediction (secondary)
+
+The level rule predicts the lower-level pool needs the larger K\*. With levels 0.614 (F) and 0.619 (G) the
+predicted ratio is exp(4 × 0.005) ≈ 1.02 — the rule sees two pools at the same level, correctly. Observed
+K\* at T = 50 / 100 / 200: F 32 / 8 / 8, G 12 / 8 / 8 (`emp_cross_pool.csv`: one strict agreement, two
+ties). Because both curves are flat (13.3), K\* here is an argmin over near-identical regrets and carries no
+information; this secondary is reported, not read.
+
+### 13.6 Descriptive and sensitivity results (not verdicts)
+
+- **Every rule sits near the ceiling on G** (`emp_rule_gaps.csv`): gaps to the pool's own K\* at T ≤ 200 are
+  −0.0001 to 0.0033 for `fixed_K_star`, `p3_star`, `level_star` and `phi_k4`; `always_search` is the only policy
+  that pays (0.009–0.013), because on a flat pool opening a new prompt every pull only adds selection noise.
+- **K\* lies at the bottom of the corpus envelope** (`emp_kstar_location.csv`): on G at T = 200 the pool's
+  K\* (8) is below all 33 corpus environments' K\* (12–128); flatter reservoirs want fewer arms, as §12.6's
+  mechanism implies.
+- **Cap-64 cost at T ∈ {500, 1000}** (extrapolation beyond 50 prompts; `emp_cap64.csv`): at most 0.0015 (0.00152 at T = 500) on
+  G and < 0.0001 on F, against 0.021 on the synthetic corpus (§12.1).
+- **Sensitivity** (`emp_sensitivity.csv`; pooled Δ over the six primary cells, no verdicts): on the raw
+  reservoirs — which over-state spread by construction — every regret range clears 0.01 and the contrasts
+  move toward the learned signals (level_star − p3_star −0.0013, phi_k4 − p3_star −0.0021), but these are
+  effects of measurement noise the NPMLE removes; on the parametric reservoirs all three Δ are within
+  ±0.0004, as on the NPMLE.
+
+### 13.7 What this changes in §1.0
+
+§1.0's findings are statements about reservoirs with spread — the corpus's narrowest environment has more
+than any real pool measured here. §13 adds the missing premise: **how much a real prompt pool actually
+varies.** On WebArena Gmail with `gpt-5.4-mini`, it varies very little. Grid-sampled prompts differ by
+about 3.5 points of success rate, and free-form prompts are indistinguishable from each other, while task
+difficulty spans 0–100%. Under those conditions the arm budget stops mattering: every sensible rule is
+within about 0.003 of the ceiling, and only "always search" is measurably wrong. The simulation results stand as
+statements about what to do *when* prompts differ; whether they differ enough to matter is an empirical
+property of the benchmark and model, and here the answer was no. Two limits bound the claim: one app, one
+agent model; and a flat pool is resolved only to about ±0.015 at 30 tasks.
 
 ## 10. Errata for `RESULTS.md`
 

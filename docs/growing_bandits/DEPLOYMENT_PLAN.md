@@ -827,3 +827,37 @@ scripts/run_empirical_pool.sh --budget 260        && .venv/bin/python experiment
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration emp_level
 .venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration emp_phi
 ```
+
+### Pre-registration 9 — Amendment 1 (2026-09-27, after a paused pilot, before any analysis)
+
+**Why.** The pilot was paused at 197 of 660 episodes ($20.21) because real cost is ~$0.10–0.11 per
+episode, not the $0.036 the budget assumed from the hand-written arms' historical runs; the diverse
+prompts produce longer episodes (≥ 20 steps: 30% of episodes, 66% of spend). The full design would have
+cost ~$660. Sanjay chose to halve the task bank. **The change is driven by cost alone.**
+
+**Disclosure.** Before this amendment the controller saw, while diagnosing cost, the pilot's aggregate
+success rates by pool (G 0.726 over 95 episodes, F 0.684 over 76, anchor 0.60 over 20) and per-step-bucket
+success rates. No per-prompt score, reservoir, K-grid or contrast was computed. The task subset below is
+chosen by the pool seed, stratified by difficulty, without reference to any outcome.
+
+**What changes.**
+- **Task bank:** every prompt runs a fixed 30 of the 60 Gmail tasks — 10 easy, 10 medium, 10 hard,
+  sampled by the pool seed (20260926), stratum by stratum (`make_pools.select_tasks`): task_e2, task_e10, task_e11, task_e12, task_e13, task_e14, task_e15, task_e16, task_e19, task_e20, task_m3, task_m4, task_m7, task_m13, task_m14, task_m15, task_m16, task_m17, task_m18, task_m20, task_h6, task_h8, task_h10, task_h12, task_h13, task_h15, task_h16, task_h17, task_h19, task_h20.
+- **Queue:** 2 × 50 × 30 + 30 anchor = 3,030 main episodes + 300 replicate cells = 3,330; pilot 330.
+  `queue.jsonl` sha256 `4b68eafde264b0ed52cddbc266f5935872731757a680ce355b2282213dec0f33`; `manifest.json` records `n_tasks`, `task_subset`, `amendment`.
+  The pool files and `f_generation_raw.json` are unchanged (hashes above verified).
+- **Pilot records:** the 108 pilot records on subset tasks count; the 89 on other tasks are moved verbatim
+  to `logs/empirical_pool/archive/` (not used in estimation; their cost still counts toward the budget).
+- **Noise:** σ̂ᵢ² = v̂ / nᵢ with nᵢ ≤ 30 (≈ ±0.056 per prompt instead of ±0.039).
+- **G1, amended.** The single-seed ±0.01 spread check fails at 30 tasks (flat pool NPMLE sd 0.0510 vs
+  realized 0.0318, `rehearsal.json`), and it failed on 17% of seeds even at 60 tasks. It is replaced —
+  after that failure, and said so — by a multi-seed check of the estimator (`g1_multiseed.py`, 12 seeds):
+  |mean error| ≤ 0.005 and RMS error ≤ 0.02 on both pools. Result at 30 tasks: flat mean −0.0003, RMS
+  0.0151; wide mean −0.0001, RMS 0.0081 → **pass** (60 tasks: flat RMS 0.0102). The K\*(T = 200) check
+  still passes at 30 tasks (estimated 24 vs true 32, one grid step). Consequence stated in advance: a
+  flat pool's spread is resolved to about ±0.015; flat and wide pools remain clearly distinguishable.
+- **G2:** cost limit $0.15 per episode (the $0.05 limit encoded the mistaken budget); pilot budget cap
+  $50 cumulative (includes the $20.21 already spent). Other G2 checks unchanged, anchor band over n = 30.
+- **Budget:** estimated total ≈ $345; the hard stop stays $260 and is raised by Sanjay when reached.
+- Everything else in Pre-registration 9 — pools, estimator, cells, policies, flatness guard, contrasts,
+  MEI, B = 200 — is unchanged.

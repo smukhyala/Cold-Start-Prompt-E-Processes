@@ -1,16 +1,16 @@
 {
   "noise": {
     "v": {
-      "G": 0.09333333333333334,
-      "F": 0.09333333333333334
+      "G": 0.10166666666666667,
+      "F": 0.10166666666666667
     },
-    "pooled": 0.09333333333333334,
+    "pooled": 0.10166666666666667,
     "by_pool": {
-      "G": 0.09740259740259741,
-      "F": 0.08904109589041095
+      "G": 0.1038961038961039,
+      "F": 0.09931506849315068
     },
     "per_pool": false,
-    "se_diff": 0.02227799455101943,
+    "se_diff": 0.024045803212783504,
     "n_pairs": 300
   },
   "k_grid": [
@@ -28,37 +28,37 @@
     192
   ],
   "flat": {
-    "sd_true": 0.02713850421967081,
+    "sd_true": 0.0317865086190652,
     "sd_population": 0.0299981342822174,
-    "sd_npmle": 0.01994024848828902,
-    "sd_raw": 0.043129005450057746,
+    "sd_npmle": 0.05097152568323464,
+    "sd_raw": 0.07576572077426864,
     "mean_true": 0.5999247271358675,
-    "mean_npmle": 0.5843361978133687
+    "mean_npmle": 0.5853313232128071
   },
   "wide": {
     "sd_true": 0.15794708875081892,
     "sd_population": 0.15971822336287197,
-    "sd_npmle": 0.15551360916374954,
-    "sd_raw": 0.1599319299646641,
+    "sd_npmle": 0.14818568380856986,
+    "sd_raw": 0.15838209775378306,
     "mean_true": 0.7142857142857143,
-    "mean_npmle": 0.7286450951140293
+    "mean_npmle": 0.7353339433259712
   },
   "k_star_true": 32,
   "k_star_est": 24,
   "gate": {
-    "passed": true,
+    "passed": false,
     "checks": {
       "flat_npmle_sd": {
-        "passed": true,
-        "detail": "NPMLE sd 0.0199 vs true 0.0271"
+        "passed": false,
+        "detail": "NPMLE sd 0.0510 vs true 0.0318"
       },
       "wide_npmle_sd": {
         "passed": true,
-        "detail": "NPMLE sd 0.1555 vs true 0.1579"
+        "detail": "NPMLE sd 0.1482 vs true 0.1579"
       },
       "flat_raw_inflated": {
         "passed": true,
-        "detail": "raw sd 0.0431 vs true 0.0271 (needs >= 1.25x)"
+        "detail": "raw sd 0.0758 vs true 0.0318 (needs >= 1.25x)"
       },
       "k_star_within_one_step": {
         "passed": true,

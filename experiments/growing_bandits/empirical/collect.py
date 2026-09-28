@@ -266,11 +266,27 @@ def load_all(log_dir: Path) -> pd.DataFrame:
     return emp.attempts_frame(rows)
 
 
+def _load_archive(log_dir: Path) -> pd.DataFrame:
+    """Every record `archive_out_of_queue` moved out of the worker files, read the same
+    tolerant way (`_read_records`) as a live worker file -- `log_dir/archive` need not exist."""
+    rows: list[dict] = []
+    for path in sorted((Path(log_dir) / "archive").glob("*.jsonl")):
+        rows.extend(_read_records(path))
+    return emp.attempts_frame(rows)
+
+
 def spent_usd(log_dir: Path) -> float:
-    attempts = load_all(log_dir)
-    if attempts.empty:
-        return 0.0
-    return float(attempts["cost_usd"].fillna(0.0).astype(float).sum())
+    """Total real dollars spent under `log_dir`: every current ``worker_*.jsonl`` plus
+    whatever `archive_out_of_queue` moved out of them into ``archive/*.jsonl``. Archiving a
+    record for a narrower queue (amendment 1) must never make its already-spent cost invisible
+    to the budget cap -- that cap is bounded by real money, not by what the current queue
+    happens to include.
+    """
+    total = 0.0
+    for attempts in (load_all(log_dir), _load_archive(log_dir)):
+        if not attempts.empty:
+            total += float(attempts["cost_usd"].fillna(0.0).astype(float).sum())
+    return total
 
 
 def _progress(log_dir: Path) -> tuple[set[tuple[str, str, int]], dict[tuple[str, str, int], int]]:
@@ -456,29 +472,38 @@ def run_worker(cfg: WorkerConfig, queue: list[make_pools.QueueItem], prompts: di
     return OUTCOME_DONE
 
 
-def _pid_is_alive(pid: int) -> bool:
+def _pgid_is_alive(pgid: int) -> bool:
+    """Whether process GROUP `pgid` still has anything alive in it (`os.killpg(pgid, 0)`).
+
+    A collector runs with ``start_new_session=True`` (the watchdog's `_launch`), so its own
+    pid IS its pgid; checking the group rather than just that one pid also catches a worker
+    that outlived its leader (fix round 1, item 3) -- something a single-pid `os.kill(pid, 0)`
+    check cannot see, and exactly the gap that could let a live worker keep appending to a
+    file `archive_out_of_queue` is mid-rewrite on.
+    """
     try:
-        os.kill(pid, 0)
+        os.killpg(pgid, 0)
     except ProcessLookupError:
         return False
     except PermissionError:
-        return True  # process exists, just owned by someone else
+        return True  # the group exists, just owned by someone else
     return True
 
 
 def _acquire_lock(lock_path: Path) -> None:
     """Refuse to start a second collector against `lock_path`'s log dir.
 
-    A lock naming a live pid means another collector is already running there. A lock
-    naming a dead pid is stale (its owner crashed or was killed without cleaning up) and is
-    silently replaced.
+    A lock naming a pid whose process group is still alive (`_pgid_is_alive`) means another
+    collector run -- its leader, or a worker it spawned that survived it -- is still there. A
+    lock naming a fully dead group is stale (its owner crashed or was killed without cleaning
+    up) and is silently replaced.
     """
     if lock_path.exists():
         try:
             owner = int(lock_path.read_text().strip())
         except (ValueError, OSError):
             owner = None
-        if owner is not None and _pid_is_alive(owner):
+        if owner is not None and _pgid_is_alive(owner):
             raise RuntimeError(f"another collector (pid {owner}) holds {lock_path}; refusing to start a second one")
         log.warning("removing stale lock %s (pid %s is not running)", lock_path, owner)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -557,57 +582,56 @@ def archive_out_of_queue(log_dir: Path, queue: list[make_pools.QueueItem]) -> di
     records that are not (archived, appended verbatim -- original bytes, not re-serialized --
     to ``log_dir/archive/worker_<w>.pre_amendment_1.jsonl``). An unparseable trailing fragment
     (a torn write in flight) is dropped from both and logged. The rewrite is atomic: a temp
-    file, then ``os.replace``. Idempotent: a second run finds nothing left to archive. Refuses
-    if the collector's lock names a live pid -- it must not still be writing these files.
+    file, then ``os.replace``. Idempotent: a second run finds nothing left to archive.
+
+    Holds ``collect.lock`` for the whole operation (acquired/released via the collector's own
+    `_acquire_lock`/`_release_lock`): refuses if a collector run's process GROUP -- its leader,
+    or a worker it spawned that outlived it -- is still alive (`_pgid_is_alive`, not a single
+    pid check), and stops a fresh collector from starting mid-rewrite.
     """
     log_dir = Path(log_dir)
     lock_path = log_dir / "collect.lock"
-    if lock_path.exists():
-        try:
-            owner = int(lock_path.read_text().strip())
-        except (ValueError, OSError):
-            owner = None
-        if owner is not None and _pid_is_alive(owner):
-            raise RuntimeError(f"a collector (pid {owner}) holds {lock_path}; refusing to archive "
-                               "while it may still be writing these files")
+    _acquire_lock(lock_path)
+    try:
+        in_queue = {(q.arm_id, q.task_id, q.replicate) for q in queue}
+        archive_dir = log_dir / "archive"
+        counts = {"kept": 0, "archived": 0, "files": 0}
+        for path in sorted(log_dir.glob("worker_*.jsonl")):
+            data = path.read_bytes()
+            *complete, tail = data.split(b"\n")
+            if tail.strip():
+                if _parses(tail):
+                    complete.append(tail)
+                else:
+                    log.warning("dropping an unparseable trailing fragment in %s (%d bytes)", path, len(tail))
+            kept_lines: list[bytes] = []
+            archived_lines: list[bytes] = []
+            for line in complete:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                key = (record["arm_id"], record["task_id"], int(record["replicate"]))
+                (kept_lines if key in in_queue else archived_lines).append(line)
 
-    in_queue = {(q.arm_id, q.task_id, q.replicate) for q in queue}
-    archive_dir = log_dir / "archive"
-    counts = {"kept": 0, "archived": 0, "files": 0}
-    for path in sorted(log_dir.glob("worker_*.jsonl")):
-        data = path.read_bytes()
-        *complete, tail = data.split(b"\n")
-        if tail.strip():
-            if _parses(tail):
-                complete.append(tail)
-            else:
-                log.warning("dropping an unparseable trailing fragment in %s (%d bytes)", path, len(tail))
-        kept_lines: list[bytes] = []
-        archived_lines: list[bytes] = []
-        for line in complete:
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            key = (record["arm_id"], record["task_id"], int(record["replicate"]))
-            (kept_lines if key in in_queue else archived_lines).append(line)
+            if archived_lines:
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                archive_path = archive_dir / f"{path.stem}.pre_amendment_1.jsonl"
+                with open(archive_path, "ab") as fh:
+                    for line in archived_lines:
+                        fh.write(line + b"\n")
 
-        if archived_lines:
-            archive_dir.mkdir(parents=True, exist_ok=True)
-            archive_path = archive_dir / f"{path.stem}.pre_amendment_1.jsonl"
-            with open(archive_path, "ab") as fh:
-                for line in archived_lines:
+            tmp_path = path.with_suffix(path.suffix + ".tmp")
+            with open(tmp_path, "wb") as fh:
+                for line in kept_lines:
                     fh.write(line + b"\n")
+            os.replace(tmp_path, path)
 
-        tmp_path = path.with_suffix(path.suffix + ".tmp")
-        with open(tmp_path, "wb") as fh:
-            for line in kept_lines:
-                fh.write(line + b"\n")
-        os.replace(tmp_path, path)
-
-        counts["kept"] += len(kept_lines)
-        counts["archived"] += len(archived_lines)
-        counts["files"] += 1
-    return counts
+            counts["kept"] += len(kept_lines)
+            counts["archived"] += len(archived_lines)
+            counts["files"] += 1
+        return counts
+    finally:
+        _release_lock(lock_path)
 
 
 def _worker_main(worker: int, n_workers: int, data_dir: str, log_dir: str, budget: float, pilot: bool,
@@ -656,6 +680,12 @@ def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     args.log_dir.mkdir(parents=True, exist_ok=True)
     if args.archive_out_of_queue:
+        manifest = json.loads((args.data / "manifest.json").read_text())
+        if "n_tasks" not in manifest:
+            raise RuntimeError(f"{args.data / 'manifest.json'} has no \"n_tasks\": run "
+                               "make_pools.py --requeue before --archive-out-of-queue (never "
+                               "archive against the pre-amendment queue)")
+        verify_queue(args.data)
         queue = make_pools.read_queue(args.data / "queue.jsonl")
         counts = archive_out_of_queue(args.log_dir, queue)
         print(json.dumps(counts))

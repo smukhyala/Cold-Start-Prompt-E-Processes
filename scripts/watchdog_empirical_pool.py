@@ -162,6 +162,36 @@ def _ensure_previous_dead(proc: subprocess.Popen | None) -> None:
         pass
 
 
+#: Fix round 1, item 4: bounded wait after SIGKILLing an orphaned lock holder from a PREVIOUS
+#: watchdog *session* (no `Popen` handle to `.wait()` on, unlike `_ensure_previous_dead`).
+ORPHAN_KILL_WAIT_S = 5.0
+
+
+def _kill_orphaned_lock_holder(log_dir: Path) -> None:
+    """Before the very first launch of a watchdog session, SIGKILL whatever `collect.lock`
+    under `log_dir` still names a live process group.
+
+    `_ensure_previous_dead` only guards a relaunch *within this session* (it needs the
+    in-memory `proc` this same watchdog process launched); a `collect.lock` left behind by an
+    earlier watchdog session or a manually-started collector has no such handle, so orphans of
+    that earlier run (its leader, or a worker that outlived it) would otherwise survive into a
+    fresh one and keep appending to the files it's about to resume from. Uses the same
+    process-group probe as `collect.py`'s own lock (`os.killpg`, not a single-pid `os.kill`).
+    """
+    lock_path = Path(log_dir) / "collect.lock"
+    if not lock_path.exists():
+        return
+    try:
+        owner = int(lock_path.read_text().strip())
+    except (ValueError, OSError):
+        return
+    try:
+        os.killpg(owner, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        return
+    time.sleep(ORPHAN_KILL_WAIT_S)
+
+
 def _launch(extra: list[str], log_dir: Path) -> subprocess.Popen:
     out = open(log_dir / "collect.out", "a")  # noqa: SIM115 -- lives as long as the child
     return subprocess.Popen([sys.executable, str(COLLECT), *extra], stdout=out, stderr=subprocess.STDOUT,
@@ -215,7 +245,8 @@ def main(argv: list[str] | None = None) -> int:
     mode = "pilot" if args.pilot else "full"
     extra = collector_args(args.workers, args.pilot, args.budget)
     proc: subprocess.Popen | None = None
-    _ensure_previous_dead(proc)
+    _kill_orphaned_lock_holder(LOG_DIR)  # orphans of a PREVIOUS watchdog session/process
+    _ensure_previous_dead(proc)  # a no-op here (no `proc` yet): kept for the "every launch" invariant
     _prepare_launch(LOG_DIR)
     proc = _launch(extra, LOG_DIR)
     now = time.time()

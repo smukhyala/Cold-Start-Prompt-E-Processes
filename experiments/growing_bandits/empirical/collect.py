@@ -472,6 +472,31 @@ def run_worker(cfg: WorkerConfig, queue: list[make_pools.QueueItem], prompts: di
     return OUTCOME_DONE
 
 
+def _become_process_group_leader() -> None:
+    """Make this process its own process-group leader (fix round 2 ruling).
+
+    `_pgid_is_alive`'s probe only means anything if a lock's recorded pid is also a pgid --
+    true when the watchdog launches the collector (`start_new_session=True`), but NOT when
+    `collect.py` is run directly, including ``--archive-out-of-queue`` (which acquires the
+    same lock with its own pid): there the process is usually not a group leader, so
+    ``os.killpg(pid, 0)`` against a live holder raises `ProcessLookupError` and a live holder
+    looks dead -- letting a second collector or archive run concurrently. Called at the top of
+    `main()`, before any lock acquisition, in every mode, this keeps the invariant true no
+    matter how the process was started.
+
+    A session leader cannot change its own process group (`os.setpgid` raises `PermissionError`
+    /`OSError` for EPERM); that's harmless here, since a session leader's pid already equals
+    its pgid by definition -- log it and move on.
+    """
+    if os.getpgid(0) == os.getpid():
+        return
+    try:
+        os.setpgid(0, 0)
+    except (PermissionError, OSError) as err:
+        log.warning("could not become our own process group leader (likely already a session "
+                    "leader, whose pid already equals its pgid): %r", err)
+
+
 def _pgid_is_alive(pgid: int) -> bool:
     """Whether process GROUP `pgid` still has anything alive in it (`os.killpg(pgid, 0)`).
 
@@ -679,6 +704,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     args.log_dir.mkdir(parents=True, exist_ok=True)
+    _become_process_group_leader()  # before any lock acquisition, in every mode (fix round 2)
     if args.archive_out_of_queue:
         manifest = json.loads((args.data / "manifest.json").read_text())
         if "n_tasks" not in manifest:

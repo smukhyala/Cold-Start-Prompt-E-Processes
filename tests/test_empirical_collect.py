@@ -975,3 +975,135 @@ def test_spent_usd_tolerates_a_torn_trailing_line_in_an_archive_file(tmp_path):
 def test_spent_usd_with_no_archive_dir_is_unaffected(tmp_path):
     (tmp_path / "worker_0.jsonl").write_text(_line("t0", cost=0.04) + "\n")
     assert collect.spent_usd(tmp_path) == pytest.approx(0.04)
+
+
+# ---- fix round 2: `_pgid_is_alive`'s invariant (a lock's pid is also its pgid) must hold ------
+# even when collect.py is run directly, not just when the watchdog launches it with
+# start_new_session=True. Ruling: main() makes itself its own process-group leader, in every
+# mode, before any lock acquisition.
+
+
+def test_become_process_group_leader_setpgids_when_not_a_leader(monkeypatch):
+    monkeypatch.setattr(collect.os, "getpid", lambda: 111)
+    monkeypatch.setattr(collect.os, "getpgid", lambda pid: 222)  # not our own pid: not a leader
+    calls = []
+    monkeypatch.setattr(collect.os, "setpgid", lambda pid, pgrp: calls.append((pid, pgrp)))
+
+    collect._become_process_group_leader()
+
+    assert calls == [(0, 0)]
+
+
+def test_become_process_group_leader_is_a_noop_when_already_a_leader(monkeypatch):
+    monkeypatch.setattr(collect.os, "getpid", lambda: 111)
+    monkeypatch.setattr(collect.os, "getpgid", lambda pid: 111)  # already our own pid: a leader
+    monkeypatch.setattr(collect.os, "setpgid", lambda pid, pgrp: pytest.fail("must not be called"))
+
+    collect._become_process_group_leader()  # must not raise, must not call setpgid
+
+
+@pytest.mark.parametrize("exc", [PermissionError(), OSError()])
+def test_become_process_group_leader_tolerates_a_setpgid_failure(monkeypatch, exc):
+    """A session leader cannot change its own process group (`setpgid` raises EPERM); its pid
+    already equals its pgid by definition, so this is harmless -- log and move on."""
+    monkeypatch.setattr(collect.os, "getpid", lambda: 111)
+    monkeypatch.setattr(collect.os, "getpgid", lambda pid: 222)
+
+    def boom(pid, pgrp):
+        raise exc
+
+    monkeypatch.setattr(collect.os, "setpgid", boom)
+
+    collect._become_process_group_leader()  # must not raise
+
+
+def test_main_calls_setpgid_when_not_a_process_group_leader(tmp_path, monkeypatch):
+    data, logs = _requeued_data_dir(tmp_path), tmp_path / "logs"
+    logs.mkdir()
+    monkeypatch.setattr(collect.os, "getpid", lambda: 111)
+    monkeypatch.setattr(collect.os, "getpgid", lambda pid: 222)
+    calls = []
+    monkeypatch.setattr(collect.os, "setpgid", lambda pid, pgrp: calls.append((pid, pgrp)))
+    monkeypatch.setattr(collect, "archive_out_of_queue", lambda *a, **kw: {"kept": 0, "archived": 0, "files": 0})
+
+    code = collect.main(["--archive-out-of-queue", "--data", str(data), "--log-dir", str(logs)])
+
+    assert code == 0
+    assert calls == [(0, 0)]
+
+
+def test_main_skips_setpgid_when_already_a_process_group_leader(tmp_path, monkeypatch):
+    data, logs = _requeued_data_dir(tmp_path), tmp_path / "logs"
+    logs.mkdir()
+    monkeypatch.setattr(collect.os, "getpid", lambda: 111)
+    monkeypatch.setattr(collect.os, "getpgid", lambda pid: 111)
+    monkeypatch.setattr(collect.os, "setpgid", lambda pid, pgrp: pytest.fail("must not be called"))
+    monkeypatch.setattr(collect, "archive_out_of_queue", lambda *a, **kw: {"kept": 0, "archived": 0, "files": 0})
+
+    code = collect.main(["--archive-out-of-queue", "--data", str(data), "--log-dir", str(logs)])
+
+    assert code == 0
+
+
+@pytest.mark.parametrize("exc", [PermissionError(), OSError()])
+def test_main_tolerates_a_setpgid_failure(tmp_path, monkeypatch, exc):
+    data, logs = _requeued_data_dir(tmp_path), tmp_path / "logs"
+    logs.mkdir()
+    monkeypatch.setattr(collect.os, "getpid", lambda: 111)
+    monkeypatch.setattr(collect.os, "getpgid", lambda pid: 222)
+
+    def boom(pid, pgrp):
+        raise exc
+
+    monkeypatch.setattr(collect.os, "setpgid", boom)
+    monkeypatch.setattr(collect, "archive_out_of_queue", lambda *a, **kw: {"kept": 0, "archived": 0, "files": 0})
+
+    code = collect.main(["--archive-out-of-queue", "--data", str(data), "--log-dir", str(logs)])
+
+    assert code == 0
+
+
+def test_main_becomes_leader_before_any_lock_acquisition_on_the_archive_path(tmp_path, monkeypatch):
+    data, logs = _requeued_data_dir(tmp_path), tmp_path / "logs"
+    logs.mkdir()
+    (logs / "worker_0.jsonl").write_text(_line("t0") + "\n")
+    monkeypatch.setattr(collect.os, "getpid", lambda: 4242)
+    monkeypatch.setattr(collect.os, "getpgid", lambda pid: 1)
+
+    events: list[str] = []
+    monkeypatch.setattr(collect.os, "setpgid", lambda pid, pgrp: events.append("setpgid"))
+    real_acquire = collect._acquire_lock
+
+    def spy_acquire(lock_path):
+        events.append("acquire_lock")
+        return real_acquire(lock_path)
+
+    monkeypatch.setattr(collect, "_acquire_lock", spy_acquire)
+
+    code = collect.main(["--archive-out-of-queue", "--data", str(data), "--log-dir", str(logs)])
+
+    assert code == 0
+    assert events == ["setpgid", "acquire_lock"]
+
+
+def test_main_becomes_leader_before_any_lock_acquisition_on_the_normal_path(tmp_path, monkeypatch):
+    data, logs = _data_dir(tmp_path), tmp_path / "logs"
+    monkeypatch.setattr(collect.cf, "ProcessPoolExecutor", _thread_pool)
+    monkeypatch.setattr(collect, "_worker_main", lambda *a: "done")
+    monkeypatch.setattr(collect.os, "getpid", lambda: 4242)
+    monkeypatch.setattr(collect.os, "getpgid", lambda pid: 1)
+
+    events: list[str] = []
+    monkeypatch.setattr(collect.os, "setpgid", lambda pid, pgrp: events.append("setpgid"))
+    real_acquire = collect._acquire_lock
+
+    def spy_acquire(lock_path):
+        events.append("acquire_lock")
+        return real_acquire(lock_path)
+
+    monkeypatch.setattr(collect, "_acquire_lock", spy_acquire)
+
+    code = collect.main(["--workers", "2", "--data", str(data), "--log-dir", str(logs)])
+
+    assert code == collect.EXIT_CODES["done"]
+    assert events == ["setpgid", "acquire_lock"]

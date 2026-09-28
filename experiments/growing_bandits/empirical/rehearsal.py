@@ -49,6 +49,15 @@ OUT = ROOT / "results" / "growing_bandits" / "empirical" / "rehearsal.json"
 REHEARSAL_T = 200
 
 
+def stratified_half(rates: tuple[float, ...]) -> tuple[float, ...]:
+    """Every other element of `rates` (already sorted ascending), starting at index 0.
+
+    Amendment 1: 30 of the 60 logged Gmail task rates, spanning the same range as the full 60
+    (`rates` is never itself modified -- this only picks a subset of it).
+    """
+    return tuple(rates[0::2])
+
+
 def task_offsets(rates) -> np.ndarray:
     d = special.logit(np.clip(np.asarray(rates, dtype=float), 0.02, 0.98))
     return d - d.mean()
@@ -59,9 +68,9 @@ def solve_level(mu: float, d: np.ndarray) -> float:
 
 
 def synthesize_outcomes(truth: dict[str, Reservoir], *, n_prompts: int = 50, n_replicates: int = 300,
-                        seed: int = 0) -> pd.DataFrame:
+                        seed: int = 0, task_rates: tuple[float, ...] = TASK_RATES) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
-    d = task_offsets(TASK_RATES)
+    d = task_offsets(task_rates)
     rows, probs, mu_true_of = [], {}, {}
     for pool in sorted(truth):
         mus = truth[pool].sample(rng, n_prompts)
@@ -101,9 +110,15 @@ def realized_sd(outcomes: pd.DataFrame, pool: str) -> float:
     return float(np.std(per_arm.to_numpy(dtype=float), ddof=0))
 
 
-def run_rehearsal(seed: int = 20260926, workers: int = 12, m: int = 1000) -> dict:
+def run_rehearsal(seed: int = 20260926, workers: int = 12, m: int = 1000, n_tasks: int = 30) -> dict:
+    if n_tasks == 30:
+        task_rates = stratified_half(TASK_RATES)
+    elif n_tasks == 60:
+        task_rates = TASK_RATES
+    else:
+        raise ValueError(f"n_tasks must be 30 or 60 (stratified halves of the logged 60), got {n_tasks}")
     truth = {"G": BetaReservoir(159.4, 106.3, validate=False), "F": BetaReservoir.from_preset("good_common")}
-    outcomes = synthesize_outcomes(truth, seed=seed)
+    outcomes = synthesize_outcomes(truth, seed=seed, task_rates=task_rates)
     reservoirs, noise, _ = replay.estimate(outcomes)
     results: dict = {"noise": noise, "k_grid": [K for K in kse.DEFAULT_K_GRID if K <= REHEARSAL_T]}
     for name, pool in (("flat", "G"), ("wide", "F")):
@@ -126,9 +141,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--replicates", type=int, default=1000)
+    ap.add_argument("--n-tasks", type=int, default=30,
+                    help="amendment 1: 30 (a stratified half of the logged 60) or 60 (the full bank)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    results = run_rehearsal(workers=args.workers, m=args.replicates)
+    results = run_rehearsal(workers=args.workers, m=args.replicates, n_tasks=args.n_tasks)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(results, indent=2, default=float))
     gate = gates.rehearsal_gate(results)

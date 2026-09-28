@@ -19,6 +19,7 @@ import hashlib
 import itertools
 import json
 import logging
+import re
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -41,6 +42,15 @@ SEED = 20260926
 N_PER_POOL = 50
 N_REPLICATES = 300
 PILOT_PER_POOL = 5
+#: Amendment 1: the paid pilot's real cost (~$0.104/episode) forced halving the task bank to a
+#: seeded, difficulty-stratified 30 of the 60 Gmail tasks. `N_TASKS` must divide evenly by
+#: `len(STRATA)`.
+N_TASKS = 30
+#: Difficulty strata, by the letter after `task_` in a bank task id (`task_e3`, `task_m12`, ...),
+#: processed in this order by `select_tasks`.
+STRATA: tuple[str, ...] = ("e", "m", "h")
+AMENDMENT_1_LABEL = "1: 30-task stratified subset"
+_TASK_ID_RE = re.compile(r"^task_([emh])(\d+)$")
 DATA_DIR = ROOT / "data" / "empirical_pool"
 AXES_PATH = ROOT / "configs" / "axes.yaml"
 GRID_TEMPLATE = ROOT / "configs" / "template.jinja"
@@ -238,6 +248,81 @@ def read_queue(path: Path) -> list[QueueItem]:
         return [QueueItem(**json.loads(line)) for line in fh if line.strip()]
 
 
+def _task_stratum_and_suffix(task_id: str) -> tuple[str, int]:
+    m = _TASK_ID_RE.match(task_id)
+    if not m:
+        raise ValueError(f"{task_id!r}: expected task_<{'|'.join(STRATA)}><digits>")
+    return m.group(1), int(m.group(2))
+
+
+def select_tasks(task_ids: list[str], n: int, seed: int) -> list[str]:
+    """A seeded, difficulty-stratified subset of `n` of `task_ids` (amendment 1's 30-task bank).
+
+    Stratifies by the difficulty letter after ``task_`` (``e``, ``m``, ``h``) and takes
+    ``n // len(STRATA)`` from each with one ``np.random.default_rng(seed)``, strata processed
+    in the order ``e, m, h``, each stratum sorted by its task id's integer suffix before
+    sampling without replacement. Returns the chosen ids in bank order (`task_ids`'s order).
+    """
+    if n % len(STRATA) != 0:
+        raise ValueError(f"n={n} is not divisible by the {len(STRATA)} strata {STRATA}")
+    per_stratum = n // len(STRATA)
+    by_stratum: dict[str, list[str]] = {s: [] for s in STRATA}
+    for task_id in task_ids:
+        letter, _ = _task_stratum_and_suffix(task_id)
+        by_stratum[letter].append(task_id)
+    rng = np.random.default_rng(seed)
+    chosen: set[str] = set()
+    for letter in STRATA:
+        ids = by_stratum[letter]
+        if len(ids) < per_stratum:
+            raise ValueError(f"stratum {letter!r} has only {len(ids)} tasks; need {per_stratum}")
+        ordered = sorted(ids, key=lambda tid: _task_stratum_and_suffix(tid)[1])
+        idx = rng.choice(len(ordered), size=per_stratum, replace=False)
+        chosen.update(ordered[int(i)] for i in idx)
+    return [task_id for task_id in task_ids if task_id in chosen]
+
+
+def requeue(out: Path) -> dict:
+    """Rebuild ``queue.jsonl``/``manifest.json`` for `N_TASKS`-task stratified subset (amendment 1).
+
+    Loads (and thereby verifies the frozen per-arm sha256s of) the three pool files with
+    `load_pool`, then checks the pool files' and ``f_generation_raw.json``'s whole-file
+    sha256 against `manifest.json`'s -- refusing if either moved. Never calls the generator
+    and never rewrites a pool file: it only rewrites ``queue.jsonl`` and ``manifest.json``.
+    """
+    out = Path(out)
+    pool_paths = {p: out / f"pool_{p}.yaml" for p in ("G", "F", "anchor")}
+    manifest_path = out / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+
+    loaded = {p: load_pool(path) for p, path in pool_paths.items()}  # verifies rendered sha256s
+
+    frozen = [*pool_paths.values(), out / "f_generation_raw.json"]
+    for path in frozen:
+        got = file_sha256(path)
+        expected = manifest["files"].get(path.name)
+        if expected is None or got != expected:
+            raise ValueError(f"{path.name}: sha256 {got} != manifest's frozen {expected}; refusing to requeue")
+
+    task_ids: list[str] = manifest["task_ids"]  # all 60, bank order
+    seed: int = manifest["seed"]
+    subset = select_tasks(task_ids, N_TASKS, seed)
+
+    arms_by_pool = {p: [a.arm.arm_id for a in loaded[p]] for p in pool_paths}
+    pilot = set(arms_by_pool["G"][:PILOT_PER_POOL] + arms_by_pool["F"][:PILOT_PER_POOL] + [ANCHOR_ARM_ID])
+    queue = build_queue(arms_by_pool, subset, n_replicates=N_REPLICATES, pilot_arms=pilot, seed=seed)
+    write_queue(out / "queue.jsonl", queue)
+
+    manifest["files"]["queue.jsonl"] = file_sha256(out / "queue.jsonl")
+    manifest["task_subset"] = subset
+    manifest["n_tasks"] = N_TASKS
+    manifest["amendment"] = AMENDMENT_1_LABEL
+    manifest_path.write_text(json.dumps(manifest, indent=2))
+    log.info("requeued %d items (%d pilot) over %d tasks under %s",
+             len(queue), sum(q.pilot for q in queue), len(subset), out)
+    return manifest
+
+
 def gmail_task_ids() -> list[str]:
     from cold_start.tasks.webarena import _import_webarena, _webarena_root
 
@@ -255,9 +340,16 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", type=Path, default=DATA_DIR)
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--force", action="store_true", help="overwrite existing pool files")
+    ap.add_argument("--requeue", action="store_true",
+                    help="amendment 1: rebuild queue.jsonl/manifest.json for the N_TASKS-task "
+                         "stratified subset from the existing frozen pools; ignores --force, "
+                         "never calls the generator or rewrites a pool file")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     out: Path = args.out
+    if args.requeue:
+        requeue(out)
+        return
     pools = {p: out / f"pool_{p}.yaml" for p in ("G", "F", "anchor")}
     if any(p.exists() for p in pools.values()) and not args.force:
         raise SystemExit(f"pool files exist under {out}; they are frozen (pass --force to rebuild)")

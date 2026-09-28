@@ -135,6 +135,33 @@ def _prepare_launch(log_dir: Path) -> None:
     _clear_exit_markers(log_dir)
 
 
+#: Bounded wait for `_ensure_previous_dead`'s SIGKILL to take: this is a belt-and-braces check
+#: before every launch, not the main kill path (`_kill_and_wait_process` already SIGTERM'd/
+#: SIGKILL'd a stalled collector), so it stays short.
+ENSURE_DEAD_WAIT_S = 5.0
+
+
+def _ensure_previous_dead(proc: subprocess.Popen | None) -> None:
+    """SIGKILL a previous collector's whole process group before every `_launch`.
+
+    browser-use workers can survive their leader's exit and keep appending to the same
+    worker file as their replacement, so both the first launch (`proc` is ``None``, a no-op)
+    and every relaunch -- whether the collector already died on its own or was just
+    SIGTERM/SIGKILL'd by `_kill_and_wait_process` -- must make sure nothing from the previous
+    process group is still alive before a fresh set of workers starts.
+    """
+    if proc is None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        return
+    try:
+        proc.wait(timeout=ENSURE_DEAD_WAIT_S)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def _launch(extra: list[str], log_dir: Path) -> subprocess.Popen:
     out = open(log_dir / "collect.out", "a")  # noqa: SIM115 -- lives as long as the child
     return subprocess.Popen([sys.executable, str(COLLECT), *extra], stdout=out, stderr=subprocess.STDOUT,
@@ -187,6 +214,8 @@ def main(argv: list[str] | None = None) -> int:
     (LOG_DIR / RELAUNCH_LOG).touch()  # its existence is how gate G2 knows a watchdog supervised the run
     mode = "pilot" if args.pilot else "full"
     extra = collector_args(args.workers, args.pilot, args.budget)
+    proc: subprocess.Popen | None = None
+    _ensure_previous_dead(proc)
     _prepare_launch(LOG_DIR)
     proc = _launch(extra, LOG_DIR)
     now = time.time()
@@ -226,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             reason = "global_stall"
         _record_relaunch(LOG_DIR, relaunches, reason, mode)
+        _ensure_previous_dead(proc)
         _prepare_launch(LOG_DIR)
         proc = _launch(extra, LOG_DIR)
         last_progress = time.time()

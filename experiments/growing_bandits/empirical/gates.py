@@ -30,7 +30,10 @@ import make_pools  # noqa: E402
 
 from cold_start.growing import empirical as emp  # noqa: E402
 
-MAX_COST_PER_EPISODE = 0.05
+#: Fix round 1, item 6 (ruling): the original $0.05 encoded a mistaken budget estimate: the
+#: pilot's real cost ran ~$0.104-0.11/episode. $0.15 gives real episodes headroom while still
+#: catching a genuine cost blowup.
+MAX_COST_PER_EPISODE = 0.15
 MAX_MISSING = 0.05
 #: The historical anchor: the hand-written `baseline` arm on Gmail, gpt-5.4-mini, all logs.
 ANCHOR_RATE = 0.66

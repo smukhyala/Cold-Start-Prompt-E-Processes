@@ -55,7 +55,10 @@ def test_pilot_gate_passes_a_clean_pilot():
 
 
 @pytest.mark.parametrize("kw, failing", [
-    ({"cost": 0.09}, "cost_per_episode"),
+    # Fix round 1, item 6: MAX_COST_PER_EPISODE moved 0.05 -> 0.15 (the $0.05 limit encoded a
+    # mistaken budget estimate; real cost is ~$0.11/episode), so this failing case must clear
+    # 0.15, not merely the old 0.05.
+    ({"cost": 0.16}, "cost_per_episode"),
     ({"n_missing": 20}, "missing_rate"),
     ({"anchor_successes": 20}, "anchor_drift"),
     ({"workers": 1}, "every_worker_produced"),

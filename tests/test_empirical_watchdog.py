@@ -14,6 +14,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 import watchdog_empirical_pool as wd  # noqa: E402
 
+#: Every mock `Popen.pid` any test in this file uses. `_guard_real_signals` (below) treats a
+#: call on any other pid as a bug, not a silent no-op: a real, unaccounted-for pid must never
+#: quietly reach this guard.
+_KNOWN_MOCK_PIDS = {555, 999, 4242, 12345}
+
+
+@pytest.fixture(autouse=True)
+def _guard_real_signals(monkeypatch):
+    """Fix round 1, item 1: several tests exercise the real `_ensure_previous_dead` (added for
+    amendment 1's relaunch hygiene) without mocking it away, and that function's whole job is
+    to call `os.killpg`. Without this fixture those tests sent real `os.killpg(<mock pid>,
+    SIGKILL)` to the host. Every test in this file now runs with `os.killpg`/`os.kill` replaced
+    by a recorder that never reaches the real syscall; a test that wants to observe kill calls
+    reads `wd.os.killpg`/`wd.os.kill` back out (or installs its own, more specific, mock, which
+    simply overrides this one for that test). A pid outside `_KNOWN_MOCK_PIDS` raises instead of
+    silently doing nothing, so a stray real pid can never pass as a no-op.
+    """
+    def make_guard(name):
+        def guard(pid, sig):
+            if pid not in _KNOWN_MOCK_PIDS:
+                raise AssertionError(f"real {name}({pid!r}, {sig!r}) called on an unrecognized pid -- "
+                                     "this file must never reach a real syscall; add pid to "
+                                     "_KNOWN_MOCK_PIDS only if it really is one of this file's mock pids")
+        return guard
+
+    monkeypatch.setattr(wd.os, "killpg", make_guard("os.killpg"))
+    monkeypatch.setattr(wd.os, "kill", make_guard("os.kill"))
+
 
 @pytest.mark.parametrize("status, alive, minutes, expected", [
     ("done", False, 0.0, "finished"),
@@ -402,6 +430,88 @@ def test_ensure_previous_dead_tolerates_a_wait_timeout(monkeypatch):
     wd._ensure_previous_dead(mock_proc)  # must not raise
 
 
+# ---- fix round 1, item 4: kill orphans of a PREVIOUS watchdog session before the first launch --
+
+
+def test_kill_orphaned_lock_holder_is_a_noop_with_no_lock_file(tmp_path, monkeypatch):
+    killpg_calls = []
+    monkeypatch.setattr(wd.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+    wd._kill_orphaned_lock_holder(tmp_path)
+    assert killpg_calls == [] and sleeps == []
+
+
+def test_kill_orphaned_lock_holder_is_a_noop_with_unparseable_lock_contents(tmp_path, monkeypatch):
+    (tmp_path / "collect.lock").write_text("not-a-pid")
+    killpg_calls = []
+    monkeypatch.setattr(wd.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
+    wd._kill_orphaned_lock_holder(tmp_path)
+    assert killpg_calls == []
+
+
+def test_kill_orphaned_lock_holder_sigkills_a_live_group_and_waits(tmp_path, monkeypatch):
+    (tmp_path / "collect.lock").write_text("7777")
+    killpg_calls = []
+    monkeypatch.setattr(wd.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+
+    wd._kill_orphaned_lock_holder(tmp_path)
+
+    assert killpg_calls == [(7777, signal.SIGKILL)]
+    assert sleeps == [wd.ORPHAN_KILL_WAIT_S]  # bounded wait after a real kill
+
+
+@pytest.mark.parametrize("exc", [ProcessLookupError(), PermissionError()])
+def test_kill_orphaned_lock_holder_tolerates_killpg_errors_and_does_not_wait(tmp_path, monkeypatch, exc):
+    (tmp_path / "collect.lock").write_text("7777")
+
+    def boom(pid, sig):
+        raise exc
+
+    monkeypatch.setattr(wd.os, "killpg", boom)
+    sleeps = []
+    monkeypatch.setattr("time.sleep", sleeps.append)
+
+    wd._kill_orphaned_lock_holder(tmp_path)  # must not raise
+
+    assert sleeps == []  # nothing left alive (or nothing we could touch): no need to wait
+
+
+def test_first_launch_kills_an_orphaned_lock_holder_from_a_previous_watchdog_session(tmp_path, monkeypatch):
+    """A `collect.lock` naming a still-alive process group, left over from an earlier watchdog
+    *process* (this one just started, so `_ensure_previous_dead`'s in-memory `proc` is
+    unavailable), must be SIGKILLed before the very first `_launch`."""
+    log_dir = tmp_path / "logs" / "empirical_pool"
+    log_dir.mkdir(parents=True)
+    (log_dir / "collect.lock").write_text("7777")
+
+    clock = _Clock()
+    monkeypatch.setattr(wd, "LOG_DIR", log_dir)
+    monkeypatch.setattr("time.time", clock.time)
+    monkeypatch.setattr("time.sleep", clock.sleep)
+
+    killpg_calls = []
+    monkeypatch.setattr(wd.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
+
+    events: list[str] = []
+    proc = _proc(True)
+
+    def launch_spy(extra, log_dir_):
+        events.append("launch")
+        return proc
+
+    monkeypatch.setattr(wd, "_launch", launch_spy)
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "done")  # finish right after the first poll
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+
+    assert wd.main(["--workers", "1"]) == 0
+
+    assert killpg_calls == [(7777, signal.SIGKILL)]
+    assert events == ["launch"]  # the orphan kill ran before this, not instead of it
+
+
 def test_relaunch_hygiene_on_the_dead_relaunch_path(tmp_path, monkeypatch):
     """A collector that already exited (the 'dead' -> 'relaunch' path): before the very first
     launch there is nothing to kill, and before the relaunch that follows a dead collector, any
@@ -442,6 +552,35 @@ def test_relaunch_hygiene_on_the_kill_and_relaunch_path(tmp_path, monkeypatch):
     assert kills == [stuck]  # the existing SIGTERM/SIGKILL escalation still ran
     assert ensure_calls == [None, stuck]  # ... and the hygiene check ran again before the relaunch
     assert len(launches) == 2
+
+
+def test_ensure_previous_dead_runs_before_every_launch_in_order(tmp_path, monkeypatch):
+    """Fix round 1, item 1: it is not enough that `_ensure_previous_dead` gets called
+    somewhere -- it must run strictly before the `_launch` it guards, every time (first launch
+    and every relaunch). Runs the real `_ensure_previous_dead` (not mocked away): safe only
+    because `_guard_real_signals` (autouse, above) has already replaced `os.killpg`."""
+    dead, finisher = _proc(False), _proc(True)
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [dead, finisher])
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "done" if len(launches) > 1 else "running")
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+
+    events: list[str] = []
+    inner_launch, inner_ensure = wd._launch, wd._ensure_previous_dead
+
+    def launch_spy(extra, log_dir_):
+        events.append("launch")
+        return inner_launch(extra, log_dir_)
+
+    def ensure_spy(proc):
+        events.append("ensure")
+        return inner_ensure(proc)
+
+    monkeypatch.setattr(wd, "_launch", launch_spy)
+    monkeypatch.setattr(wd, "_ensure_previous_dead", ensure_spy)
+
+    assert wd.main(["--workers", "1"]) == 0
+
+    assert events == ["ensure", "launch", "ensure", "launch"]  # ensure always precedes its launch
 
 
 def test_forwarded_args_parse_in_the_collector(tmp_path, monkeypatch):

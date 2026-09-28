@@ -351,9 +351,24 @@ def test_a_complete_malformed_line_still_raises(tmp_path):
         collect.spent_usd(tmp_path)
 
 
-def test_lock_refuses_when_pid_is_alive(tmp_path):
+def test_lock_refuses_when_the_process_group_is_alive(tmp_path, monkeypatch):
+    """Fix round 1, item 3: the lock names a pid whose process GROUP is still alive (checked
+    with `os.killpg`, not a single-pid `os.kill`) -- a real collector runs with
+    `start_new_session=True`, so its own pid is its pgid."""
     lock = tmp_path / "collect.lock"
-    lock.write_text(str(os.getpid()))  # our own test process is certainly alive
+    lock.write_text("4242")
+    monkeypatch.setattr(collect.os, "killpg", lambda pgid, sig: None)  # group alive: no exception
+    with pytest.raises(RuntimeError, match="collector"):
+        collect._acquire_lock(lock)
+
+
+def test_lock_refuses_when_a_dead_leaders_group_still_has_a_live_member(tmp_path, monkeypatch):
+    """The recorded pid (the old leader) may itself be gone, but a worker it spawned can
+    still be alive in the same process group -- `PermissionError` from `os.killpg` means the
+    group exists (just owned by someone else), which must still count as alive."""
+    lock = tmp_path / "collect.lock"
+    lock.write_text("4242")
+    monkeypatch.setattr(collect.os, "killpg", lambda pgid, sig: (_ for _ in ()).throw(PermissionError()))
     with pytest.raises(RuntimeError, match="collector"):
         collect._acquire_lock(lock)
 
@@ -362,10 +377,10 @@ def test_lock_replaces_a_stale_pid(tmp_path, monkeypatch):
     lock = tmp_path / "collect.lock"
     lock.write_text("999999")
 
-    def _dead(pid, sig):
+    def _dead(pgid, sig):
         raise ProcessLookupError()
 
-    monkeypatch.setattr(collect.os, "kill", _dead)
+    monkeypatch.setattr(collect.os, "killpg", _dead)
     collect._acquire_lock(lock)  # must not raise; replaces the stale lock
     assert lock.read_text().strip() == str(os.getpid())
     collect._release_lock(lock)
@@ -816,8 +831,19 @@ def test_archive_out_of_queue_drops_a_torn_trailing_fragment_from_both(tmp_path)
     assert not (tmp_path / "archive" / "worker_0.pre_amendment_1.jsonl").exists()
 
 
-def test_archive_out_of_queue_refuses_when_the_lock_names_a_live_pid(tmp_path):
-    (tmp_path / "collect.lock").write_text(str(os.getpid()))  # our own test process, certainly alive
+def test_archive_out_of_queue_refuses_when_the_lock_names_a_live_process_group(tmp_path, monkeypatch):
+    """Fix round 1, item 3: liveness is a process-GROUP probe (`os.killpg`), not a single-pid
+    check -- a worker in the collector's group can outlive its leader and still be appending
+    to the very file this function is about to rewrite."""
+    (tmp_path / "collect.lock").write_text("4242")
+    monkeypatch.setattr(collect.os, "killpg", lambda pgid, sig: None)  # group alive
+    with pytest.raises(RuntimeError, match="collector"):
+        collect.archive_out_of_queue(tmp_path, _archive_queue())
+
+
+def test_archive_out_of_queue_refuses_when_a_dead_leaders_group_still_has_a_live_member(tmp_path, monkeypatch):
+    (tmp_path / "collect.lock").write_text("4242")
+    monkeypatch.setattr(collect.os, "killpg", lambda pgid, sig: (_ for _ in ()).throw(PermissionError()))
     with pytest.raises(RuntimeError, match="collector"):
         collect.archive_out_of_queue(tmp_path, _archive_queue())
 
@@ -825,13 +851,32 @@ def test_archive_out_of_queue_refuses_when_the_lock_names_a_live_pid(tmp_path):
 def test_archive_out_of_queue_tolerates_a_stale_lock(tmp_path, monkeypatch):
     (tmp_path / "collect.lock").write_text("999999")
 
-    def _dead(pid, sig):
+    def _dead(pgid, sig):
         raise ProcessLookupError()
 
-    monkeypatch.setattr(collect.os, "kill", _dead)
+    monkeypatch.setattr(collect.os, "killpg", _dead)
     (tmp_path / "worker_0.jsonl").write_text(_line("t0") + "\n")
     counts = collect.archive_out_of_queue(tmp_path, _archive_queue())
     assert counts["files"] == 1
+
+
+def test_archive_out_of_queue_holds_the_lock_for_its_duration_then_releases_it(tmp_path, monkeypatch):
+    """Fix round 1, item 3: the archive acquires `collect.lock` itself (so a fresh collector
+    can't start mid-rewrite) and always releases it when done, even with no prior lock file."""
+    seen_locked = {}
+    real_acquire = collect._acquire_lock
+
+    def spy_acquire(lock_path):
+        real_acquire(lock_path)
+        seen_locked["during"] = lock_path.exists() and lock_path.read_text().strip() == str(os.getpid())
+
+    monkeypatch.setattr(collect, "_acquire_lock", spy_acquire)
+    (tmp_path / "worker_0.jsonl").write_text(_line("t0") + "\n")
+
+    collect.archive_out_of_queue(tmp_path, _archive_queue())
+
+    assert seen_locked["during"] is True
+    assert not (tmp_path / "collect.lock").exists()  # released afterward
 
 
 def test_archive_out_of_queue_counts_across_multiple_worker_files(tmp_path):
@@ -854,8 +899,18 @@ def test_archive_out_of_queue_is_idempotent(tmp_path):
     assert archive_path.read_text() == _line("t2") + "\n"  # not duplicated by the second run
 
 
+def _requeued_data_dir(tmp_path):
+    """A `_data_dir` that already looks post-`make_pools.py --requeue` (has `n_tasks`), the
+    only state `--archive-out-of-queue` may run against."""
+    data = _data_dir(tmp_path)
+    manifest = json.loads((data / "manifest.json").read_text())
+    manifest["n_tasks"] = 30
+    (data / "manifest.json").write_text(json.dumps(manifest))
+    return data
+
+
 def test_main_archive_out_of_queue_prints_counts_writes_paused_and_launches_nothing(tmp_path, monkeypatch, capsys):
-    data, logs = _data_dir(tmp_path), tmp_path / "logs"
+    data, logs = _requeued_data_dir(tmp_path), tmp_path / "logs"
     logs.mkdir()
     (logs / "worker_0.jsonl").write_text(_line("t0") + "\n" + _line("t9") + "\n")  # t9 is not in _data_dir's queue
 
@@ -868,3 +923,55 @@ def test_main_archive_out_of_queue_prints_counts_writes_paused_and_launches_noth
     assert (logs / "STATUS").read_text().strip() == "paused"
     printed = json.loads(capsys.readouterr().out)
     assert printed == {"kept": 1, "archived": 1, "files": 1}
+
+
+# ---- fix round 1, item 5: --archive-out-of-queue enforces requeue -> archive order -------------
+
+
+def test_main_archive_out_of_queue_refuses_without_a_requeued_manifest(tmp_path, monkeypatch):
+    """`_data_dir`'s manifest (like a pre-amendment `manifest.json`) has no `n_tasks`: it
+    hasn't been through `make_pools.py --requeue` yet, so archiving must refuse."""
+    data, logs = _data_dir(tmp_path), tmp_path / "logs"
+    logs.mkdir()
+    monkeypatch.setattr(collect, "archive_out_of_queue", lambda *a, **kw: pytest.fail("must not archive"))
+
+    with pytest.raises(RuntimeError, match="n_tasks"):
+        collect.main(["--archive-out-of-queue", "--data", str(data), "--log-dir", str(logs)])
+    assert not (logs / "STATUS").exists() or (logs / "STATUS").read_text().strip() != "paused"
+
+
+def test_main_archive_out_of_queue_refuses_if_the_queue_does_not_match_the_manifest(tmp_path, monkeypatch):
+    data, logs = _requeued_data_dir(tmp_path), tmp_path / "logs"
+    logs.mkdir()
+    with open(data / "queue.jsonl", "a") as fh:
+        fh.write("\n")  # moves queue.jsonl's sha256 away from the manifest's frozen one
+    monkeypatch.setattr(collect, "archive_out_of_queue", lambda *a, **kw: pytest.fail("must not archive"))
+
+    with pytest.raises(RuntimeError, match="queue.jsonl sha256"):
+        collect.main(["--archive-out-of-queue", "--data", str(data), "--log-dir", str(logs)])
+
+
+# ---- fix round 1, item 2: spent_usd must count archived cost too -------------------------------
+
+
+def test_spent_usd_sums_archived_records_too(tmp_path):
+    (tmp_path / "worker_0.jsonl").write_text(_line("t0", cost=0.02) + "\n" + _line("t1", cost=0.05) + "\n")
+    collect.archive_out_of_queue(tmp_path, [mp.QueueItem(index=0, pool="F", arm_id="F_00", task_id="t0",
+                                                         replicate=0, pilot=False)])
+    # t1 (F_00) is now archived, no longer in worker_0.jsonl -- its $0.05 must still count toward
+    # the real budget cap, not vanish just because the current queue doesn't include it any more.
+    assert collect.spent_usd(tmp_path) == pytest.approx(0.07)
+
+
+def test_spent_usd_tolerates_a_torn_trailing_line_in_an_archive_file(tmp_path):
+    archive_dir = tmp_path / "archive"
+    archive_dir.mkdir()
+    good = _line("t0", cost=0.03)
+    torn = '{"schema": "empirical_pool/1", "pool": "F", "arm_id": "F_0'
+    (archive_dir / "worker_0.pre_amendment_1.jsonl").write_text(good + "\n" + torn)
+    assert collect.spent_usd(tmp_path) == pytest.approx(0.03)
+
+
+def test_spent_usd_with_no_archive_dir_is_unaffected(tmp_path):
+    (tmp_path / "worker_0.jsonl").write_text(_line("t0", cost=0.04) + "\n")
+    assert collect.spent_usd(tmp_path) == pytest.approx(0.04)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -22,6 +23,11 @@ import watchdog_empirical_pool as wd  # noqa: E402
     ("running", False, 1.0, "relaunch"),
     ("failed", False, 1.0, "relaunch"),
     (None, False, 0.0, "relaunch"),
+    # Amendment 1: `collect.py --archive-out-of-queue` leaves STATUS `paused`; a paused, dead
+    # run is treated like any other dead non-finished run (relaunch), not mistaken for finished.
+    ("paused", False, 1.0, "relaunch"),
+    ("paused", True, 5.0, "wait"),
+    ("some_unknown_status", False, 1.0, "relaunch"),
 ])
 def test_decide(status, alive, minutes, expected):
     assert wd.decide(status, alive, minutes) == expected
@@ -345,6 +351,97 @@ def test_budget_is_forwarded_to_the_collector(tmp_path, monkeypatch):
     assert wd.main(["--pilot", "--budget", "40", "--workers", "8"]) == 0
     assert launches[0]["extra"] == ["--workers", "8", "--budget", "40.0", "--pilot"]
     assert wd.collector_args(8, False, None) == ["--workers", "8"]
+
+
+# ---- amendment 1: relaunch hygiene (a previous browser-use worker can survive its leader) -----
+
+
+def test_ensure_previous_dead_sigkills_the_process_group_and_waits(monkeypatch):
+    mock_proc = mock.Mock(spec=subprocess.Popen)
+    mock_proc.pid = 555
+    killpg_calls = []
+    monkeypatch.setattr(wd.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
+    wait_calls = []
+    mock_proc.wait = lambda timeout=None: wait_calls.append(timeout)
+
+    wd._ensure_previous_dead(mock_proc)
+
+    assert killpg_calls == [(555, signal.SIGKILL)]
+    assert len(wait_calls) == 1 and wait_calls[0] is not None
+
+
+def test_ensure_previous_dead_is_a_noop_with_no_previous_process(monkeypatch):
+    killpg_calls = []
+    monkeypatch.setattr(wd.os, "killpg", lambda pid, sig: killpg_calls.append((pid, sig)))
+    wd._ensure_previous_dead(None)
+    assert killpg_calls == []
+
+
+@pytest.mark.parametrize("exc", [ProcessLookupError(), PermissionError()])
+def test_ensure_previous_dead_tolerates_killpg_errors(monkeypatch, exc):
+    mock_proc = mock.Mock(spec=subprocess.Popen)
+    mock_proc.pid = 555
+
+    def boom(pid, sig):
+        raise exc
+
+    monkeypatch.setattr(wd.os, "killpg", boom)
+    wd._ensure_previous_dead(mock_proc)  # must not raise
+    mock_proc.wait.assert_not_called()
+
+
+def test_ensure_previous_dead_tolerates_a_wait_timeout(monkeypatch):
+    mock_proc = mock.Mock(spec=subprocess.Popen)
+    mock_proc.pid = 555
+    monkeypatch.setattr(wd.os, "killpg", lambda pid, sig: None)
+
+    def wait(timeout=None):
+        raise subprocess.TimeoutExpired("cmd", timeout)
+
+    mock_proc.wait = wait
+    wd._ensure_previous_dead(mock_proc)  # must not raise
+
+
+def test_relaunch_hygiene_on_the_dead_relaunch_path(tmp_path, monkeypatch):
+    """A collector that already exited (the 'dead' -> 'relaunch' path): before the very first
+    launch there is nothing to kill, and before the relaunch that follows a dead collector, any
+    leftover process group from the previous launch is SIGKILLed first."""
+    dead, finisher = _proc(False), _proc(True)
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [dead, finisher])
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "done" if len(launches) > 1 else "running")
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+
+    ensure_calls = []
+    monkeypatch.setattr(wd, "_ensure_previous_dead", lambda proc: ensure_calls.append(proc))
+
+    assert wd.main(["--workers", "1"]) == 0
+
+    assert ensure_calls == [None, dead]
+    assert len(launches) == 2
+
+
+def test_relaunch_hygiene_on_the_kill_and_relaunch_path(tmp_path, monkeypatch):
+    """A live but globally stalled collector (the 'kill_and_relaunch' path): the ordinary
+    SIGTERM/SIGKILL escalation (`_kill_and_wait_process`) still runs, and the new hygiene check
+    SIGKILLs the process group again before the next launch (it may have left children behind)."""
+    stuck, finisher = _proc(True), _proc(True)
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [stuck, finisher])
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "done" if len(launches) > 1 else "running")
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)  # never grows: global stall
+
+    def fast_sleep(s):
+        clock.t += wd.STALL_MINUTES * 60 + 100
+
+    monkeypatch.setattr("time.sleep", fast_sleep)
+
+    ensure_calls = []
+    monkeypatch.setattr(wd, "_ensure_previous_dead", lambda proc: ensure_calls.append(proc))
+
+    assert wd.main(["--workers", "1"]) == 0
+
+    assert kills == [stuck]  # the existing SIGTERM/SIGKILL escalation still ran
+    assert ensure_calls == [None, stuck]  # ... and the hygiene check ran again before the relaunch
+    assert len(launches) == 2
 
 
 def test_forwarded_args_parse_in_the_collector(tmp_path, monkeypatch):

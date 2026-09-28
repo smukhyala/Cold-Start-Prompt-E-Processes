@@ -778,3 +778,93 @@ def test_reset_tolerates_a_server_without_pipes(tmp_path, monkeypatch):
     adapter.reset(seed=0)
     assert adapter._drain_threads == []
     adapter.close()
+
+
+# ---- amendment 1: archiving pilot records that fell outside the new 30-task queue -------------
+
+
+def _archive_queue():
+    return [mp.QueueItem(index=0, pool="F", arm_id="F_00", task_id="t0", replicate=0, pilot=False),
+            mp.QueueItem(index=1, pool="F", arm_id="F_00", task_id="t1", replicate=0, pilot=False)]
+
+
+def test_archive_out_of_queue_keeps_in_queue_and_archives_the_rest_verbatim(tmp_path):
+    path = tmp_path / "worker_0.jsonl"
+    in_line = _line("t0")
+    out_line1 = _line("t2")  # F_00/t2: not in the new queue
+    out_line2 = _line("t3", arm="F_01")  # F_01 is not in the new queue at all
+    path.write_text(in_line + "\n" + out_line1 + "\n" + out_line2 + "\n")
+
+    counts = collect.archive_out_of_queue(tmp_path, _archive_queue())
+
+    assert counts == {"kept": 1, "archived": 2, "files": 1}
+    assert path.read_text() == in_line + "\n"
+    archive_path = tmp_path / "archive" / "worker_0.pre_amendment_1.jsonl"
+    assert archive_path.read_text() == out_line1 + "\n" + out_line2 + "\n"
+
+
+def test_archive_out_of_queue_drops_a_torn_trailing_fragment_from_both(tmp_path):
+    path = tmp_path / "worker_0.jsonl"
+    good = _line("t0")
+    torn = '{"schema": "empirical_pool/1", "pool": "F", "arm_id": "F_0'
+    path.write_text(good + "\n" + torn)
+
+    counts = collect.archive_out_of_queue(tmp_path, _archive_queue())
+
+    assert counts == {"kept": 1, "archived": 0, "files": 1}
+    assert path.read_text() == good + "\n"
+    assert not (tmp_path / "archive" / "worker_0.pre_amendment_1.jsonl").exists()
+
+
+def test_archive_out_of_queue_refuses_when_the_lock_names_a_live_pid(tmp_path):
+    (tmp_path / "collect.lock").write_text(str(os.getpid()))  # our own test process, certainly alive
+    with pytest.raises(RuntimeError, match="collector"):
+        collect.archive_out_of_queue(tmp_path, _archive_queue())
+
+
+def test_archive_out_of_queue_tolerates_a_stale_lock(tmp_path, monkeypatch):
+    (tmp_path / "collect.lock").write_text("999999")
+
+    def _dead(pid, sig):
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(collect.os, "kill", _dead)
+    (tmp_path / "worker_0.jsonl").write_text(_line("t0") + "\n")
+    counts = collect.archive_out_of_queue(tmp_path, _archive_queue())
+    assert counts["files"] == 1
+
+
+def test_archive_out_of_queue_counts_across_multiple_worker_files(tmp_path):
+    (tmp_path / "worker_0.jsonl").write_text(_line("t0") + "\n" + _line("t5") + "\n")
+    (tmp_path / "worker_1.jsonl").write_text(_line("t1") + "\n")
+    counts = collect.archive_out_of_queue(tmp_path, _archive_queue())
+    assert counts == {"kept": 2, "archived": 1, "files": 2}
+
+
+def test_archive_out_of_queue_is_idempotent(tmp_path):
+    path = tmp_path / "worker_0.jsonl"
+    path.write_text(_line("t0") + "\n" + _line("t2") + "\n")
+
+    first = collect.archive_out_of_queue(tmp_path, _archive_queue())
+    assert first == {"kept": 1, "archived": 1, "files": 1}
+    second = collect.archive_out_of_queue(tmp_path, _archive_queue())
+    assert second == {"kept": 1, "archived": 0, "files": 1}
+
+    archive_path = tmp_path / "archive" / "worker_0.pre_amendment_1.jsonl"
+    assert archive_path.read_text() == _line("t2") + "\n"  # not duplicated by the second run
+
+
+def test_main_archive_out_of_queue_prints_counts_writes_paused_and_launches_nothing(tmp_path, monkeypatch, capsys):
+    data, logs = _data_dir(tmp_path), tmp_path / "logs"
+    logs.mkdir()
+    (logs / "worker_0.jsonl").write_text(_line("t0") + "\n" + _line("t9") + "\n")  # t9 is not in _data_dir's queue
+
+    monkeypatch.setattr(collect, "_worker_main", lambda *a, **kw: pytest.fail("must not launch a worker"))
+    monkeypatch.setattr(collect.cf, "ProcessPoolExecutor", lambda *a, **kw: pytest.fail("must not launch a pool"))
+
+    code = collect.main(["--archive-out-of-queue", "--data", str(data), "--log-dir", str(logs)])
+
+    assert code == 0
+    assert (logs / "STATUS").read_text().strip() == "paused"
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == {"kept": 1, "archived": 1, "files": 1}

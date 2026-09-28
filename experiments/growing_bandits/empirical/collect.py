@@ -549,6 +549,67 @@ def clear_exit_markers(log_dir: Path) -> None:
         path.unlink(missing_ok=True)
 
 
+def archive_out_of_queue(log_dir: Path, queue: list[make_pools.QueueItem]) -> dict[str, int]:
+    """Archive already-collected records whose ``(arm_id, task_id, replicate)`` fell outside
+    `queue` (amendment 1's 30-task subset) out of every ``worker_<w>.jsonl``.
+
+    Each worker file is split into records still in `queue` (kept, rewritten in place) and
+    records that are not (archived, appended verbatim -- original bytes, not re-serialized --
+    to ``log_dir/archive/worker_<w>.pre_amendment_1.jsonl``). An unparseable trailing fragment
+    (a torn write in flight) is dropped from both and logged. The rewrite is atomic: a temp
+    file, then ``os.replace``. Idempotent: a second run finds nothing left to archive. Refuses
+    if the collector's lock names a live pid -- it must not still be writing these files.
+    """
+    log_dir = Path(log_dir)
+    lock_path = log_dir / "collect.lock"
+    if lock_path.exists():
+        try:
+            owner = int(lock_path.read_text().strip())
+        except (ValueError, OSError):
+            owner = None
+        if owner is not None and _pid_is_alive(owner):
+            raise RuntimeError(f"a collector (pid {owner}) holds {lock_path}; refusing to archive "
+                               "while it may still be writing these files")
+
+    in_queue = {(q.arm_id, q.task_id, q.replicate) for q in queue}
+    archive_dir = log_dir / "archive"
+    counts = {"kept": 0, "archived": 0, "files": 0}
+    for path in sorted(log_dir.glob("worker_*.jsonl")):
+        data = path.read_bytes()
+        *complete, tail = data.split(b"\n")
+        if tail.strip():
+            if _parses(tail):
+                complete.append(tail)
+            else:
+                log.warning("dropping an unparseable trailing fragment in %s (%d bytes)", path, len(tail))
+        kept_lines: list[bytes] = []
+        archived_lines: list[bytes] = []
+        for line in complete:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            key = (record["arm_id"], record["task_id"], int(record["replicate"]))
+            (kept_lines if key in in_queue else archived_lines).append(line)
+
+        if archived_lines:
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            archive_path = archive_dir / f"{path.stem}.pre_amendment_1.jsonl"
+            with open(archive_path, "ab") as fh:
+                for line in archived_lines:
+                    fh.write(line + b"\n")
+
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "wb") as fh:
+            for line in kept_lines:
+                fh.write(line + b"\n")
+        os.replace(tmp_path, path)
+
+        counts["kept"] += len(kept_lines)
+        counts["archived"] += len(archived_lines)
+        counts["files"] += 1
+    return counts
+
+
 def _worker_main(worker: int, n_workers: int, data_dir: str, log_dir: str, budget: float, pilot: bool,
                  assigned: tuple[int, ...] | None = None) -> str:
     from dotenv import load_dotenv
@@ -588,9 +649,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--log-dir", type=Path, default=LOG_DIR)
     ap.add_argument("--budget", type=float, default=BUDGET_USD)
     ap.add_argument("--pilot", action="store_true", help="run only the pilot items")
+    ap.add_argument("--archive-out-of-queue", action="store_true",
+                    help="amendment 1: archive already-collected records outside the current "
+                         "queue.jsonl, write STATUS paused, and exit -- never launches a worker")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     args.log_dir.mkdir(parents=True, exist_ok=True)
+    if args.archive_out_of_queue:
+        queue = make_pools.read_queue(args.data / "queue.jsonl")
+        counts = archive_out_of_queue(args.log_dir, queue)
+        print(json.dumps(counts))
+        (args.log_dir / "STATUS").write_text("paused\n")
+        return 0
     status_path = args.log_dir / "STATUS"
     lock_path = args.log_dir / "collect.lock"
     _acquire_lock(lock_path)

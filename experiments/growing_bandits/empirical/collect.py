@@ -5,18 +5,28 @@
 
 ``--profile`` (`PROFILES`, default ``prereg9``) picks the app, wall clock, task bank, frozen
 data (queue + pools + manifest entry), log dir and port range; ``--data`` / ``--log-dir``
-still override the paths. ``prereg9`` is Pre-registration 9's Gmail collector exactly
-(``data/empirical_pool``, ``logs/empirical_pool``); ``gitlab``, ``gmail`` and ``bridge`` are
-the prompt-heterogeneity study's, read from ``data/heterogeneity`` and written under
-``logs/heterogeneity/<profile>``, and each needs an explicit ``--budget``. The agent itself
-(model, effort, steps, vision, headless) is identical in every profile.
+still override the paths. The agent itself (model, effort, steps, vision, headless) is
+identical in every profile. Paths below are relative to the repo root; ``<log>`` is the
+profile's log dir and ``w`` the worker index:
 
-At start the collector checks ``queue.jsonl`` against ``manifest.json``'s sha256, computes the
-items still without a terminal record (``ok`` or ``missing``) and deals THOSE round-robin to
-the workers, so every remaining item is owned by exactly one worker per launch and a lost
-worker's share does not serialize at the end. Worker w runs its share in queue order on its
-own WebArena server (port 8001 + w) and appends one JSON line per *attempt* to
-``logs/empirical_pool/worker_<w>.jsonl``; an item's earlier ``infra_error`` attempts count
+    profile  app                          clock  bank  data (queue, pools)                              <log>                       port
+    prereg9  apps/gmail                   180 s    60  data/empirical_pool/{queue.jsonl,pool_{G,F,anchor}.yaml}  logs/empirical_pool         8001 + w
+    gitlab   apps/gitlab-plan-and-track   600 s   140  data/heterogeneity/{gitlab/queue.jsonl,pools/{GLG,GLK,anchors_gitlab}.yaml}  logs/heterogeneity/gitlab   8101 + w
+    gmail    apps/gmail                   180 s    60  data/heterogeneity/{gmail/queue.jsonl,pools/{GMK,anchors_gmail}.yaml}  logs/heterogeneity/gmail    8201 + w
+    bridge   apps/gmail                   600 s    60  data/heterogeneity/{bridge/queue.jsonl,pools/GMB.yaml}  logs/heterogeneity/bridge   8301 + w
+
+``prereg9`` is Pre-registration 9's collector exactly (its manifest freezes the queue; budget
+default $260). The heterogeneity profiles' ``data/heterogeneity/manifest.json`` freezes the
+queue *and* the pool files, and each profile needs an explicit ``--budget``. Distinct port
+ranges mean two profiles on one machine never share a WebArena server.
+
+At start the collector checks the profile's queue (and frozen pools) against the manifest's
+sha256, computes the items still without a terminal record (``ok`` or ``missing``) and deals
+THOSE round-robin to the workers, so every remaining item is owned by exactly one worker per
+launch and a lost worker's share does not serialize at the end. Worker w runs its share in
+queue order on its own WebArena server (the profile's port) and appends one JSON line per
+*attempt* to ``<log>/worker_<w>.jsonl`` (STATUS, ``collect.lock``, ``worker_<w>.exit`` and
+``artifacts/w<w>/`` live in ``<log>`` too); an item's earlier ``infra_error`` attempts count
 toward its three. When a worker returns, the collector writes ``worker_<w>.exit`` (its
 outcome), which the watchdog uses to tell a finished worker from a hung one.
 

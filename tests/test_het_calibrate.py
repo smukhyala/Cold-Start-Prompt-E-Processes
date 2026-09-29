@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[1]
 for sub in ("empirical", "deploy"):
     sys.path.insert(0, str(ROOT / "experiments" / "growing_bandits" / sub))
 import calibrate as cal  # noqa: E402
+import study as st  # noqa: E402
+
+from cold_start.growing.empirical_reservoir import EmpiricalReservoir  # noqa: E402
 
 
 def test_pools_cover_the_registered_grid():
@@ -58,10 +61,45 @@ def test_calibrate_columns_and_seed_scheme(tmp_path, monkeypatch):
     assert set(written["pool_id"]) == set(out["pool_id"])
 
 
-def test_seeds_are_disjoint_from_every_other_seed_range():
+def test_calibration_seed_range_lies_above_every_study_and_has_headroom():
+    """The calibration grid's full seed range (every pool index x every horizon) sits
+    strictly above the highest seed Pre-registration 9 or the heterogeneity study ever
+    uses, and strictly below 2**53 (the float64/JSON-safe integer boundary), so no seed
+    silently loses precision on its way through JSON."""
+    import replay  # noqa: E402  (already on sys.path via `calibrate`'s own import)
+
     assert cal.CAL_SEED_BASE == 50_000_000_000
-    # every existing seed range (Pre-reg 9, heterogeneity, corpus, smoke) lies below 2.1e10.
-    assert cal.CAL_SEED_BASE > 21_000_000_000
+    n_pools = len(cal.SPREADS) + len(cal.TAIL_FRACS) * len(cal.TAIL_DELTAS)
+    cal_min = cal._cal_seed(0, min(cal.HORIZONS))
+    cal_max = cal._cal_seed(n_pools - 1, max(cal.HORIZONS))
+    assert cal_min < cal_max
+
+    prereg9_max = max(
+        replay.seed_for(p, T, b, study=st.PREREG9)
+        for p in st.PREREG9.pools for T in replay.ALL_HORIZONS for b in (None, replay.N_BOOT - 1)
+    )
+    het_max = max(
+        replay.seed_for(p, T, b, study=st.HETEROGENEITY)
+        for p in st.HETEROGENEITY.pools for T in replay.ALL_HORIZONS for b in (None, replay.N_BOOT - 1)
+    )
+    assert cal_min > prereg9_max
+    assert cal_min > het_max
+    assert cal_max < 2**53
+
+
+def test_upper_tail_mass_matches_stage0s_at_or_above_weighted_median_convention():
+    """Pins the spec section 6.4 definition on a small reservoir with known atoms: mass
+    at or above the weighted median + 0.10, computed with >=, not `tail_prob`'s strict >."""
+    res = EmpiricalReservoir([0.2, 0.4, 0.6, 0.8], [0.1, 0.4, 0.3, 0.2], validate=False)
+    # cumulative weights [0.1, 0.5, 0.8, 1.0]: the weighted median (inf{x: F(x) >= 0.5}) is 0.4.
+    assert res.quantile(0.5) == pytest.approx(0.4)
+    # threshold = 0.4 + 0.10 = 0.5, sitting exactly on no atom; mass of atoms >= 0.5 is 0.6 and 0.8.
+    assert cal._upper_tail_mass(res) == pytest.approx(0.3 + 0.2)
+
+    # a threshold landing exactly on an atom must still be included (the >= convention).
+    on_atom = EmpiricalReservoir([0.30, 0.40, 0.50], [0.2, 0.3, 0.5], validate=False)
+    assert on_atom.quantile(0.5) == pytest.approx(0.40)
+    assert cal._upper_tail_mass(on_atom) == pytest.approx(0.5)  # only the 0.50 atom (== 0.40 + 0.10)
 
 
 def test_tau_flat_from_calibration_interpolates_the_crossing_point():

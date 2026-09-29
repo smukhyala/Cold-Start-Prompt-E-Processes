@@ -46,7 +46,11 @@ heterogeneity come from the environment, from what the prompts contain, or both?
   in meaningful cells the simulation's ordering reappears.
 - **H4 (portability, secondary).** A grid prompt's effect in Gmail predicts its effect in GitLab.
 
-τ is the standard deviation of prompts' true success rates (the prompt main effect, §6.1).
+Two heterogeneity quantities are reported (*amended before registration*): **τ_main**, the SD of the prompt
+main effect (§6.1; generalizes to new tasks and does not depend on the number of tasks) — used for H1, H2 and
+H4; and **τ_set**, the SD of prompts' true success rates on the study's own task set (main effect plus the
+prompt × task interaction averaged over those tasks) — the quantity the replay reservoir and the calibration
+pools represent, used for the §6.5 flat rule. Unqualified "τ" in H1–H4 means τ_main.
 
 ## 3. What stays identical to Pre-registration 9
 
@@ -169,7 +173,8 @@ Sensitivity: REML linear mixed model and a logistic GLMM with crossed prompt and
 95%, and the one-sided 95% upper bound used by §6.5), validated by a simulation coverage test. *Amended before
 registration:* the two-way (prompt × task) bootstrap first specified here inflates τ² by about MS_resid/J —
 duplicated task columns enter every prompt mean — covering τ = 0 only ~20% of the time, so it is not used.
-Missing cells are filled additively with the residual degrees of freedom and the prompt-mean residual term
+τ_set² = (MS_prompt − σ̂²_e)/J uses the replicate-pair noise estimate (degrees of freedom = number of pairs;
+a cell without pairs uses its declared borrow) and gets the same MLS interval. Missing cells are filled additively with the residual degrees of freedom and the prompt-mean residual term
 corrected for the fill; more than 5% missing cells in a cell is an error. τ is reported in success-rate units.
 
 ### 6.2 Split-half reliability (model-free)
@@ -206,7 +211,7 @@ Per cell:
 
 | class | rule |
 |---|---|
-| **flat** | regret range < 0.005 at all three primary T **and** the one-sided upper 95% MLS bound of τ < τ_flat |
+| **flat** | regret range < 0.005 at all three primary T **and** the one-sided upper 95% MLS bound of τ_set < τ_flat |
 | **practically meaningful** | regret range ≥ 0.01 at ≥ 2 of 3 primary T (Pre-reg 9's guard) **and** the bootstrap lower bound of the regret range at T = 200 > 0.005 |
 | **moderate** | otherwise |
 

@@ -257,6 +257,80 @@ def test_tau_interval_one_sided_upper_bound_is_tight_under_the_null():
     assert mean_upper < 0.035
 
 
+# ---- tau_set_interval (spec amendment 1d0e7b4: tau_main vs tau_set) -------------------------------
+
+
+def _simulate_with_replicate_pair(I, J, tau, task_sd, inter_sd, seed):
+    """Two-way random-effects model with a nonzero prompt x task interaction, plus a second
+    independent Bernoulli replicate per cell (same true `p`) to estimate execution noise the way
+    `noise_from_pairs`/`within_cell_variance` do: `v = E[(x0 - x1)^2] / 2`, df = number of pairs.
+
+    Returns `(Y0, p, noise_var_hat, noise_df)`. `Y0` is the cell's replicate-0 matrix (what
+    `tau_set_interval`'s `Y` argument is); `p` is the true success-probability surface, whose row
+    means (`p.mean(axis=1)`, i.e. `_realized_tau(p)`) already include the interaction averaged over
+    this task set -- exactly tau_set's realized target, unlike tau_main's `Var(a_i)` alone.
+    """
+    rng = np.random.default_rng(seed)
+    a = rng.normal(0, tau, I)
+    b = rng.normal(0, task_sd, J)
+    ab = rng.normal(0, inter_sd, (I, J))
+    p = np.clip(0.6 + a[:, None] + b[None, :] + ab, 0.01, 0.99)
+    Y0 = (rng.random((I, J)) < p).astype(float)
+    Y1 = (rng.random((I, J)) < p).astype(float)
+    noise_var_hat = float(np.mean((Y0 - Y1) ** 2) / 2.0)
+    return Y0, p, noise_var_hat, I * J
+
+
+@pytest.mark.parametrize("J,tau_nominal", [(30, 0.05), (60, 0.10)])
+def test_tau_set_interval_coverage_of_the_realized_task_set_spread(J, tau_nominal):
+    """tau_set targets SD_i(p.mean(axis=1)) -- the realized spread of prompts' true rates on THIS
+    task set, main effect plus the interaction averaged over it -- exactly what `_realized_tau`
+    already computes (its own docstring flags this as tau_set's target, not tau_main's, a minor
+    deferred at Task 2: '_realized_tau includes interaction row-mean variance (finite-sample target)
+    -- mildly inflates measured coverage' of `tau_interval`/tau_main; tau_set_interval is the
+    estimator that quantity is actually the coverage target for)."""
+    n_rep = 400
+    covered = 0
+    for s in range(n_rep):
+        Y0, p, noise_var_hat, noise_df = _simulate_with_replicate_pair(
+            I=50, J=J, tau=tau_nominal, task_sd=0.3, inter_sd=0.05, seed=50_000 + s)
+        iv = het.tau_set_interval(Y0, noise_var_hat, noise_df)
+        rt = _realized_tau(p)
+        if iv["tau_set_lo"] <= rt <= iv["tau_set_hi"]:
+            covered += 1
+    coverage = covered / n_rep
+    print(f"tau_set_interval coverage(realized task-set spread) J={J} tau_nominal={tau_nominal}: {coverage:.4f}")
+    assert 0.88 <= coverage <= 0.998
+
+
+def test_tau_set_is_at_least_tau_main_on_average_when_interaction_is_present():
+    n_rep = 200
+    tau_set_hats = []
+    tau_main_hats = []
+    for s in range(n_rep):
+        Y0, _, noise_var_hat, noise_df = _simulate_with_replicate_pair(
+            I=50, J=30, tau=0.05, task_sd=0.3, inter_sd=0.08, seed=60_000 + s)
+        tau_set_hats.append(het.tau_set_interval(Y0, noise_var_hat, noise_df)["tau_set"])
+        tau_main_hats.append(het.variance_components(Y0)["tau"])
+    mean_set, mean_main = float(np.mean(tau_set_hats)), float(np.mean(tau_main_hats))
+    print(f"mean tau_set={mean_set:.4f} mean tau_main={mean_main:.4f}")
+    assert mean_set >= mean_main
+
+
+def test_tau_set_interval_raises_without_a_finite_noise_var():
+    Y, _ = _simulate(seed=0)
+    with pytest.raises(ValueError, match="noise_var"):
+        het.tau_set_interval(Y, None, 100)
+    with pytest.raises(ValueError, match="noise_var"):
+        het.tau_set_interval(Y, float("nan"), 100)
+
+
+def test_tau_set_interval_raises_without_at_least_one_noise_df():
+    Y, _ = _simulate(seed=0)
+    with pytest.raises(ValueError, match="noise_df"):
+        het.tau_set_interval(Y, 0.05, 0)
+
+
 # ---- prompt_bootstrap (rows only) -- replaces two_way_bootstrap -----------------------------------
 
 

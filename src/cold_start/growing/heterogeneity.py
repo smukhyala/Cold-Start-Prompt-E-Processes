@@ -210,6 +210,66 @@ def tau_interval(
     }
 
 
+def tau_set_interval(
+    Y: np.ndarray,
+    noise_var: float | None,
+    noise_df: int | None,
+    *,
+    alpha: float = 0.05,
+    n_imputed: int = 0,
+    row_counts: np.ndarray | None = None,
+) -> dict:
+    """Graybill-Wang MLS interval for tau_set = sqrt(sigma2_set), the SD of prompts' true success
+    rates on THIS study's own task set -- main effect plus the prompt x task interaction averaged
+    over these tasks (spec amendment 1d0e7b4, design doc SS2/6.1). Contrast with `tau_interval`
+    (tau_main = sqrt(Var(a_i)) alone, the quantity that generalizes to new tasks): tau_main subtracts
+    MS_resid (= sigma2_ab + sigma2_e, interaction *and* noise) from MS_prompt, so it estimates the
+    main effect only; tau_set subtracts only the execution-noise variance sigma2_e -- estimated
+    off-cell from the replicate pairs (`noise_from_pairs`), not from this cell's own MS_resid -- so
+    the interaction stays folded into what tau_set measures, matching what a replay reservoir /
+    NPMLE built from this cell's own task set actually represents.
+
+    theta = c1*MS_prompt - c2*noise_var, c1 = 1/J, c2 = c/J, c = mean(J / row_counts) (1.0 when no
+    cell was imputed) -- the same row-count correction `tau_interval` applies to MS_resid's
+    coefficient, carried over unchanged to noise_var's coefficient since both are the residual side
+    of the same c1*MS_prompt - c2*MS2 contrast `_mls_bound` was derived for. This is a first-order
+    correction only: the exact expectation of MS_prompt under imputation also has a
+    (c - 1) * sigma2_ab / J term (the interaction variance's own contribution to an imputed row's
+    residual), which is neglected here -- negligible at the <= 5% missing-cell ceiling
+    `success_matrix` enforces, and it has no closed-form separate from sigma2_ab, which this formula
+    does not estimate.
+
+    df1 = I - 1 (MS_prompt); df2 = `noise_df`, the number of replicate pairs the noise estimate was
+    built from (NOT this cell's own residual df: sigma2_e's precision comes from wherever the pairs
+    were run, e.g. the whole pool, not this one prompt x task grid).
+    """
+    if noise_var is None or not np.isfinite(noise_var):
+        raise ValueError("tau_set_interval needs a finite noise_var (execution noise from replicate pairs)")
+    if noise_df is None or noise_df < 1:
+        raise ValueError("tau_set_interval needs noise_df >= 1 (the number of replicate pairs the noise "
+                          "estimate was built from)")
+    Y = np.asarray(Y, dtype=float)
+    I, J = Y.shape
+    v = variance_components(Y, n_imputed=n_imputed, row_counts=row_counts)
+    df1, df2 = I - 1, int(noise_df)
+    ms1, ms2 = v["ms_prompt"], float(noise_var)
+    if row_counts is not None:
+        mean_j_over_ni = float(np.mean(J / np.asarray(row_counts, dtype=float)))
+    else:
+        mean_j_over_ni = 1.0
+    c1, c2 = 1.0 / J, mean_j_over_ni / J
+    theta_hat = c1 * ms1 - c2 * ms2
+    lo = theta_hat - _mls_bound(ms1, df1, ms2, df2, c1, c2, alpha / 2.0, "lower")
+    hi = theta_hat + _mls_bound(ms1, df1, ms2, df2, c1, c2, alpha / 2.0, "upper")
+    upper_one_sided = theta_hat + _mls_bound(ms1, df1, ms2, df2, c1, c2, alpha, "upper")
+    return {
+        "tau_set": float(np.sqrt(max(theta_hat, 0.0))),
+        "tau_set_lo": float(np.sqrt(max(lo, 0.0))),
+        "tau_set_hi": float(np.sqrt(max(hi, 0.0))),
+        "tau_set_upper_one_sided": float(np.sqrt(max(upper_one_sided, 0.0))),
+    }
+
+
 def prompt_bootstrap(
     Y: np.ndarray,
     stat: Callable[..., float],

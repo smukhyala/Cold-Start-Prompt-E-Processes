@@ -187,7 +187,7 @@ jointly in both apps; H2 resamples each pool's prompts independently.
 
 - **H1:** Δ₁ = τ(GitLab, G) − τ(Gmail, G). Primary: GitLab at 600 s vs the bridge (Gmail at 600 s, the
   same 20 prompts are a subset of the 50) — computed on the 20 bridge prompts in both apps, paired by prompt,
-  with a prompt-and-task bootstrap. Secondary: all 50 G prompts, Gmail at 180 s. Supported iff the primary
+  with the prompt-only bootstrap (the 20 prompts resampled jointly in both apps). Secondary: all 50 G prompts, Gmail at 180 s. Supported iff the primary
   one-sided 95% lower bound > 0; refuted iff the upper bound < 0.01; otherwise inconclusive.
 - **H2:** Δ₂(env) = τ(env, K) − τ(env, G), for each env; supported per env by the same rule.
 - **H4:** Spearman ρ between the 50 G prompts' estimated main effects in Gmail and GitLab (BLUPs from 6.1),

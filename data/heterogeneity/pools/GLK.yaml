@@ -1,0 +1,446 @@
+pool: GLK
+template: configs/template_freeform.jinja
+meta:
+  generator: claude-opus-4-7
+  app: gitlab
+arms:
+- arm_id: GLK_00
+  name: GLK_00
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'When creating or editing labels in this GitLab instance, remember that scoped labels use double-colon syntax (`::`) in the title, for example `workflow::in-review`. An item cannot hold two scoped labels sharing the same key: assigning `priority::high` to an issue already carrying `priority::low` automatically removes the lower one. For nested scopes like `workflow::backend::review`, everything before the last `::` is the scope, so `workflow::backend::review` and `workflow::backend::development` are mutually exclusive, while `workflow::backend::review` and `workflow::frontend::review` can coexist. Filter by an entire scope with `<scope>::*` in the label search box. After assigning a scoped label, verify the mutual-exclusion behavior worked by checking that the previous key-matching label was removed from the sidebar.'
+  prompt_sha256: 130828cd78f8daa84e212ae5a4c6bc56670ee29796e09650e9646e2c4cbcedf7
+- arm_id: GLK_01
+  name: GLK_01
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To reach the project labels administration page, use the top bar's **Search or go to** field, open your project, then navigate to **Manage** > **Labels**. From an issue or merge request sidebar, you can also select **Edit** in the **Labels** section and choose **Manage project labels** as a shortcut. The list you see contains both project-created labels and any labels inherited from ancestor groups; each label displays the project or group path where it was originally created, which helps you distinguish scope before editing.
+  prompt_sha256: c3b79a6964f96a2ff6ee460d463d99f3f5cd5b474821b48cc6855b640c524ee4
+- arm_id: GLK_02
+  name: GLK_02
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: When creating a new project label from the dedicated Labels page, fill the **Title**, optionally a **Description**, and optionally choose a color from the palette or type a hex value in **Background color**, then click **Create label**. If you instead create a label from within an issue or MR sidebar (**Edit** > **Create project label**), the description field is unavailable—you must add it later by editing the label. Confirm the new label was created by finding it in the Labels list, or by observing it appear in the assign-labels dropdown on the issue/MR.
+  prompt_sha256: 8239774ea31e734320b218e1ccf4dfd15e97e842a7abd9c785446cec43353835
+- arm_id: GLK_03
+  name: GLK_03
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'You have the ability to promote a project label to a group label from **Manage** > **Labels**: next to the **Subscribe** button on that label, open the vertical ellipsis menu and pick **Promote to group label**. Warn the user before doing this because the action is irreversible; all matching project labels across sibling projects (and any group label with the same title) are merged into the new group label, and existing issues, MRs, board lists, filters, and subscriptions are reassigned. The new group label keeps the same ID as the original project label.'
+  prompt_sha256: 42d9605d42240360af06eedbb27c3fed22d1fef47cb6f62e621a3d13ac3a55dc
+- arm_id: GLK_04
+  name: GLK_04
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To promote a subgroup label up to its parent group, there is no direct action. Instead: create a group label in the parent with the same name (a different color makes tracking easier); view the subgroup''s labels, where both labels appear with their origin shown; next to the old subgroup label click **Issues**, **Merge requests**, or **Epics** to open the referenced items and reassign them (use bulk edit to speed this up); then delete the original subgroup-level label. Verify by confirming the parent-group label is now present on all previously tagged items.'
+  prompt_sha256: 8a5c2e6df1c1873793b21ac259b673ac3561b4cb140baa064bc7f44b656eea48
+- arm_id: GLK_05
+  name: GLK_05
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Use the **Generate a default set of labels** button on the project Labels page to bootstrap projects that have zero labels and whose parent group also has none. This creates: `bug`, `confirmed`, `critical`, `discussion`, `documentation`, `enhancement`, `suggestion`, and `support`. The button only appears when the project has no labels, so if you don''t see it, either labels already exist in the project or in an ancestor group. You need at least the Planner role.'
+  prompt_sha256: a93e379b48632ed187c94d11d4c46e3721e9dd62b38f481484d4f33c23bdbd50
+- arm_id: GLK_06
+  name: GLK_06
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Label priority is set only at the project level, not from the group label list. On **Manage** > **Labels**, click the star icon next to a label to prioritize it; the label then appears at the top under **Prioritized Labels**. Drag prioritized labels up and down to change relative order—higher in the list means higher priority. Priority sorting on issue and MR lists uses only the highest-priority label on each item. Verify prioritization by sorting an issue list by **Priority** or **Label priority** and confirming order.
+  prompt_sha256: 98b772ba6edb8fb67899c89fe094c270113d17a3684a592c96f236dcff2ef8a7
+- arm_id: GLK_07
+  name: GLK_07
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To assign or unassign labels through the sidebar: open the item, select **Edit** in the **Labels** section, search by typing part of a label name, click labels to toggle their checkmarks, and close the picker by clicking **X** or outside the box. Sidebar label changes are visible to other users in real time on epics, incidents, issues, and merge requests without a page refresh. Alternatively use the quick actions `/label ~foo ~bar`, `/unlabel ~foo`, or `/relabel ~new` in a comment or description; verify by watching the labels appear in the sidebar after the comment posts.'
+  prompt_sha256: 9eff058682a2faede1e76c982717676de62bcc05753ec9aa1badb82cca61f247
+- arm_id: GLK_08
+  name: GLK_08
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: The archived labels feature is behind the `labels_archive` feature flag and may not be available. When it is, archive labels via **Manage** > **Labels** > pencil edit icon > tick the **Archived** checkbox > **Save changes**. Archived labels vanish from the assign-labels dropdown but remain on items already tagged and are still searchable. Find them under the **Archived** tab on the Labels page. Unarchive by opening that tab, editing the label, and clearing the **Archived** checkbox. Archiving also deprioritizes the label automatically.
+  prompt_sha256: b9cf0030c92c18d30aa9a0172512ff4c8e3b895a0b57184dd7f0c188f14ad5eb
+- arm_id: GLK_09
+  name: GLK_09
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Locking a label on merge (Self-Managed, beta, flag `enforce_locked_labels_on_merge`) is done from **Manage** > **Labels** > vertical ellipsis > **Edit**, then tick **Lock label after a merge request is merged**. Warn the user first: this cannot be undone, and the label itself can no longer be deleted after being locked. Locked labels behave normally on issues and epics; the lock only takes effect once an MR carrying them is merged, at which point no one can remove them from that MR.'
+  prompt_sha256: b80ba44be36f55a236987765a4c4cededaeca23ccbbc394222bdd295ce9db466
+- arm_id: GLK_10
+  name: GLK_10
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To create a new issue board, open the board name dropdown in the upper-left corner of the issue boards page and select **Create new board**. Provide a name and optionally scope the board by milestone, iteration, labels, assignee, or weight (scoping requires Premium/Ultimate). Once a scope is applied, you cannot filter by that same attribute in the search bar—you must first remove the scope through **Configure board** ({{settings icon}}). If you lack edit permissions you can still inspect the configuration through the same settings icon labelled **Board configuration**.
+  prompt_sha256: 0447421afc87786db245098c4b9915f216423f804c7110271dccc2b2ba734d1f
+- arm_id: GLK_11
+  name: GLK_11
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Delete an issue board by opening **Configure board** ({{settings icon}}) in the upper-right, selecting **Delete board**, then confirming with **Delete**. If the board you deleted was the last board in the project or group, GitLab automatically creates a new `Development` board so you're never left with zero boards. Verify by returning to the boards list; the deleted board should be absent and, if applicable, `Development` should appear.
+  prompt_sha256: ed920a9a2cf0837f30804c9218065e48958973f2f310fcee939fd7cb2dfe6730
+- arm_id: GLK_12
+  name: GLK_12
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Add a new list to an issue board by either selecting **New list** at the far right of the board (inserts before **Closed**) or by hovering between two existing lists and clicking the inline **New list** button that appears (inserts at that position). Choose the list type—Label, Assignee (Premium+), Milestone (Premium+), Iteration (Premium+), or Status (Premium+)—then pick the value and click **Add to board**. To reorder lists later, drag them by their headers; **Open** and **Closed** are fixed and cannot be moved.
+  prompt_sha256: d6d09e27a20dec88bbbdce078e0ab1990213db11999b741971be9b0f99d87fa3
+- arm_id: GLK_13
+  name: GLK_13
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Removing a list from an issue board only removes the view, not the underlying label, milestone, iteration, assignee, weight, or issues. Open the target list's **Edit list settings** ({{settings icon}}) at the top of the column, click **Remove list**, and confirm with **Remove list** again in the dialog. You can recreate the list at any time and the same issues will repopulate it based on their attributes.
+  prompt_sha256: c2122f679ee1c92d447df3bd9385474fb328b622a8380553aba195054b08f573
+- arm_id: GLK_14
+  name: GLK_14
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: When you drag an issue between board lists, the effect depends on source and destination. From Open to a label list adds that label; from a label A list to a label B list swaps A for B; dragging to the Closed list closes the issue; dragging from Closed back to a list reopens it and applies that list's attribute. Dragging into an assignee list assigns the user, and dragging out of an assignee list to another assignee list swaps the assignee. Verify by opening the issue's sidebar and checking labels/assignees updated accordingly.
+  prompt_sha256: a9224133f944ae627a39590afc205d2e586602d57d1e52cdb5a91bf2c4fba569
+- arm_id: GLK_15
+  name: GLK_15
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Set a work-in-progress limit on an issue board list by opening the list's **Edit list settings** ({{settings icon}}), selecting **Edit** next to **Work in progress limit**, choosing either **Items** or **Weight** from the type dropdown, entering the maximum, and pressing **Enter** to save. The header then displays current/limit (for example **4/5**). When exceeded, the current value turns red and a divider line appears between within-limit items and excess items. Remove the limit by choosing **Remove limit**. WIP limits cannot be set on the default **Open** and **Closed** lists.
+  prompt_sha256: 095ed0e0bb27c7e37be720affe462346cbf441125a8a36c99b05cc12fc54da00
+- arm_id: GLK_16
+  name: GLK_16
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Enable epic swimlanes on an issue board by selecting **View options** ({{preferences icon}}) and choosing **Epic swimlanes**. Issues then group horizontally by their parent epic. Reassign an issue's epic by dragging its card into another epic's horizontal lane, remove it from an epic by dragging to the **Issues with no epic assigned** lane, and change both epic and list simultaneously by dragging diagonally. Verify by opening the issue and checking the Epic field in the sidebar.
+  prompt_sha256: 1fa9399439ae0d9d01747b6dd2136d65b7e438db5c9c78118e593af8db9b3b60
+- arm_id: GLK_17
+  name: GLK_17
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To move an issue to the top or bottom of a board list without dragging through long lists, hover over the issue card, click **Card options** ({{ellipsis icon}}), and select **Move to start of list** or **Move to end of list**. This works even when filters are hiding intermediate cards—the issue still moves relative to the full list. Verify by clearing the filter and confirming the card sits at the expected end.
+  prompt_sha256: 433fdf99e2f7be7fbb8b81dab051f02fdf830dfabc8c0bb5fa49525ec10473b9
+- arm_id: GLK_18
+  name: GLK_18
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Focus mode on an issue board hides the surrounding navigation UI so only the board is visible. Toggle it with the **Toggle focus mode** ({{maximize icon}}) button in the upper-right corner of the board. Toggle again to restore the full navigation. Use this when demoing or when a board has many wide lists.
+  prompt_sha256: 1f67eefe0c86b8ba82ca4c5860e3e5c4c4dc95cb7185dae75bcd34c01babfa1a
+- arm_id: GLK_19
+  name: GLK_19
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Ordering issues in an issue board is stored as a global relative-position value: dragging an issue above another in any board on the instance changes its rank everywhere. This affects the issues list too, and vice versa. Newly created issues receive the highest position and therefore appear at the bottom of any list. When board loading appears stuck or times out, the fix is to run `Issues::RelativePositionRebalancingService.new(project.root_namespace.all_projects).execute` from the Rails console.'
+  prompt_sha256: f685775e3da2f75f79d94240dea65c5b6d19fab1c9401a12dc882cb54d140c5d
+- arm_id: GLK_20
+  name: GLK_20
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Group issue boards live under the group''s **Plan** > **Issue boards**. GitLab Free permits one group-level board per group, while Premium and Ultimate allow multiple. Group boards can show issues from every project in the group and its descendant subgroups. When filtering a group board: milestones from the group and its descendants are available, but only labels created directly on the group (not descendant projects) can be used in the search bar. Individual issues can still be edited to use project-level milestones and labels from their sidebars.'
+  prompt_sha256: 271275b9e23c98c2b7bcbcff519aef90d23ded2c11079dc56c0efa06c8cbb2ed
+- arm_id: GLK_21
+  name: GLK_21
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Status lists on issue boards (Premium+) are different from other list types: they can contain both open and closed issues depending on whether the status maps to an open or closed workflow state. When you drag an issue from a status list into an open (non-status) list, the default open status is applied automatically; dragging into a closed list applies the default closed status. Add a status list with **New list** > **Status** and select the status from the dropdown.'
+  prompt_sha256: c1bf3c3550eb9e0dedd5389b2463d0529d1f7b1e88fbdfb69d2901ee38e22078
+- arm_id: GLK_22
+  name: GLK_22
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To create a milestone in a project or group, go to **Plan** > **Milestones** > **New milestone**. Enter a title (required) and optionally a description, start date, and due date. Both dates are optional for issues but required for a milestone to display a burndown or burnup chart. Verify the milestone is created by finding it on the milestones list; it will appear as active with its dates and percentage complete calculated as closed items divided by total items.
+  prompt_sha256: 10158e6b07c13cf8e2c2efdc09bcb7d8993741084bae2e45fb7f790f490c6da6
+- arm_id: GLK_23
+  name: GLK_23
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Milestones automatically close after their due date passes, but you can close one manually. Go to **Plan** > **Milestones**, then either use the milestone's row **Milestone actions** ({{ellipsis icon}}) > **Close**, or open the milestone and select **Close**. When a milestone is closed, its open issues remain open—they are not automatically closed with it. Verify by checking the milestone status label changed to closed and by seeing it under the Closed tab.
+  prompt_sha256: ed7002bca1eb9345ef369a9c1b6a9a1ab1b56feef273c40b82eabfe8978d5d6c
+- arm_id: GLK_24
+  name: GLK_24
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Promoting a project milestone to a group milestone merges all same-named project milestones across every project in the group into a single group milestone; all associated issues and MRs are transferred. This is irreversible. Trigger it from **Plan** > **Milestones**, then use **Milestone actions** ({{ellipsis icon}}) > **Promote** > **Promote Milestone**. You need at least the Planner role on the parent group. Verify by finding the milestone now listed at the group level with the aggregated issue and MR counts.
+  prompt_sha256: 27b7add415af0f28678045351654c5ec33941e96b680567a63c4553bb452081f
+- arm_id: GLK_25
+  name: GLK_25
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'The milestone detail view has tabs: **Work Items** (Unstarted, Ongoing, Completed columns), **Merge Requests** (Work in progress, Waiting for merge, Rejected, Merged columns), **Participants**, and **Labels**. The right sidebar shows percent complete (closed items / total items), start and due dates, total time spent, total issue weight, MR counts by state, associated releases, and a copyable milestone reference. Use these views to audit milestone scope quickly without querying individual issues.'
+  prompt_sha256: 9cee99074a5afcf8418d10dbbfe2fd2d7f7ddb4dc8173bb402a93dca91da5027
+- arm_id: GLK_26
+  name: GLK_26
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'The special milestone filters, available anywhere you filter by milestone, are: **None** (items with no milestone), **Any** (items with any milestone), **Upcoming** (items with an open milestone whose start date is in the future), and **Started** (items with an open milestone whose date range overlaps today; excludes milestones lacking a defined start and due date). Use these to build views of unscheduled work or currently-active scope without naming a specific milestone.'
+  prompt_sha256: bc7a687aa149a2660f775695ce8f79bef3e20e13aad04f26d1cf6ee0cb042d84
+- arm_id: GLK_27
+  name: GLK_27
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Burndown and burnup charts only render on a milestone that has both a start date and a due date. Access them by opening the milestone from **Plan** > **Milestones**. Toggle between counting **Issues** and **Issue weight** above the chart—when using weight, ensure all issues have weights assigned or they'll be missing from the totals. Burndown shows remaining (total minus closed); burnup shows Total and Completed as separate lines so you can see scope changes (Total dropping when issues are removed) versus completion (Completed rising when issues close).
+  prompt_sha256: d1015d8a3efa0ecd5b645775b1a06a1fb9fbcf177f1150043ed920be79ab43c6
+- arm_id: GLK_28
+  name: GLK_28
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: For milestones created before GitLab 13.6, the burndown chart has an additional Legacy/Fixed toggle. **Fixed** tracks full milestone history and stops counting removed issues after the due date passes. **Legacy** subtracts daily closures from daily openings and treats reopened issues as opened the day after they were last closed; changing the milestone start date changes the count of issues open on each day. Prefer Fixed for auditability; use Legacy only when reproducing historic behavior.
+  prompt_sha256: 00d6bc70c96d42588d851c1c68013acd37647ee594615b66c766a16e3f4bbec1
+- arm_id: GLK_29
+  name: GLK_29
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Assign a milestone to an issue, epic, or MR by opening the item, clicking **Edit** next to **Milestones** in the right sidebar, then searching for and selecting the milestone from both project and group options. Alternatives: the `/milestone %Sprint-3` quick action in a comment or description, dragging the issue onto a milestone list in a board, or bulk-editing from the issues list. Only one milestone can be assigned per item.'
+  prompt_sha256: 320c6458a580e7dea74edfbee351e1fb8fc31b2cd9beddf9d6b04ffcfed11575
+- arm_id: GLK_30
+  name: GLK_30
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To create an issue board list based on an iteration (Premium+), select **New list** > **Iteration**, pick the iteration from the dropdown, and select **Add to board**. Changing an issue's iteration is then as simple as dragging its card between iteration lists. The list type also works with milestone and assignee lists on the same board for combined visualizations of Sprint + Assignee.
+  prompt_sha256: 98c98bfa9d7cd1d06ea4a5e2d9cc4c670b75462db13644ea644df49ffcf522e5
+- arm_id: GLK_31
+  name: GLK_31
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Create an iteration cadence from the group's **Plan** > **Iterations** > **New iteration cadence**. Provide title, description, and either enable automatic scheduling (requires automation start date, duration in weeks 1-4, and number of upcoming iterations) or clear **Enable automatic scheduling** to manage iterations manually. Optionally tick **Enable roll over** so incomplete issues automatically move to the next iteration at the end of each iteration (performed by the Automation Bot at midnight in the instance's time zone, UTC by default).
+  prompt_sha256: a26068a98f5500558ebce4834f7836c2b57dbba3918baa150a91ef553cb0d2d6
+- arm_id: GLK_32
+  name: GLK_32
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: You can toggle automatic scheduling on and off for an iteration cadence via **Plan** > **Iterations** > cadence row's vertical ellipsis > **Edit cadence**. When turning automation on, the automation start date must not overlap any existing open (ongoing or upcoming) iteration; upcoming iterations are adjusted to fit the new schedule and additional ones are created to satisfy the upcoming-iterations count. Iterations can only be created, edited, or deleted manually while automatic scheduling is disabled.
+  prompt_sha256: 0fd7e545fdd0dd9c8e09f32707dae4ec74c4de998016cb451fca55d8eea77567
+- arm_id: GLK_33
+  name: GLK_33
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To create an iteration manually, the cadence must have automatic scheduling turned off. Then on **Plan** > **Iterations**, next to the cadence use the vertical ellipsis menu > **Add iteration**, fill in title, start date, and due date (dates cannot overlap other iterations in the same cadence), and select **Create iteration**. Verify it appears in the cadence's iteration list.
+  prompt_sha256: 8235ee7aa3ec67b48bf2a5fc5c4d000c4ef770e44357c9c63cf33289569060c6
+- arm_id: GLK_34
+  name: GLK_34
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Deleting an iteration cadence deletes every iteration inside it. Use **Plan** > **Iterations** > cadence's vertical ellipsis > **Delete cadence** > confirm with **Delete cadence**. To delete an individual iteration instead, open the iteration detail page and use the vertical ellipsis > **Delete** > **Delete**—this requires the containing cadence to have automatic scheduling turned off.
+  prompt_sha256: c3df6a152521f235336cafecc1d70dfecd4fe20f1940dbe6012c48c74ed607eb
+- arm_id: GLK_35
+  name: GLK_35
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Iteration reports are viewed by opening **Plan** > **Iterations**, selecting the cadence, then the iteration. The report includes the issue list, breakdown counts (completed, unstarted, in-progress or completed-by-due-date depending on state), burndown and burnup charts. When you access the same iteration inside a subgroup or project, the counts and charts are scoped to that subgroup/project's issues only, which is useful for team-specific rollups of a group-wide iteration.
+  prompt_sha256: 781698575494752290ce28599a8949e95f163b9e1dad069ab0f5a39157260914
+- arm_id: GLK_36
+  name: GLK_36
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Group issues in an iteration report by label by opening the iteration and choosing **Label** from the **Group by** dropdown; then filter to specific labels in **Filter by label**. This gives per-team scope visibility inside a shared iteration. Close the label dropdown by clicking outside it to apply.
+  prompt_sha256: 15cd417e7645ec3b6f5eee069a6dc74f10fe8ada368749875861135aa9662bc7
+- arm_id: GLK_37
+  name: GLK_37
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Create an epic from any of these entry points: group''s **Epics** page > **New epic**; another epic''s **More actions** > **New related epic** (creates linked epic); top bar **New** ({{plus icon}}) > **New epic**; or the **New epic** button in an empty roadmap. Populate title, description, confidentiality checkbox, labels, dates (or inherit), and color, then select **Create epic**.'
+  prompt_sha256: 383d53563b1aa735509623a965618c787f799d6546d1d9ba979d801a5bcc8171
+- arm_id: GLK_38
+  name: GLK_38
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Start and due dates on an epic can be fixed or **Inherited**. When inherited, the start date auto-updates to the earliest start date across child epics and issue milestones, and the due date to the latest such date. These values recompute automatically as children change milestones, milestones shift dates, or issues are added/removed from the epic. Because inheritance is bottom-up, changing a leaf child epic's start date can cascade all the way to the top epic.
+  prompt_sha256: 6704a5d99eed94e2e3d2a63d2d5f820a50335bc7b5ff86bcfdf4b265d56c8e75
+- arm_id: GLK_39
+  name: GLK_39
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'The available epic-to-item relationships are: an epic can be the parent of issues; an epic can be the parent of child epics (Ultimate); an epic can be linked to tasks, objectives, or key results with `relates to`, `blocks`, or `is blocked by`. Child issues may come from projects outside the epic''s group hierarchy—add them by pasting the issue URL through the epic''s Add existing issue flow.'
+  prompt_sha256: 17c883f1441e644165f9bd61c73a24000644e3de7d42bc82d618da515e7a876a

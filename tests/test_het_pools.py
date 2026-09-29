@@ -3,6 +3,7 @@ G/anchor reuse, and per-profile queues."""
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import sys
 from pathlib import Path
@@ -131,11 +132,16 @@ def test_bundle_is_capped_and_deterministic():
     assert a.startswith("## ")
 
 
-def test_gitlab_queue_blocks_and_pilot():
+def _gitlab_design():
     arms = {"GLG": [f"GLG_{i:02d}" for i in range(50)], "GLK": [f"GLK_{i:02d}" for i in range(40)],
             "anchor": ["GL_anchor_baseline", "GL_anchor_explorer", "GL_anchor_oracle"]}
     block_a = [f"task_e{i}" for i in range(10)] + [f"task_m{i}" for i in range(10)] + [f"task_h{i}" for i in range(10)]
     block_b = [f"task_e{i}" for i in range(10, 20)] + [f"task_m{i}" for i in range(10, 20)] + [f"task_h{i}" for i in range(10, 20)]
+    return arms, block_a, block_b
+
+
+def test_gitlab_queue_blocks_and_pilot():
+    arms, block_a, block_b = _gitlab_design()
     q = mh.gitlab_queue(arms, block_a, block_b, seed=1)
     n_pilot = sum(i.pilot for i in q)
     assert n_pilot == 13 * 30 and all(i.pilot for i in q[:n_pilot])
@@ -146,6 +152,50 @@ def test_gitlab_queue_blocks_and_pilot():
     reps = [i for i in q if i.replicate == 1]
     assert sum(i.pool == "GLG" for i in reps) == 300 and sum(i.pool == "GLK" for i in reps) == 240
     assert all(i.index == k for k, i in enumerate(q))
+
+
+def test_gitlab_queue_stratifies_replicates_by_block():
+    # I1 ruling: half of each pool's replicate cells from block-A main cells, queued right after the rest of
+    # block A; half from block B, queued after block B. The pilot stays first.
+    arms, block_a, block_b = _gitlab_design()
+    q = mh.gitlab_queue(arms, block_a, block_b, seed=1)
+    a, b = set(block_a), set(block_b)
+    n_pilot = sum(i.pilot for i in q)
+    n_a_main = (50 + 40 + 3) * 30
+    n_a_reps = (300 + 240) // 2
+    seg_rest_a = q[n_pilot:n_a_main]
+    seg_reps_a = q[n_a_main:n_a_main + n_a_reps]
+    seg_b = q[n_a_main + n_a_reps:n_a_main + n_a_reps + n_a_main]
+    seg_reps_b = q[n_a_main + n_a_reps + n_a_main:]
+    assert all(i.replicate == 0 and i.task_id in a for i in seg_rest_a)
+    assert all(i.replicate == 1 and i.task_id in a for i in seg_reps_a)
+    assert all(i.replicate == 0 and i.task_id in b for i in seg_b)
+    assert all(i.replicate == 1 and i.task_id in b for i in seg_reps_b) and len(seg_reps_b) == n_a_reps
+    for seg in (seg_reps_a, seg_reps_b):
+        assert sum(i.pool == "GLG" for i in seg) == 150 and sum(i.pool == "GLK" for i in seg) == 120
+        assert not any(i.pool == "anchor" for i in seg)
+    # every replicate repeats a main cell of its own pool, without replacement
+    main = {(i.pool, i.arm_id, i.task_id) for i in q if i.replicate == 0}
+    reps = [(i.pool, i.arm_id, i.task_id) for i in q if i.replicate == 1]
+    assert set(reps) <= main and len(set(reps)) == len(reps)
+    # deterministic
+    assert q == mh.gitlab_queue(arms, block_a, block_b, seed=1)
+    assert q != mh.gitlab_queue(arms, block_a, block_b, seed=2)
+
+
+def test_gitlab_stage_ends_names_the_through_index_of_block_a_and_its_replicates():
+    arms, block_a, block_b = _gitlab_design()
+    q = mh.gitlab_queue(arms, block_a, block_b, seed=1)
+    ends = mh.gitlab_stage_ends(q, block_a)
+    assert ends["pilot"] == 13 * 30 - 1
+    assert ends["block_a_with_replicates"] == (50 + 40 + 3) * 30 + 270 - 1
+    assert ends["last"] == len(q) - 1
+    upto = q[:ends["block_a_with_replicates"] + 1]
+    assert all(i.task_id in set(block_a) for i in upto) and q[ends["block_a_with_replicates"] + 1].task_id in set(block_b)
+    # a queue whose block-A items are not one prefix is refused (the stage boundary would be meaningless)
+    broken = [q[-1], *q[:-1]]
+    with pytest.raises(ValueError, match="prefix"):
+        mh.gitlab_stage_ends(broken, block_a)
 
 
 # ---- fix round 2, finding 1: APP_DESCRIPTION.md excluded entirely (manual-only bundle) -
@@ -489,7 +539,7 @@ def test_build_profiles_end_to_end_with_fake_client_and_resume(tmp_path):
 
     # First run: gitlab succeeds, gmail fails (too few valid candidates).
     with pytest.raises(mh.KnowledgeGenerationError):
-        mh.build_profiles(out=out, client=client)
+        mh.build_profiles(out=out, log_root=tmp_path / "logs", client=client)
 
     assert (out / "pools" / "GLK.yaml").exists()
     assert (out / "k_generation_gitlab.json").exists()
@@ -501,7 +551,7 @@ def test_build_profiles_end_to_end_with_fake_client_and_resume(tmp_path):
     assert client.calls == {"gitlab": 1, "gmail": 1}
 
     # Resume (no --force): gmail succeeds this time; gitlab must NOT be called again.
-    mh.build_profiles(out=out, client=client)
+    mh.build_profiles(out=out, log_root=tmp_path / "logs", client=client)
     assert client.calls == {"gitlab": 1, "gmail": 2}
 
     manifest = json.loads((out / "manifest.json").read_text())
@@ -533,13 +583,22 @@ def test_build_profiles_end_to_end_with_fake_client_and_resume(tmp_path):
     br_queue = mp.read_queue(out / "bridge" / "queue.jsonl")
     assert len(br_queue) == 20 * 30
 
+    # I1/I6: the manifest names block A (the fallback universe) and the gitlab stage boundaries
+    assert len(manifest["gitlab_block_a"]) == 30 and len(manifest["gitlab_block_b"]) == 30
+    assert manifest["gitlab_stage_ends"] == mh.gitlab_stage_ends(gl_queue, manifest["gitlab_block_a"])
+    # minors: the agent package and the environment repo are recorded
+    assert manifest["browser_use_version"] == importlib.metadata.version("browser-use")
+    wa = manifest["webarena_infinity"]
+    assert set(wa) == {"root", "commit", "dirty", "note"}
+    assert (wa["commit"] is None) == (wa["note"] is not None)
+
     # A second call without --force, now that the build is complete, is refused.
     with pytest.raises(SystemExit):
-        mh.build_profiles(out=out, client=client)
+        mh.build_profiles(out=out, log_root=tmp_path / "logs", client=client)
     assert client.calls == {"gitlab": 1, "gmail": 2}
 
     # --force rebuilds everything unconditionally, including a fresh call for gitlab too.
-    mh.build_profiles(out=out, client=client, force=True)
+    mh.build_profiles(out=out, log_root=tmp_path / "logs", client=client, force=True)
     assert client.calls == {"gitlab": 2, "gmail": 3}
 
 
@@ -589,13 +648,13 @@ def test_build_profiles_failed_force_run_invalidates_only_the_forced_app_and_res
     client = _ScriptedFakeClient(good, bad, script={"gitlab": [True, True], "gmail": [True, False, True]})
 
     # Round 1: a clean, fully successful build (no force needed -- `out` is empty).
-    mh.build_profiles(out=out, client=client)
+    mh.build_profiles(out=out, log_root=tmp_path / "logs", client=client)
     assert (out / "manifest.json").exists()
     assert client.calls == {"gitlab": 1, "gmail": 1}
 
     # Round 2: --force. gitlab succeeds again (its 2nd call); gmail fails (its 2nd call).
     with pytest.raises(mh.KnowledgeGenerationError):
-        mh.build_profiles(out=out, client=client, force=True)
+        mh.build_profiles(out=out, log_root=tmp_path / "logs", client=client, force=True)
     assert not (out / "manifest.json").exists()  # unlinked before proceeding, never rewritten
     assert client.calls == {"gitlab": 2, "gmail": 2}
     assert (out / "k_generation_gitlab.json").exists()  # gitlab's fresh (round-2) record
@@ -607,9 +666,33 @@ def test_build_profiles_failed_force_run_invalidates_only_the_forced_app_and_res
     # Round 3: resume, no --force. GitLab's just-refreshed cache is reused (no 3rd call);
     # Gmail has no canonical cache to reuse, so it is regenerated -- never silently reusing
     # the archived failure record.
-    mh.build_profiles(out=out, client=client)
+    mh.build_profiles(out=out, log_root=tmp_path / "logs", client=client)
     assert client.calls == {"gitlab": 2, "gmail": 3}
     assert (out / "manifest.json").exists()
     gmail_raw = json.loads((out / "k_generation_gmail.json").read_text())
     assert gmail_raw["error"] is None
     assert len(mp.load_pool(out / "pools" / "GMK.yaml")) == 40
+
+
+def test_build_profiles_refuses_while_heterogeneity_logs_exist(tmp_path):
+    # I5 ruling: rebuilding pools/queues under collected data would silently re-key un-recollectable
+    # episodes; refuse -- even with force -- before touching anything or calling the generator.
+    logs = tmp_path / "logs"
+    (logs / "gitlab").mkdir(parents=True)
+    (logs / "gitlab" / "worker_0.jsonl").write_text("{}\n")
+    client = _ResumeFakeClient(_safe_knowledge_batch(60), "[]", fail_first_for=set())
+    for force in (False, True):
+        with pytest.raises(SystemExit, match="worker_0.jsonl"):
+            mh.build_profiles(out=tmp_path / "het", log_root=logs, client=client, force=force)
+    assert client.calls == {"gitlab": 0, "gmail": 0} and not (tmp_path / "het").exists()
+
+
+def test_print_stages_reads_the_frozen_queue(tmp_path, capsys):
+    arms, block_a, block_b = _gitlab_design()
+    q = mh.gitlab_queue(arms, block_a, block_b, seed=3)
+    (tmp_path / "gitlab").mkdir()
+    mp.write_queue(tmp_path / "gitlab" / "queue.jsonl", q)
+    (tmp_path / "manifest.json").write_text(json.dumps({"gitlab_block_a": block_a}))
+    mh.main(["--out", str(tmp_path), "--print-stages"])
+    got = json.loads(capsys.readouterr().out)
+    assert got == mh.gitlab_stage_ends(q, block_a)

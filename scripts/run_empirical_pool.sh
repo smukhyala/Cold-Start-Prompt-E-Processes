@@ -3,8 +3,13 @@
 #   scripts/run_empirical_pool.sh --pilot --budget 40   # the 660-episode pilot (gate G2), capped at $40
 #   scripts/run_empirical_pool.sh                       # everything left in the queue (resumes the pilot)
 #   scripts/run_empirical_pool.sh --profile gitlab --pilot --budget 100   # a heterogeneity profile
-# Every argument (--profile NAME, --pilot, --workers N, --budget USD) goes to the watchdog unchanged,
-# which forwards it to collect.py. The log dir (logs/empirical_pool for prereg9,
+#   scripts/run_empirical_pool.sh --profile gitlab --budget 400 --through-index N   # a registered stage
+# Heterogeneity staging (spec 4.5 as amended): gitlab --pilot; gitlab --through-index N where N is
+# `make_het_pools.py --print-stages`' block_a_with_replicates; gmail; gitlab (the rest); bridge -- one
+# heterogeneity profile at a time (collect.py's shared logs/heterogeneity/het.lock). A --through-index
+# run ends with STATUS `through`, which the watchdog treats as finished (never relaunched).
+# Every argument (--profile NAME, --pilot, --workers N, --budget USD, --through-index N) goes to the
+# watchdog unchanged, which forwards it to collect.py. The log dir (logs/empirical_pool for prereg9,
 # logs/heterogeneity/<profile> otherwise) is the watchdog's own answer for these arguments, so
 # watchdog.out lands beside STATUS; bad arguments fail here, before anything is detached.
 set -euo pipefail

@@ -18,7 +18,18 @@ profile's log dir and ``w`` the worker index:
 ``prereg9`` is Pre-registration 9's collector exactly (its manifest freezes the queue; budget
 default $260). The heterogeneity profiles' ``data/heterogeneity/manifest.json`` freezes the
 queue *and* the pool files, and each profile needs an explicit ``--budget``. Distinct port
-ranges mean two profiles on one machine never share a WebArena server.
+ranges mean two profiles on one machine never share a WebArena server. The heterogeneity
+profiles are nevertheless mutually exclusive (I6 ruling: concurrent load confounds Gmail's
+wall-clock timeouts): each holds the shared ``logs/heterogeneity/het.lock`` (``<pid> <profile>``,
+`HET_LOCK_PATH`) for its whole run and refuses to start while another profile's live process
+group holds it; a lock naming a dead group is reclaimed. ``prereg9`` never touches it.
+
+``--through-index N`` (heterogeneity profiles only) works only the queue items with index <= N,
+then writes STATUS ``through`` and exits 0 -- the registered staging (spec 4.5 as amended):
+gitlab pilot -> gitlab through block A and its replicates (``make_het_pools.py --print-stages``
+names the index) -> gmail -> the rest of gitlab -> bridge. A heterogeneity collector also
+refuses to start if any record already in its log dir carries a ``prompt_sha256`` other than its
+arm's frozen pool-file sha (`check_existing_records`, I5 ruling).
 
 At start the collector checks the profile's queue (and frozen pools) against the manifest's
 sha256, computes the items still without a terminal record (``ok`` or ``missing``) and deals
@@ -92,6 +103,8 @@ log = logging.getLogger("empirical.collect")
 LOG_DIR = ROOT / "logs" / "empirical_pool"
 HET_DATA_DIR = ROOT / "data" / "heterogeneity"
 HET_LOG_ROOT = ROOT / "logs" / "heterogeneity"
+#: The heterogeneity profiles' shared exclusivity lock (I6 ruling): ``<pid> <profile>``.
+HET_LOCK_PATH = HET_LOG_ROOT / "het.lock"
 BASE_PORT = 8001
 BUDGET_USD = 260.0
 MAX_ATTEMPTS = 3
@@ -200,7 +213,10 @@ INFRA_EXCEPTION = "exception"
 INFRA_PROVIDER = "provider"
 #: A worker's return value / the collector's final STATUS, and the collector's exit code.
 OUTCOME_DONE, OUTCOME_BUDGET, OUTCOME_FAILED, OUTCOME_PROVIDER_DOWN = "done", "budget", "failed", "provider_down"
-EXIT_CODES: dict[str, int] = {OUTCOME_DONE: 0, OUTCOME_FAILED: 1, OUTCOME_BUDGET: 3, OUTCOME_PROVIDER_DOWN: 4}
+#: A ``--through-index`` run whose workers all finished their (<= N) share: a clean stop, not the queue's end.
+OUTCOME_THROUGH = "through"
+EXIT_CODES: dict[str, int] = {OUTCOME_DONE: 0, OUTCOME_FAILED: 1, OUTCOME_BUDGET: 3, OUTCOME_PROVIDER_DOWN: 4,
+                              OUTCOME_THROUGH: 0}
 
 
 @dataclass(frozen=True)
@@ -649,6 +665,59 @@ def _release_lock(lock_path: Path) -> None:
         pass
 
 
+def _read_het_lock(path: Path) -> tuple[int | None, str | None]:
+    try:
+        parts = Path(path).read_text().split()
+    except (FileNotFoundError, OSError):
+        return None, None
+    try:
+        return int(parts[0]), (parts[1] if len(parts) > 1 else None)
+    except (ValueError, IndexError):
+        return None, None
+
+
+def _acquire_het_lock(path: Path, profile: str) -> None:
+    """Hold the shared heterogeneity lock (I6 ruling): refuse while any live process group holds it
+    (another heterogeneity profile -- this profile's own second collector is already refused by
+    ``collect.lock``); reclaim a lock whose group is dead."""
+    path = Path(path)
+    owner, owner_profile = _read_het_lock(path)
+    if owner is not None and owner != os.getpid() and _pgid_is_alive(owner):
+        raise RuntimeError(f"heterogeneity profile {owner_profile!r} (pid {owner}) holds {path}; the heterogeneity "
+                           f"profiles run one at a time -- refusing to start {profile!r}")
+    if path.exists():
+        log.warning("reclaiming stale heterogeneity lock %s (profile %s, pid %s not running)", path, owner_profile,
+                    owner)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{os.getpid()} {profile}\n")
+
+
+def _release_het_lock(path: Path) -> None:
+    """Remove the shared lock only if this process holds it."""
+    owner, _ = _read_het_lock(path)
+    if owner == os.getpid():
+        _release_lock(Path(path))
+
+
+def check_existing_records(log_dir: Path, prompts: dict[str, make_pools.PoolArm]) -> None:
+    """I5 ruling: every record already in `log_dir` belongs to an arm of this profile's pools and carries
+    that arm's frozen rendered-prompt sha (`PoolArm.sha256`, the value `_record` stamps as
+    ``prompt_sha256``) -- a pool file rebuilt under collected data would otherwise silently re-key them."""
+    attempts = load_all(log_dir)
+    if attempts.empty:
+        return
+    if "prompt_sha256" not in attempts.columns:
+        raise RuntimeError(f"{log_dir}: existing records carry no prompt_sha256")
+    bad = []
+    for r in attempts.itertuples():
+        prompt = prompts.get(str(r.arm_id))
+        if prompt is None or str(r.prompt_sha256) != prompt.sha256:
+            bad.append((str(r.arm_id), str(r.task_id), int(r.replicate), str(r.prompt_sha256)))
+    if bad:
+        raise RuntimeError(f"{log_dir}: {len(bad)} existing records' prompt_sha256 does not match the frozen pool "
+                           f"files (or names an arm no pool file has), e.g. {bad[:3]}; refusing to start")
+
+
 def load_prompts(data_dir: Path, profile: str = DEFAULT_PROFILE) -> dict[str, make_pools.PoolArm]:
     """Every arm of the profile's pool files (each rendered prompt sha-checked by `load_pool`)."""
     out: dict[str, make_pools.PoolArm] = {}
@@ -688,31 +757,34 @@ def check_queue_arms(queue: list[make_pools.QueueItem], prompts: dict[str, make_
 
 
 def partition_remaining(queue: list[make_pools.QueueItem], log_dir: Path, n_workers: int,
-                        pilot: bool) -> list[tuple[int, ...]]:
+                        pilot: bool, through_index: int | None = None) -> list[tuple[int, ...]]:
     """Deal the items still without a terminal record round-robin (in queue order) to the workers.
 
     Each remaining item goes to exactly one worker for this launch, and every worker gets an
     equal share of what is actually left -- a static ``index % n`` split would leave a worker
-    that died early with a long tail of its own items for the resumed run.
+    that died early with a long tail of its own items for the resumed run. `through_index`
+    (``--through-index``) drops every item whose index is above it.
     """
     done, _ = _progress(log_dir)
     remaining = [q.index for q in queue
-                 if (q.pilot or not pilot) and (q.arm_id, q.task_id, q.replicate) not in done]
+                 if (q.pilot or not pilot) and (through_index is None or q.index <= through_index)
+                 and (q.arm_id, q.task_id, q.replicate) not in done]
     return [tuple(remaining[w::n_workers]) for w in range(n_workers)]
 
 
-def final_status(outcomes: list[str]) -> str:
+def final_status(outcomes: list[str], through: bool = False) -> str:
     """The collector's STATUS from its workers' outcomes.
 
     ``provider_down`` wins over everything, including ``failed``: during a provider outage a
     relaunch (what the watchdog does on ``failed``) would only turn more items into ``missing``;
     a person decides when to resume. ``failed`` then wins over ``budget``/``done``: a crash
-    means an unknown slice of the queue was never safely attempted.
+    means an unknown slice of the queue was never safely attempted. With `through` (a
+    ``--through-index`` run) a clean finish is ``through`` rather than ``done``.
     """
     for status in (OUTCOME_PROVIDER_DOWN, OUTCOME_FAILED, OUTCOME_BUDGET):
         if status in outcomes:
             return status
-    return OUTCOME_DONE
+    return OUTCOME_THROUGH if through else OUTCOME_DONE
 
 
 def exit_marker(log_dir: Path, worker: int) -> Path:
@@ -831,6 +903,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--budget", type=float, default=None,
                     help=f"USD hard stop (prereg9 default {BUDGET_USD}; required for every other profile)")
     ap.add_argument("--pilot", action="store_true", help="run only the pilot items")
+    ap.add_argument("--through-index", type=int, default=None,
+                    help="heterogeneity profiles only: work only the queue items with index <= N, then write "
+                         "STATUS through and exit 0 (make_het_pools.py --print-stages names gitlab's stage ends)")
     ap.add_argument("--archive-out-of-queue", action="store_true",
                     help="amendment 1 (prereg9 only): archive already-collected records outside the current "
                          "queue.jsonl, write STATUS paused, and exit -- never launches a worker")
@@ -844,6 +919,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         args.budget = spec["budget_usd"]
     if args.archive_out_of_queue and args.profile != DEFAULT_PROFILE:
         ap.error("--archive-out-of-queue is Pre-reg 9's amendment-1 operation (--profile prereg9 only)")
+    if args.through_index is not None and args.profile == DEFAULT_PROFILE:
+        ap.error("--through-index stages the heterogeneity collection (not --profile prereg9)")
+    if args.through_index is not None and args.through_index < 0:
+        ap.error(f"--through-index must be >= 0, got {args.through_index}")
     if args.budget is None and not args.archive_out_of_queue:
         ap.error(f"--profile {args.profile} has no default budget: pass --budget USD (the hard stop)")
     return args
@@ -869,15 +948,29 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     status_path = args.log_dir / "STATUS"
     lock_path = args.log_dir / "collect.lock"
+    het = args.profile != DEFAULT_PROFILE
     _acquire_lock(lock_path)
+    if het:
+        try:
+            _acquire_het_lock(HET_LOCK_PATH, args.profile)
+        except BaseException:
+            _release_lock(lock_path)
+            raise
     status_path.write_text("running\n")
     final = OUTCOME_FAILED
     try:
         verify_queue(args.data, args.profile)
         prompts = load_prompts(args.data, args.profile)  # fail fast on a moved hash, before any server starts
+        if het:
+            check_existing_records(args.log_dir, prompts)
         queue = make_pools.read_queue(args.data / spec["queue"])
         check_queue_arms(queue, prompts)
-        shares = partition_remaining(queue, args.log_dir, args.workers, args.pilot)
+        if args.through_index is None:
+            shares = partition_remaining(queue, args.log_dir, args.workers, args.pilot)
+        else:
+            shares = partition_remaining(queue, args.log_dir, args.workers, args.pilot,
+                                         through_index=args.through_index)
+            log.info("--through-index %d: only queue items 0..%d this run", args.through_index, args.through_index)
         log.info("%d items left; shares %s", sum(len(x) for x in shares), [len(x) for x in shares])
         clear_exit_markers(args.log_dir)
         ctx = mp_.get_context("spawn")
@@ -901,7 +994,7 @@ def main(argv: list[str] | None = None) -> int:
                     outcome = OUTCOME_FAILED
                 outcomes.append(outcome)
                 exit_marker(args.log_dir, w).write_text(outcome + "\n")
-        final = final_status(outcomes)
+        final = final_status(outcomes) if args.through_index is None else final_status(outcomes, through=True)
         return EXIT_CODES[final]
     finally:
         status_path.write_text(final + "\n")
@@ -909,6 +1002,8 @@ def main(argv: list[str] | None = None) -> int:
             log.info("collector finished: %s (spent $%.2f)", final, spent_usd(args.log_dir))
         except Exception as err:  # noqa: BLE001 -- a summary line must never mask the real error
             log.warning("collector finished: %s (could not sum spend: %r)", final, err)
+        if het:
+            _release_het_lock(HET_LOCK_PATH)
         _release_lock(lock_path)
 
 

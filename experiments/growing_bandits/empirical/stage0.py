@@ -17,12 +17,21 @@ arms are not exchangeable draws from the same generic-prompt pool that `tau` cha
 
 `analyze_cell` composes `heterogeneity`'s Task 2 functions: `tau_interval` (Graybill-Wang MLS 95% CI,
 replacing the removed `two_way_bootstrap` -- see `heterogeneity.py`'s module docstring and
-task-2-report.md fix round 1) for tau's interval, `split_half` for model-free reliability, and
+task-2-report.md fix round 1) for tau_main's interval, `split_half` for model-free reliability, and
 `variance_components` restricted to `discriminating_tasks` for tau computed on the subset of tasks that
 actually separate prompts (NaN if fewer than 2 such tasks -- `variance_components` needs at least 2
 columns). The upper-tail mass is an NPMLE (`cold_start.growing.empirical.npmle`) on row (prompt) means
 with per-row measurement variance `sigma_i^2 = MS_resid / J`: the share of posterior mass at or above
 (weighted median + 0.10), i.e. prompts plausibly at least 0.10 better than the pool's typical prompt.
+
+Fix round 1 (spec amendment 1d0e7b4): the study reports two heterogeneity quantities (design doc SS2 /
+SS6.1) -- `tau_main` (== `analyze_cell`'s original `tau`, the SD of the prompt main effect alone,
+generalizes to new tasks, used for H1/H2/H4) and `tau_set` (main effect plus the prompt x task
+interaction averaged over the study's own task set -- what a replay reservoir built from this cell
+represents, used for the SS6.5 flat rule). `tau_set_interval` needs the execution-noise variance off the
+cell's own replicate pairs (`heterogeneity.noise_from_pairs`, forwarded here as `noise_var`/`noise_df`):
+the Gmail pools have them (`_gmail_rows`); the old GitLab paired run has one run per cell, no
+replicates, so its rows report `tau_set` (and its interval) as NaN.
 """
 
 from __future__ import annotations
@@ -74,16 +83,26 @@ def analyze_cell(
     task_ids: list[str],
     *,
     noise_var: float | None = None,
+    noise_df: int | None = None,
     n_imputed: int = 0,
     row_counts: np.ndarray | None = None,
     seed: int = 0,
 ) -> dict:
-    """Variance components + tau's 95% MLS interval (`tau_interval`) + split-half reliability +
-    discriminating-task tau + upper-tail NPMLE mass, for one (prompt x task) cell.
+    """Variance components + tau_main's 95% MLS interval (`tau_interval`) + tau_set's 95% MLS interval
+    (`tau_set_interval`, spec amendment 1d0e7b4) + split-half reliability + discriminating-task tau +
+    upper-tail NPMLE mass, for one (prompt x task) cell.
 
-    Controller ruling (2026-09-28, task-3): tau's interval comes from `heterogeneity.tau_interval`
+    Controller ruling (2026-09-28, task-3): tau_main's interval comes from `heterogeneity.tau_interval`
     (Graybill-Wang MLS), not a bootstrap -- `two_way_bootstrap` was removed for bias (task-2-report.md
     fix round 1); a single cell needs no `n_boot`.
+
+    Controller ruling (2026-09-28, fix round 1): the study reports two heterogeneity quantities --
+    `tau_main` (== `tau`, kept for backward compatibility: the prompt main effect, generalizes to new
+    tasks, used for H1/H2/H4) and `tau_set` (main effect plus the interaction averaged over this
+    study's own task set -- what a replay reservoir built from this cell represents, used for the
+    SS6.5 flat rule). `tau_set`'s four keys are NaN unless both `noise_var` (finite) and `noise_df`
+    (>= 1) are given -- the GitLab paired run has no replicates, so it has no execution-noise estimate
+    to build `tau_set` from and reports `tau_set` as NaN.
     """
     Y = np.asarray(Y, dtype=float)
     I, J = Y.shape
@@ -91,10 +110,34 @@ def analyze_cell(
     iv = het.tau_interval(Y, n_imputed=n_imputed, row_counts=row_counts)
     sh = het.split_half(Y, task_ids, seed=seed)
 
+    if noise_var is not None and np.isfinite(noise_var) and noise_df is not None and noise_df >= 1:
+        ts = het.tau_set_interval(Y, noise_var, noise_df, n_imputed=n_imputed, row_counts=row_counts)
+    else:
+        ts = {"tau_set": float("nan"), "tau_set_lo": float("nan"),
+              "tau_set_hi": float("nan"), "tau_set_upper_one_sided": float("nan")}
+
     mask = het.discriminating_tasks(Y)
     n_discriminating = int(mask.sum())
     if n_discriminating >= 2:
-        tau_discriminating = het.variance_components(Y[:, mask])["tau"]
+        Y_sub = Y[:, mask]
+        if n_imputed and row_counts is not None:
+            # `analyze_cell` only has the aggregate per-row `row_counts` from `success_matrix`, not
+            # its cell-level missing mask, so the exact number of a row's imputed cells that fall
+            # inside the discriminating subset isn't recoverable here. Approximate assuming
+            # missingness is uniform across a row's J columns (reasonable given success_matrix's
+            # <=5% imputation ceiling): scale each row's observed-cell count to the subset size,
+            # clipped to at least 1 so mean(J_sub / row_counts_sub) stays finite. `n_imputed` for the
+            # subset is derived from the same rounded counts so the two stay consistent (identity:
+            # n_imputed = I*J - sum(row_counts), preserved after rounding).
+            row_counts_arr = np.asarray(row_counts, dtype=float)
+            row_counts_sub = np.clip(
+                np.round(row_counts_arr * (n_discriminating / J)), 1, n_discriminating
+            ).astype(int)
+            n_imputed_sub = int(I * n_discriminating - row_counts_sub.sum())
+            tau_discriminating = het.variance_components(
+                Y_sub, n_imputed=n_imputed_sub, row_counts=row_counts_sub)["tau"]
+        else:
+            tau_discriminating = het.variance_components(Y_sub)["tau"]
     else:
         tau_discriminating = float("nan")
 
@@ -106,9 +149,14 @@ def analyze_cell(
 
     return {
         "tau": iv["tau"],
+        "tau_main": iv["tau"],
         "tau_lo": iv["tau_lo"],
         "tau_hi": iv["tau_hi"],
         "tau_upper_one_sided": iv["tau_upper_one_sided"],
+        "tau_set": ts["tau_set"],
+        "tau_set_lo": ts["tau_set_lo"],
+        "tau_set_hi": ts["tau_set_hi"],
+        "tau_set_upper_one_sided": ts["tau_set_upper_one_sided"],
         "task_var": vc["task_var"],
         "interaction_var": vc["interaction_var"],
         "noise_var": vc["noise_var"],
@@ -144,7 +192,8 @@ def _gmail_rows() -> list[dict]:
         Y, arm_ids, task_ids, n_imputed, row_counts = het.success_matrix(outcomes, pool)
         noise_var, n_pairs = het.noise_from_pairs(outcomes, pool)
         nv = None if not np.isfinite(noise_var) else noise_var
-        out = analyze_cell(Y, task_ids, noise_var=nv, n_imputed=n_imputed, row_counts=row_counts, seed=0)
+        out = analyze_cell(Y, task_ids, noise_var=nv, noise_df=n_pairs, n_imputed=n_imputed,
+                            row_counts=row_counts, seed=0)
         out["pool"] = pool
         out["n_noise_pairs"] = n_pairs
         rows.append(out)

@@ -33,6 +33,29 @@ def test_analyze_cell_fields_and_interval():
     assert out["tau_lo"] <= out["tau"] <= out["tau_hi"]
 
 
+def test_analyze_cell_reports_tau_set_when_noise_df_is_given():
+    """Spec amendment 1d0e7b4 (fix round 1): tau_set's four keys are finite when both `noise_var` and
+    `noise_df` are given, NaN otherwise; `tau_main` is an alias for `tau`."""
+    rng = np.random.default_rng(1)
+    p = np.clip(0.6 + rng.normal(0, 0.08, 40)[:, None] + rng.normal(0, 0.3, 30)[None, :], 0.02, 0.98)
+    Y = (rng.random(p.shape) < p).astype(float)
+    tasks = [f"task_{'emh'[j % 3]}{j}" for j in range(30)]
+
+    with_noise = stage0.analyze_cell(Y, tasks, noise_var=0.1, noise_df=200, seed=1)
+    for k in ("tau_set", "tau_set_lo", "tau_set_hi", "tau_set_upper_one_sided"):
+        assert np.isfinite(with_noise[k])
+    assert with_noise["tau_set_lo"] <= with_noise["tau_set"] <= with_noise["tau_set_hi"]
+    assert with_noise["tau_main"] == with_noise["tau"]
+
+    without_df = stage0.analyze_cell(Y, tasks, noise_var=0.1, seed=1)
+    for k in ("tau_set", "tau_set_lo", "tau_set_hi", "tau_set_upper_one_sided"):
+        assert np.isnan(without_df[k])
+
+    without_noise = stage0.analyze_cell(Y, tasks, seed=1)
+    for k in ("tau_set", "tau_set_lo", "tau_set_hi", "tau_set_upper_one_sided"):
+        assert np.isnan(without_noise[k])
+
+
 def test_analyze_cell_tau_discriminating_is_nan_with_fewer_than_two_discriminating_tasks():
     """Controller ruling: tau on discriminating tasks is variance_components on the column-subset;
     if fewer than 2 discriminating tasks, report NaN (variance_components needs >= 2 columns)."""

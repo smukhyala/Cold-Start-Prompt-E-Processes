@@ -1,6 +1,14 @@
 """Keep the empirical-pool collector alive unattended.
 
     .venv/bin/python scripts/watchdog_empirical_pool.py [--pilot] [--workers 8] [--budget 40]
+    .venv/bin/python scripts/watchdog_empirical_pool.py --profile gitlab --budget USD [--pilot]
+
+``--profile`` (default ``prereg9``) is forwarded to the collector, and the watchdog's own
+LOG_DIR -- STATUS, ``collect.lock``, the worker files, RELAUNCH_LOG -- follows it:
+``logs/empirical_pool`` for ``prereg9``, ``logs/heterogeneity/<profile>`` otherwise (passed
+to the collector as ``--log-dir`` too, so the two can never watch different directories).
+A heterogeneity profile needs an explicit ``--budget``. ``--print-log-dir`` prints that
+directory and exits without touching anything (the launcher uses it).
 
 Every POLL_SECONDS:
 
@@ -35,6 +43,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT / "logs" / "empirical_pool"
+HET_LOG_ROOT = ROOT / "logs" / "heterogeneity"
+DEFAULT_PROFILE = "prereg9"
+#: collect.py's `PROFILES` (kept stdlib-only here; tests assert the two agree).
+PROFILE_NAMES = ("prereg9", "gitlab", "gmail", "bridge")
 COLLECT = ROOT / "experiments" / "growing_bandits" / "empirical" / "collect.py"
 POLL_SECONDS = 120
 STALL_MINUTES = 30.0
@@ -225,12 +237,24 @@ def _kill_and_wait_process(proc: subprocess.Popen) -> None:
             pass
 
 
-def collector_args(workers: int, pilot: bool, budget: float | None) -> list[str]:
+def profile_log_dir(profile: str) -> Path:
+    """Where `profile`'s collector writes (collect.py's ``PROFILES[profile]["log_dir"]``)."""
+    if profile not in PROFILE_NAMES:
+        raise ValueError(f"unknown profile {profile!r}; expected one of {PROFILE_NAMES}")
+    return LOG_DIR if profile == DEFAULT_PROFILE else HET_LOG_ROOT / profile
+
+
+def collector_args(workers: int, pilot: bool, budget: float | None, profile: str = DEFAULT_PROFILE,
+                   log_dir: Path | None = None) -> list[str]:
+    """collect.py's arguments. ``prereg9`` forwards exactly what it always did; any other
+    profile adds ``--profile`` and ``--log-dir`` (the directory this watchdog watches)."""
     extra = ["--workers", str(workers)]
     if budget is not None:
         extra += ["--budget", str(budget)]
     if pilot:
         extra.append("--pilot")
+    if profile != DEFAULT_PROFILE:
+        extra += ["--profile", profile, "--log-dir", str(log_dir if log_dir is not None else profile_log_dir(profile))]
     return extra
 
 
@@ -239,29 +263,37 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pilot", action="store_true")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--budget", type=float, default=None, help="forwarded to collect.py (its default otherwise)")
+    ap.add_argument("--profile", choices=PROFILE_NAMES, default=DEFAULT_PROFILE, help="forwarded to collect.py")
+    ap.add_argument("--print-log-dir", action="store_true", help="print this profile's log dir and exit")
     args = ap.parse_args(argv)
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    (LOG_DIR / RELAUNCH_LOG).touch()  # its existence is how gate G2 knows a watchdog supervised the run
+    if args.profile != DEFAULT_PROFILE and args.budget is None:
+        ap.error(f"--profile {args.profile} needs an explicit --budget USD (the collector has no default for it)")
+    log_dir = profile_log_dir(args.profile)
+    if args.print_log_dir:
+        print(log_dir)
+        return 0
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / RELAUNCH_LOG).touch()  # its existence is how gate G2 knows a watchdog supervised the run
     mode = "pilot" if args.pilot else "full"
-    extra = collector_args(args.workers, args.pilot, args.budget)
+    extra = collector_args(args.workers, args.pilot, args.budget, args.profile, log_dir)
     proc: subprocess.Popen | None = None
-    _kill_orphaned_lock_holder(LOG_DIR)  # orphans of a PREVIOUS watchdog session/process
+    _kill_orphaned_lock_holder(log_dir)  # orphans of a PREVIOUS watchdog session/process
     _ensure_previous_dead(proc)  # a no-op here (no `proc` yet): kept for the "every launch" invariant
-    _prepare_launch(LOG_DIR)
-    proc = _launch(extra, LOG_DIR)
+    _prepare_launch(log_dir)
+    proc = _launch(extra, log_dir)
     now = time.time()
-    relaunches, last_lines, last_progress = 0, line_count(LOG_DIR), now
+    relaunches, last_lines, last_progress = 0, line_count(log_dir), now
     clocks = WorkerClocks(args.workers, now)
     while True:
         time.sleep(POLL_SECONDS)
         now = time.time()
-        lines = line_count(LOG_DIR)
+        lines = line_count(log_dir)
         if lines != last_lines:
             last_lines, last_progress = lines, now
-        clocks.observe(worker_sizes(LOG_DIR, args.workers), now)
-        status = _status(LOG_DIR)
+        clocks.observe(worker_sizes(log_dir, args.workers), now)
+        status = _status(log_dir)
         alive = proc.poll() is None
-        stale = clocks.stale(now, finished_workers(LOG_DIR)) if alive and status == "running" else ()
+        stale = clocks.stale(now, finished_workers(log_dir)) if alive and status == "running" else ()
         action = decide(status, alive, (now - last_progress) / 60.0, stale)
         if action == "finished":
             if status == "provider_down":
@@ -274,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
         if action == "wait":
             continue
         if relaunches >= MAX_RELAUNCHES:
-            (LOG_DIR / "WATCHDOG_GAVE_UP").write_text(f"{relaunches} relaunches\n")
+            (log_dir / "WATCHDOG_GAVE_UP").write_text(f"{relaunches} relaunches\n")
             return 1
         if action == "kill_and_relaunch" and proc.poll() is None:
             _kill_and_wait_process(proc)
@@ -285,10 +317,10 @@ def main(argv: list[str] | None = None) -> int:
             reason = "stale_workers:" + ",".join(str(w) for w in stale)
         else:
             reason = "global_stall"
-        _record_relaunch(LOG_DIR, relaunches, reason, mode)
+        _record_relaunch(log_dir, relaunches, reason, mode)
         _ensure_previous_dead(proc)
-        _prepare_launch(LOG_DIR)
-        proc = _launch(extra, LOG_DIR)
+        _prepare_launch(log_dir)
+        proc = _launch(extra, log_dir)
         last_progress = time.time()
         clocks.restart(last_progress)
 

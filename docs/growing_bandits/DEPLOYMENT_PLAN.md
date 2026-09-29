@@ -1008,3 +1008,40 @@ scripts/run_empirical_pool.sh --profile bridge --budget <B5>
 .venv/bin/python experiments/growing_bandits/empirical/het_verdicts.py --tau-flat 0.019165515325428883
 .venv/bin/python -c "import sys; sys.path.insert(0, 'experiments/growing_bandits/empirical'); import figures; from pathlib import Path; figures.make_figures(Path('results/growing_bandits/heterogeneity'), Path('results/growing_bandits/heterogeneity/figures'), tau_flat=0.019165515325428883)"
 ```
+
+### Pre-registration 10 — Amendment 1 (2026-09-29, after a paused pilot, before any analysis)
+
+**Why.** The GitLab pilot was paused at 176 of 390 episodes ($21.26, 0 watchdog relaunches, 0 non-ok
+records, $0.12 per episode) because the registered agent step cap has never been enforced.
+`src/cold_start/tasks/webarena.py:156` passes `max_steps` to the `browser_use.Agent(...)` constructor,
+which accepts arbitrary keyword arguments and ignores that one; the cap belongs to `Agent.run(max_steps=)`,
+whose default in browser-use 0.13.1 is 500. The bug dates from the adapter's first commit (`fde1f56`), so
+**Pre-registration 9 ran under the same condition**: its "30 steps" was also never applied. In every
+collected dataset the wall clock is the only bound on an episode.
+
+**Evidence, measured before this amendment.** Pre-reg 9 (Gmail, 180 s): 152 of 3,330 episodes (4.6%)
+exceeded 30 steps without reaching the clock; 53 of them succeeded. GitLab pilot (600 s): 25 of 168
+exceeded 30 steps (14.9%, up to 134); 20 succeeded; the pooled success rate would be ≈ 0.70 instead of
+0.815 had they been cut at 30. `ended_by` therefore never reports `steps`. Secondary: 5 pilot episodes
+ended 10–140 s past the 600 s clock without `timed_out`, because `asyncio.wait_for` cannot cancel a
+coroutine inside a blocking call; they are ordinary agent-ended episodes and are kept.
+
+**Disclosure.** While diagnosing, the controller saw the pilot's aggregate success rate (0.815 over 168
+ok records), success by step bucket (≤ 30 steps vs > 30), cost and clock-ended counts by task tier
+(e/m/h), record counts by pool (GLG 60, GLK 53, anchor 38 at that time), and the same aggregates for
+Pre-reg 9. No per-prompt rate, per-arm success, τ, reservoir, K-grid, anchor ordering or contrast was
+computed. Sanjay chose this amendment over fixing the cap and rerunning.
+
+**What changes.**
+- **Agent:** the "30 steps" clause is struck. The registered agent is `gpt-5.4-mini`, low effort, no vision,
+  browser-use 0.13.1 with its default `max_steps` (500, never reached in any collected episode), bounded
+  only by the profile wall clock (GitLab 600 s, Gmail 180 s, bridge 600 s). This is what Pre-reg 9 actually
+  ran, so H1's "same agent, same 50 G prompts" pairing holds on actual rather than nominal conditions.
+- **Code:** the adapter is left as is for the whole Pre-reg 10 collection (fixing it mid-study would split
+  the data). The fix (`agent.run(max_steps=self.max_steps)`) is filed for after the collection.
+- **Pilot records:** the 176 records collected before the pause count in full; the 8 episodes in flight at
+  the pause were not written and are re-attempted on resume. The run resumes from STATUS `paused` with the
+  same command and budget; gate G2 is unchanged (0 relaunches so far, `relaunches.log` empty).
+- **Timeout sensitivity (§ Statistics):** unchanged — clock-ended episodes are the registered sensitivity;
+  no step-based sensitivity is added.
+- **Write-up:** §13 gains a note that Pre-reg 9's agent had no step cap; §14 states the same for this study.

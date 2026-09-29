@@ -477,8 +477,10 @@ def test_pilot_gate_anchor_order_fails_without_ok_anchor_episodes():
 
 def test_gitlab_pilot_reports_the_baseline_anchor_without_a_drift_test():
     g = _gitlab_pilot(_pilot_rows(20, 5))
-    check = g.checks["anchor_baseline_rate"]
-    assert check["passed"] and "15/30" in check["detail"] and "not gated" in check["detail"]
+    assert "anchor_baseline_rate" not in g.checks  # a report line, never a check
+    note = g.notes["anchor_baseline_rate"]
+    assert "15/30" in note and "not gated" in note
+    assert "[--] anchor_baseline_rate: " in g.report()
 
 
 def test_gitlab_pilot_cost_limit_is_025():
@@ -527,7 +529,8 @@ def test_collection_gate_per_pool_counts_never_attempted_items():
     assert g.checks["missing_rate[GLG]"]["passed"]
 
 
-def test_gmail_collection_gate_tests_the_anchor_for_drift():
+def test_gmail_collection_gate_reports_the_anchor_drift_without_gating_on_it():
+    """Fix round 1 ruling: G3 is coverage (spec 4.5); the Gmail anchor's drift is a report line."""
     rows = []
     for j in range(30):
         rows.append({"pool": "anchor", "arm_id": "GM_anchor_baseline", "task_id": f"t{j}", "replicate": 0,
@@ -535,9 +538,13 @@ def test_gmail_collection_gate_tests_the_anchor_for_drift():
     frame = pd.DataFrame(rows)
     cfg = gates.GATE_PROFILES["gmail"]["collection"]
     g = gates.collection_gate(frame, _queue_of(frame, pilot=False), **cfg)
-    assert g.checks["anchor_drift"]["passed"], g.report()
+    assert "anchor_drift" not in g.checks and g.passed, g.report()
+    assert "20/30" in g.notes["anchor_drift"] and "inside" in g.notes["anchor_drift"]
     frame["success"] = [int(j < 8) for j in range(30)]
-    assert not gates.collection_gate(frame, _queue_of(frame, pilot=False), **cfg).checks["anchor_drift"]["passed"]
+    g = gates.collection_gate(frame, _queue_of(frame, pilot=False), **cfg)
+    assert g.passed, g.report()  # a drifted anchor is reported, never fails G3
+    assert "8/30" in g.notes["anchor_drift"] and "OUTSIDE" in g.notes["anchor_drift"]
+    assert "not gated" in g.notes["anchor_drift"]
 
 
 def test_gate_cli_paths_follow_the_profile(tmp_path):
@@ -565,6 +572,18 @@ def test_gate_cli_runs_the_gitlab_pilot_gate(tmp_path, capsys):
     assert "anchor_order" in out and "anchor_drift" not in out and "limit $0.25" in out
 
 
+def test_gate_cli_judges_the_pilot_against_the_workers_it_ran_with(tmp_path, capsys):
+    frame = _pilot_rows(20, 5, workers=4)
+    logs, queue_path = tmp_path / "logs", tmp_path / "queue.jsonl"
+    _write_logs(logs, frame)
+    (logs / "relaunches.log").touch()
+    mp.write_queue(queue_path, _queue_of(frame))
+    base = ["pilot", "--profile", "gitlab", "--log-dir", str(logs), "--queue", str(queue_path)]
+    assert gates.main(base) == 1  # default --workers 8: workers 4-7 produced nothing
+    assert "every_worker_produced" in capsys.readouterr().out
+    assert gates.main(base + ["--workers", "4"]) == 0, capsys.readouterr().out
+
+
 def test_gate_cli_has_no_pilot_for_gmail_or_bridge(tmp_path, capsys):
     for name in ("gmail", "bridge"):
         code = gates.main(["pilot", "--profile", name, "--log-dir", str(tmp_path), "--queue", str(tmp_path / "q")])
@@ -579,3 +598,46 @@ def test_gate_cli_collection_is_per_cell_for_a_heterogeneity_profile(tmp_path, c
     mp.write_queue(queue_path, _queue_of(frame, pilot=False))
     assert gates.main(["collection", "--profile", "gitlab", "--log-dir", str(logs), "--queue", str(queue_path)]) == 1
     assert "missing_rate[GLG]" in capsys.readouterr().out
+
+
+# ---- fix round 1: the worker stall limit follows the profile's wall clock --------------------
+
+
+def test_worker_stall_limit_per_profile():
+    assert wd.worker_stall_minutes("prereg9") == 15.0 == wd.WORKER_STALL_MINUTES  # Pre-reg 9 unchanged
+    assert wd.worker_stall_minutes("gmail") == 15.0
+    assert wd.worker_stall_minutes("gitlab") == 25.0
+    assert wd.worker_stall_minutes("bridge") == 25.0
+    # every 600 s profile of the collector gets the long limit, every 180 s one the short
+    for name, spec in collect.PROFILES.items():
+        expected = 25.0 if spec["agent"]["timeout_s"] == 600 else 15.0
+        assert wd.worker_stall_minutes(name) == expected, name
+
+
+def test_a_17_minute_gap_is_stale_for_gmail_but_not_for_gitlab():
+    gap = 17 * 60.0
+    gitlab = wd.WorkerClocks(2, now=0.0, stall_minutes=wd.worker_stall_minutes("gitlab"))
+    gmail = wd.WorkerClocks(2, now=0.0, stall_minutes=wd.worker_stall_minutes("gmail"))
+    for clocks in (gitlab, gmail):
+        clocks.observe({0: 100, 1: 100}, now=0.0)
+    assert gitlab.stale(gap, exempt=set()) == ()
+    assert gmail.stale(gap, exempt=set()) == (0, 1)
+    assert gitlab.stale(26 * 60.0, exempt=set()) == (0, 1)  # a truly hung GitLab worker is still caught
+
+
+def test_watchdog_main_uses_the_profiles_stall_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(wd, "HET_LOG_ROOT", tmp_path / "het")
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    made = []
+    real = wd.WorkerClocks
+
+    def spy(n_workers, now, stall_minutes=None):
+        made.append(stall_minutes)
+        return real(n_workers, now, stall_minutes=stall_minutes)
+
+    monkeypatch.setattr(wd, "WorkerClocks", spy)
+    monkeypatch.setattr(wd, "_launch", lambda extra, log_dir_: _proc(True))
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "done")
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+    assert wd.main(["--profile", "bridge", "--budget", "5", "--workers", "2"]) == 0
+    assert made == [25.0]

@@ -21,7 +21,10 @@ Every POLL_SECONDS:
   relaunch. A worker whose ``worker_<w>.exit`` says it finished (done/budget/provider_down)
   is exempt; a worker file that does not exist yet counts as fresh until the collector has
   been up for WORKER_STALL_MINUTES. One hung worker is therefore caught on its own, not only
-  once every worker hangs.
+  once every worker hangs. The limit follows the profile's wall clock (`worker_stall_minutes`):
+  WORKER_STALL_MINUTES (15) for the 180 s profiles, WORKER_STALL_MINUTES_LONG (25) for the
+  600 s ones, whose healthy worker can go ~17 minutes without an append (a 300 s provider
+  backoff, a recovery, then a 600 s episode).
 
 Before every launch it writes STATUS ``launching`` (treated like ``running``), so a STATUS
 left ``done`` by an earlier run -- e.g. the pilot -- can never make a fresh launch that dies
@@ -51,6 +54,10 @@ COLLECT = ROOT / "experiments" / "growing_bandits" / "empirical" / "collect.py"
 POLL_SECONDS = 120
 STALL_MINUTES = 30.0
 WORKER_STALL_MINUTES = 15.0
+#: Profiles whose agent wall clock is 600 s (collect.py's `PROFILES`): provider backoff (300 s)
+#: + recovery (~20-100 s) + one episode (600 s) + a poll (120 s) can exceed 15 minutes.
+WORKER_STALL_MINUTES_LONG = 25.0
+LONG_CLOCK_PROFILES = ("gitlab", "bridge")
 MAX_RELAUNCHES = 20
 RELAUNCH_LOG = "relaunches.log"
 FINISHED = ("done", "budget", "provider_down")
@@ -104,12 +111,20 @@ def finished_workers(log_dir: Path) -> set[int]:
     return out
 
 
-class WorkerClocks:
-    """When each worker's log last grew; every clock restarts at each (re)launch."""
+def worker_stall_minutes(profile: str) -> float:
+    """How long one worker's log may stay unchanged before it counts as hung, for `profile`."""
+    return WORKER_STALL_MINUTES_LONG if profile in LONG_CLOCK_PROFILES else WORKER_STALL_MINUTES
 
-    def __init__(self, n_workers: int, now: float) -> None:
+
+class WorkerClocks:
+    """When each worker's log last grew; every clock restarts at each (re)launch.
+
+    `stall_minutes` ``None`` means WORKER_STALL_MINUTES (read at each `stale` call)."""
+
+    def __init__(self, n_workers: int, now: float, stall_minutes: float | None = None) -> None:
         self.size: dict[int, int | None] = {w: None for w in range(n_workers)}
         self.grew_at: dict[int, float] = {w: now for w in range(n_workers)}
+        self.stall_minutes = stall_minutes
 
     def restart(self, now: float) -> None:
         for w in self.grew_at:
@@ -123,7 +138,7 @@ class WorkerClocks:
                     self.grew_at[w] = now
 
     def stale(self, now: float, exempt: set[int]) -> tuple[int, ...]:
-        limit = WORKER_STALL_MINUTES * 60.0
+        limit = (WORKER_STALL_MINUTES if self.stall_minutes is None else self.stall_minutes) * 60.0
         return tuple(w for w, t in sorted(self.grew_at.items()) if w not in exempt and now - t > limit)
 
 
@@ -283,7 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     proc = _launch(extra, log_dir)
     now = time.time()
     relaunches, last_lines, last_progress = 0, line_count(log_dir), now
-    clocks = WorkerClocks(args.workers, now)
+    clocks = WorkerClocks(args.workers, now, stall_minutes=worker_stall_minutes(args.profile))
     while True:
         time.sleep(POLL_SECONDS)
         now = time.time()

@@ -15,9 +15,11 @@ requires zero watchdog relaunches during the pilot (read from the watchdog's
 `PROFILES`) and the thresholds. Heterogeneity study (spec 4.5): the pilot is GitLab only --
 cost <= $0.25/episode and anchor order ``GL_anchor_oracle`` > ``GL_anchor_explorer`` on the
 pilot items, plus the Pre-reg 9 coverage/relaunch/worker checks. ``GL_anchor_baseline`` has no
-historical rate under this agent, so it gets no drift test: its pilot rate is reported, not
-gated. G3 checks missing <= 5% per pool (cell) as well as overall; the gmail profile's G3 also
-tests ``GM_anchor_baseline`` for drift against Pre-reg 9's 0.66 (the gmail profile has no pilot).
+historical rate under this agent, so it gets no drift test: its pilot rate is a report line
+(``[--]``), not a check. G3 checks missing <= 5% per pool (cell) as well as overall; the gmail
+profile's G3 also *reports* ``GM_anchor_baseline`` against Pre-reg 9's 0.66 interval (G3 is
+coverage, spec 4.5, so drift never fails it; the gmail profile has no pilot). ``--workers``
+(default 8) is the worker count the pilot ran with, for ``every_worker_produced``.
 """
 
 from __future__ import annotations
@@ -78,6 +80,8 @@ GATE_PROFILES: dict[str, dict] = {
 class GateResult:
     name: str
     checks: dict[str, dict] = field(default_factory=dict)
+    #: Report-only lines: printed with the verdict, never part of it.
+    notes: dict[str, str] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -86,9 +90,13 @@ class GateResult:
     def add(self, key: str, passed: bool, detail: str) -> None:
         self.checks[key] = {"passed": bool(passed), "detail": detail}
 
+    def note(self, key: str, detail: str) -> None:
+        self.notes[key] = detail
+
     def report(self) -> str:
         lines = [f"{self.name}: {'PASS' if self.passed else 'FAIL'}"]
         lines += [f"  [{'ok' if c['passed'] else 'XX'}] {k}: {c['detail']}" for k, c in self.checks.items()]
+        lines += [f"  [--] {k}: {detail}" for k, detail in self.notes.items()]
         return "\n".join(lines)
 
 
@@ -138,13 +146,19 @@ def _rate(ok: pd.DataFrame, arm: str) -> tuple[int, int]:
     return int(rows["success"].astype(int).sum()), len(rows)
 
 
-def _anchor_drift(g: GateResult, ok: pd.DataFrame, anchor_arm: str, anchor_rate: float) -> None:
+def _drift(ok: pd.DataFrame, anchor_arm: str, anchor_rate: float) -> tuple[bool, str]:
+    """(within the historical rate's 95% binomial interval, detail) for `anchor_arm`."""
     k, n = _rate(ok, anchor_arm)
     lo = stats.binom.ppf(0.025, n, anchor_rate) / max(n, 1)
     hi = stats.binom.ppf(0.975, n, anchor_rate) / max(n, 1)
     rate = k / max(n, 1)
-    g.add("anchor_drift", n > 0 and lo <= rate <= hi,
-          f"anchor {k}/{n} = {rate:.3f}; historical {anchor_rate} gives [{lo:.3f}, {hi:.3f}]")
+    return (n > 0 and lo <= rate <= hi,
+            f"anchor {k}/{n} = {rate:.3f}; historical {anchor_rate} gives [{lo:.3f}, {hi:.3f}]")
+
+
+def _anchor_drift(g: GateResult, ok: pd.DataFrame, anchor_arm: str, anchor_rate: float) -> None:
+    within, detail = _drift(ok, anchor_arm, anchor_rate)
+    g.add("anchor_drift", within, detail)
 
 
 def count_relaunches(path: Path, mode: str | None = None) -> int | None:
@@ -164,8 +178,8 @@ def pilot_gate(attempts: pd.DataFrame, queue: list[make_pools.QueueItem], *, n_w
                anchor_arm: str | None, anchor_rate: float | None, relaunches: int | None,
                max_cost: float = MAX_COST_PER_EPISODE, max_missing: float = MAX_MISSING,
                anchor_order: tuple[str, str] | None = None) -> GateResult:
-    """G2. `anchor_rate` None: `anchor_arm` has no historical rate, so its pilot rate is
-    reported (``anchor_baseline_rate``, never failing) instead of drift-tested. `anchor_order`
+    """G2. `anchor_rate` None: `anchor_arm` has no historical rate, so its pilot rate is a
+    report line (note ``anchor_baseline_rate``) instead of a drift check. `anchor_order`
     ``(a, b)``: adds ``anchor_order``, passing iff a's success rate > b's on the pilot items."""
     g = GateResult("G2 pilot")
     queue_keys = {(q.arm_id, q.task_id, q.replicate) for q in queue}
@@ -187,9 +201,9 @@ def pilot_gate(attempts: pd.DataFrame, queue: list[make_pools.QueueItem], *, n_w
         _anchor_drift(g, ok, anchor_arm, anchor_rate)
     elif anchor_arm is not None:
         k, n = _rate(ok, anchor_arm)
-        g.add("anchor_baseline_rate", True,
-              f"{anchor_arm} {k}/{n} = {k / max(n, 1):.3f} on the pilot items (no historical rate under this "
-              "agent: reported, not gated)")
+        g.note("anchor_baseline_rate",
+               f"{anchor_arm} {k}/{n} = {k / max(n, 1):.3f} on the pilot items (no historical rate under this "
+               "agent: reported, not gated)")
     if anchor_order is not None:
         first, second = anchor_order
         k1, n1 = _rate(ok, first)
@@ -204,7 +218,8 @@ def collection_gate(attempts: pd.DataFrame, queue: list[make_pools.QueueItem], *
                     max_missing: float = MAX_MISSING, per_pool: bool = False, anchor_arm: str | None = None,
                     anchor_rate: float | None = None) -> GateResult:
     """G3. `per_pool`: missing <= `max_missing` in every pool (cell) too, not only overall.
-    `anchor_arm` + `anchor_rate`: drift-test that anchor over all its replicate-0 items."""
+    `anchor_arm` + `anchor_rate`: report (note ``anchor_drift``, never a check -- G3 is coverage)
+    whether that anchor's replicate-0 rate is inside the historical rate's 95% interval."""
     g = GateResult("G3 collection")
     keys = {(q.arm_id, q.task_id, q.replicate) for q in queue}
     pools: dict[str, set[Key]] | None = None
@@ -216,7 +231,8 @@ def collection_gate(attempts: pd.DataFrame, queue: list[make_pools.QueueItem], *
     _coverage(g, terminal, keys, keys, max_missing, pools)
     if anchor_arm is not None and anchor_rate is not None:
         ok = _in(terminal, keys)
-        _anchor_drift(g, ok[ok["status"] == emp.STATUS_OK], anchor_arm, anchor_rate)
+        within, detail = _drift(ok[ok["status"] == emp.STATUS_OK], anchor_arm, anchor_rate)
+        g.note("anchor_drift", f"{detail}: {'inside' if within else 'OUTSIDE'} (reported, not gated)")
     return g
 
 
@@ -250,6 +266,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--log-dir", type=Path, default=None, help="default: the profile's log dir")
     ap.add_argument("--queue", type=Path, default=None, help="default: the profile's queue.jsonl")
     ap.add_argument("--relaunch-log", type=Path, default=None, help="default: <log-dir>/relaunches.log")
+    ap.add_argument("--workers", type=int, default=N_WORKERS,
+                    help="the worker count the pilot ran with (every one must produce an ok episode)")
     args = ap.parse_args(argv)
     cfg = GATE_PROFILES[args.profile]
     if args.gate == "pilot" and cfg["pilot"] is None:
@@ -260,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     queue = make_pools.read_queue(queue_path)
     if args.gate == "pilot":
         relaunches = count_relaunches(args.relaunch_log or log_dir / RELAUNCH_LOG, mode="pilot")
-        g = pilot_gate(attempts, queue, n_workers=N_WORKERS, relaunches=relaunches, **cfg["pilot"])
+        g = pilot_gate(attempts, queue, n_workers=args.workers, relaunches=relaunches, **cfg["pilot"])
     else:
         g = collection_gate(attempts, queue, **cfg["collection"])
     print(g.report())

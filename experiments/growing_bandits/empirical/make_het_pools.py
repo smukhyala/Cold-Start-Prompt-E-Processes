@@ -43,7 +43,14 @@ writes, under ``data/heterogeneity/``:
   ``gmail_queue``, ``bridge_queue``).
 - ``manifest.json`` -- sha256 of every file above (plus each bundle's included-file list
   with hashes, each app's real-tasks.json sha256, its frozen entity-set hash, the bundle
-  word cap, and the derived block seed), task subsets, seeds, and ``bridge_source``.
+  word cap, and the derived block seed), task subsets (including ``gitlab_block_a``, the
+  block-A fallback universe), seeds, ``bridge_source``, ``gitlab_stage_ends`` (the queue index
+  at which the pilot and block A plus its replicates end -- ``collect.py --through-index``),
+  the installed ``browser_use_version`` and the ``webarena_infinity`` checkout's git commit
+  (``null`` with a ``note`` when unreadable).
+
+Refuses to build at all while any ``logs/heterogeneity/*/worker_*.jsonl`` exists (I5 ruling),
+``--force`` included. ``--print-stages`` prints the frozen queue's stage ends and exits.
 
 A *complete* prior build (``manifest.json`` present) is frozen: refuses to rebuild unless
 ``--force``. An *incomplete* one (e.g. an interrupted/failed run) is always resumable without
@@ -59,9 +66,11 @@ silently reuse.
 from __future__ import annotations
 
 import argparse
+import importlib.metadata
 import json
 import logging
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -84,6 +93,7 @@ from make_pools import (  # noqa: E402
     freeform_arm,
     grid_arm,
     load_pool,
+    read_queue,
     select_tasks,
     sha256_text,
     write_pool,
@@ -107,6 +117,9 @@ ARMS_INITIAL_PATH = ROOT / "configs" / "arms_initial.yaml"
 ARMS_GITLAB_STRONG_PATH = ROOT / "configs" / "arms_gitlab_strong.yaml"
 PREREG9_DIR = ROOT / "data" / "empirical_pool"
 OUT_DIR = ROOT / "data" / "heterogeneity"
+#: The heterogeneity collectors' log root (collect.py's `HET_LOG_ROOT`): while any
+#: ``<root>/*/worker_*.jsonl`` exists, `build_profiles` refuses (I5 ruling).
+HET_LOG_ROOT = ROOT / "logs" / "heterogeneity"
 SEED = 20260928
 BUNDLE_MAX_WORDS = 25_000
 
@@ -548,9 +561,20 @@ def generate_knowledge(client, app: str, bundle: str, n: int = N_K) -> tuple[lis
 
 
 def gitlab_queue(arms: dict[str, list[str]], block_a: list[str], block_b: list[str], seed: int) -> list[QueueItem]:
-    """gitlab profile: pilot = (first 5 GLG + first 5 GLK + all anchors) x block A, shuffled;
-    then the rest of block A shuffled; then block B shuffled; then 300 GLG + 240 GLK
-    replicate cells (drawn without replacement from their own main cells) shuffled.
+    """gitlab profile, in this order (spec 4.3/4.5 as amended before registration, I1 ruling):
+
+    1. pilot = (first 5 GLG + first 5 GLK + all anchors) x block A, shuffled;
+    2. the rest of block A, shuffled;
+    3. block-A replicates: half of each pool's `N_REPLICATES_GITLAB` (150 GLG + 120 GLK), drawn without
+       replacement from that pool's block-A main cells, shuffled;
+    4. block B, shuffled;
+    5. block-B replicates: the other half, drawn from that pool's block-B main cells, shuffled.
+
+    A budget stop after step 3 therefore leaves a coherent 30-task design *with* its own replicate pairs
+    (the block-A fallback, `study.task_universe`). One generator (`seed`) draws everything, in the order
+    above (pilot, rest of A, B permutations; then per pool in `N_REPLICATES_GITLAB` order its A draw and
+    its B draw; then the A-replicate and B-replicate permutations), so the queue is deterministic.
+    `gitlab_stage_ends` gives the index at which each stage ends.
     """
     rng = np.random.default_rng(seed)
     all_tasks = block_a + block_b
@@ -567,18 +591,39 @@ def gitlab_queue(arms: dict[str, list[str]], block_a: list[str], block_b: list[s
     rest_a = [rest_a[int(i)] for i in rng.permutation(len(rest_a))]
     block_b_items = [block_b_items[int(i)] for i in rng.permutation(len(block_b_items))]
 
-    replicates: list[tuple[str, str, str]] = []
+    reps_a: list[tuple[str, str, str]] = []
+    reps_b: list[tuple[str, str, str]] = []
     for pool, n_rep in N_REPLICATES_GITLAB.items():
-        pool_main = [m for m in main if m[0] == pool]
-        idx = sorted(int(i) for i in rng.choice(len(pool_main), size=n_rep, replace=False))
-        replicates.extend(pool_main[i] for i in idx)
-    replicates = [replicates[int(i)] for i in rng.permutation(len(replicates))]
+        if n_rep % 2:
+            raise ValueError(f"N_REPLICATES_GITLAB[{pool!r}] = {n_rep} must be even (half per block)")
+        half = n_rep // 2
+        for block_cells, out in (([m for m in main if m[0] == pool and m[2] in block_a_set], reps_a),
+                                 ([m for m in main if m[0] == pool and m[2] not in block_a_set], reps_b)):
+            idx = sorted(int(i) for i in rng.choice(len(block_cells), size=half, replace=False))
+            out.extend(block_cells[i] for i in idx)
+    reps_a = [reps_a[int(i)] for i in rng.permutation(len(reps_a))]
+    reps_b = [reps_b[int(i)] for i in rng.permutation(len(reps_b))]
 
     n_pilot = len(pilot)
-    ordered = [(*m, 0) for m in pilot] + [(*m, 0) for m in rest_a] + [(*m, 0) for m in block_b_items] \
-        + [(*m, 1) for m in replicates]
+    ordered = [(*m, 0) for m in pilot] + [(*m, 0) for m in rest_a] + [(*m, 1) for m in reps_a] \
+        + [(*m, 0) for m in block_b_items] + [(*m, 1) for m in reps_b]
     return [QueueItem(index=k, pool=p, arm_id=a, task_id=t, replicate=r, pilot=k < n_pilot)
             for k, (p, a, t, r) in enumerate(ordered)]
+
+
+def gitlab_stage_ends(queue: list[QueueItem], block_a: list[str]) -> dict[str, int]:
+    """The last queue index of each collection stage of the gitlab profile (spec 4.5 as amended, I6):
+    ``pilot`` (the pilot items), ``block_a_with_replicates`` (block A's main cells and its replicate
+    pairs -- pass this to ``collect.py --through-index``), and ``last``. Raises if the block-A items are
+    not one prefix of the queue (then no through-index could stop after exactly block A)."""
+    a = set(block_a)
+    in_a = [item.task_id in a for item in queue]
+    n_a = sum(in_a)
+    if n_a == 0 or not all(in_a[:n_a]) or any(in_a[n_a:]):
+        raise ValueError("the gitlab queue's block-A items are not one prefix of the queue")
+    pilots = [item.index for item in queue if item.pilot]
+    return {"pilot": max(pilots) if pilots else -1, "block_a_with_replicates": queue[n_a - 1].index,
+            "last": queue[-1].index}
 
 
 def gmail_queue(arms: dict[str, list[str]], tasks: list[str], seed: int) -> list[QueueItem]:
@@ -714,7 +759,49 @@ def _knowledge_pool(client, app: str, bundle: str, out: Path, force: bool) -> tu
     return texts, raw
 
 
-def build_profiles(seed: int = SEED, out: Path = OUT_DIR, force: bool = False, client=None) -> None:
+def collected_logs(log_root: Path = HET_LOG_ROOT) -> list[Path]:
+    """Every heterogeneity worker log already on disk (``<log_root>/*/worker_*.jsonl``)."""
+    return sorted(Path(log_root).glob("*/worker_*.jsonl"))
+
+
+def refuse_if_collected(log_root: Path = HET_LOG_ROOT) -> None:
+    """I5 ruling: pools and queues are frozen once any episode exists -- a rebuild would re-key
+    un-recollectable episodes (their ``prompt_sha256`` against a different pool file) without anyone
+    noticing. Refuses (even with ``--force``) while any heterogeneity worker log exists."""
+    found = collected_logs(log_root)
+    if found:
+        raise SystemExit(f"refusing to (re)build the heterogeneity profiles: collected episodes exist "
+                         f"({len(found)} worker log(s), e.g. {found[0]}); move them aside only if they are "
+                         "deliberately being discarded")
+
+
+def browser_use_version() -> str | None:
+    """The installed browser-use package version (the agent harness), ``None`` if not installed."""
+    try:
+        return importlib.metadata.version("browser-use")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def webarena_infinity_provenance() -> dict:
+    """``{root, commit, dirty, note}`` of the webarena-infinity checkout the adapter resolves
+    (`_webarena_root`); ``commit`` is ``None`` with the reason in ``note`` when it cannot be read."""
+    try:
+        root = _webarena_root()
+    except RuntimeError as exc:
+        return {"root": None, "commit": None, "dirty": None, "note": f"webarena-infinity root not found: {exc}"}
+    try:
+        commit = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"], capture_output=True, text=True,
+                                check=True, timeout=30).stdout.strip()
+        dirty = bool(subprocess.run(["git", "-C", str(root), "status", "--porcelain"], capture_output=True,
+                                    text=True, check=True, timeout=30).stdout.strip())
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {"root": str(root), "commit": None, "dirty": None, "note": f"git failed: {exc!r}"}
+    return {"root": str(root), "commit": commit, "dirty": dirty, "note": None}
+
+
+def build_profiles(seed: int = SEED, out: Path = OUT_DIR, force: bool = False, client=None,
+                   log_root: Path = HET_LOG_ROOT) -> None:
     """Build and freeze the prompt-heterogeneity study's pools and queues under `out`.
 
     `client` defaults to a real ``anthropic.Anthropic()`` (constructed lazily, after loading
@@ -723,7 +810,11 @@ def build_profiles(seed: int = SEED, out: Path = OUT_DIR, force: bool = False, c
     present) is frozen and refuses to rebuild unless `force`; an incomplete one always
     resumes (see `_knowledge_pool`). `force` also makes K-generation unconditional (both
     apps regenerated even if a verified pool already exists).
+
+    Refuses outright (`refuse_if_collected`, even with `force`) while any worker log exists under
+    `log_root` (I5 ruling).
     """
+    refuse_if_collected(log_root)
     out = Path(out)
     manifest_path = out / "manifest.json"
     if manifest_path.exists():
@@ -825,6 +916,11 @@ def build_profiles(seed: int = SEED, out: Path = OUT_DIR, force: bool = False, c
     gl_queue = gitlab_queue(gitlab_arms_by_pool, block_a, block_b, seed=seed)
     (out / "gitlab").mkdir(parents=True, exist_ok=True)
     write_queue(out / "gitlab" / "queue.jsonl", gl_queue)
+    stage_ends = gitlab_stage_ends(gl_queue, block_a)
+    log.info("gitlab stages (last queue index): pilot %d; block A + its replicates %d "
+             "(collect.py --profile gitlab --through-index %d); whole queue %d",
+             stage_ends["pilot"], stage_ends["block_a_with_replicates"], stage_ends["block_a_with_replicates"],
+             stage_ends["last"])
 
     prereg9_manifest = json.loads((PREREG9_DIR / "manifest.json").read_text())
     gmail_task_subset: list[str] = prereg9_manifest["task_subset"]
@@ -869,12 +965,23 @@ def build_profiles(seed: int = SEED, out: Path = OUT_DIR, force: bool = False, c
         "gitlab_task_subset_60": sixty,
         "gitlab_block_a": block_a,
         "gitlab_block_b": block_b,
+        "gitlab_stage_ends": stage_ends,
         "gmail_task_subset_30": gmail_task_subset,
         "bridge_source": bridge_source,
         "files": {str(p.relative_to(out)): file_sha256(p) for p in files},
+        "browser_use_version": browser_use_version(),
+        "webarena_infinity": webarena_infinity_provenance(),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     log.info("wrote heterogeneity profiles under %s", out)
+
+
+def print_stages(out: Path = OUT_DIR) -> dict[str, int]:
+    """Print (JSON) and return `gitlab_stage_ends` of the frozen gitlab queue under `out` -- read-only."""
+    manifest = json.loads((Path(out) / "manifest.json").read_text())
+    ends = gitlab_stage_ends(read_queue(Path(out) / "gitlab" / "queue.jsonl"), manifest["gitlab_block_a"])
+    print(json.dumps(ends))
+    return ends
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -882,8 +989,14 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out", type=Path, default=OUT_DIR)
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--force", action="store_true", help="overwrite existing profile files")
+    ap.add_argument("--print-stages", action="store_true",
+                    help="print the frozen gitlab queue's stage ends (JSON: pilot, block_a_with_replicates -- the "
+                         "collect.py --through-index for block A plus its replicates -- and last) and exit")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.print_stages:
+        print_stages(args.out)
+        return
     build_profiles(seed=args.seed, out=args.out, force=args.force)
 
 

@@ -48,6 +48,12 @@ def _guard_real_signals(monkeypatch):
     monkeypatch.setattr(wd.os, "kill", guard)
 
 
+@pytest.fixture(autouse=True)
+def _tmp_het_lock(tmp_path, monkeypatch):
+    """The shared heterogeneity lock lives under tmp_path in every test (never logs/heterogeneity)."""
+    monkeypatch.setattr(collect, "HET_LOCK_PATH", tmp_path / "het.lock")
+
+
 # ---- the profile table ---------------------------------------------------------------------
 
 
@@ -641,3 +647,147 @@ def test_watchdog_main_uses_the_profiles_stall_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
     assert wd.main(["--profile", "bridge", "--budget", "5", "--workers", "2"]) == 0
     assert made == [25.0]
+
+
+# ---- final fix wave: I6 (het lock, --through-index), I5 (records vs pool shas) --------------------
+
+
+def _fake_worker_recording(seen):
+    def fake_worker(worker, n_workers, data_dir, log_dir, budget, pilot, assigned, profile="MISSING"):
+        seen[worker] = (profile, assigned)
+        return "done"
+    return fake_worker
+
+
+def test_through_index_runs_only_the_prefix_and_writes_status_through(tmp_path, monkeypatch):
+    data, logs = _het_data(tmp_path), tmp_path / "logs"
+    seen = {}
+    monkeypatch.setattr(collect.cf, "ProcessPoolExecutor", _thread_pool)
+    monkeypatch.setattr(collect, "_worker_main", _fake_worker_recording(seen))
+    code = collect.main(["--profile", "gitlab", "--workers", "2", "--budget", "5", "--through-index", "6",
+                         "--data", str(data), "--log-dir", str(logs)])
+    assert code == collect.EXIT_CODES["through"] == 0
+    assert (logs / "STATUS").read_text().strip() == "through"
+    assert seen[0] == ("gitlab", (0, 2, 4, 6)) and seen[1] == ("gitlab", (1, 3, 5))
+    assert not (tmp_path / "het.lock").exists()  # released on the way out
+
+
+def test_through_index_is_refused_for_prereg9_and_when_negative():
+    with pytest.raises(SystemExit):
+        collect.parse_args(["--through-index", "10"])
+    with pytest.raises(SystemExit):
+        collect.parse_args(["--profile", "gitlab", "--budget", "1", "--through-index", "-1"])
+    args = collect.parse_args(["--profile", "gitlab", "--budget", "1", "--through-index", "0"])
+    assert args.through_index == 0
+    assert collect.parse_args([]).through_index is None  # prereg9 unchanged
+
+
+def test_partition_remaining_respects_the_through_index(tmp_path):
+    q = [mp.QueueItem(index=i, pool="GLG", arm_id="GLG_00", task_id=f"task_e{i}", replicate=0, pilot=i < 2)
+         for i in range(10)]
+    assert collect.partition_remaining(q, tmp_path, 2, pilot=False, through_index=4) == [(0, 2, 4), (1, 3)]
+    assert collect.partition_remaining(q, tmp_path, 2, pilot=False) == [(0, 2, 4, 6, 8), (1, 3, 5, 7, 9)]
+
+
+def test_final_status_through_keeps_every_other_precedence():
+    assert collect.final_status(["done", "done"], through=True) == "through"
+    for worse in ("budget", "failed", "provider_down"):
+        assert collect.final_status(["done", worse], through=True) == worse
+    assert collect.final_status(["done"]) == "done"
+
+
+def test_het_profiles_are_mutually_exclusive(tmp_path, monkeypatch):
+    lock = tmp_path / "het.lock"
+    lock.write_text("4242 gmail\n")
+    monkeypatch.setattr(collect, "_pgid_is_alive", lambda pid: pid == 4242)
+    data, logs = _het_data(tmp_path), tmp_path / "logs"
+    monkeypatch.setattr(collect, "_worker_main", lambda *a, **kw: pytest.fail("no worker may start"))
+    with pytest.raises(RuntimeError, match="gmail"):
+        collect.main(["--profile", "gitlab", "--workers", "1", "--budget", "5", "--data", str(data),
+                      "--log-dir", str(logs)])
+    assert lock.read_text() == "4242 gmail\n"  # the live holder's lock is untouched
+    assert not (logs / "collect.lock").exists()  # and this collector's own lock was released
+
+
+def test_a_stale_het_lock_is_reclaimed(tmp_path, monkeypatch):
+    lock = tmp_path / "het.lock"
+    lock.write_text("4242 gmail\n")
+    monkeypatch.setattr(collect, "_pgid_is_alive", lambda pid: False)
+    data, logs = _het_data(tmp_path), tmp_path / "logs"
+    held = []
+    monkeypatch.setattr(collect.cf, "ProcessPoolExecutor", _thread_pool)
+
+    def worker(*a, **kw):
+        held.append(lock.read_text())
+        return "done"
+
+    monkeypatch.setattr(collect, "_worker_main", worker)
+    assert collect.main(["--profile", "gitlab", "--workers", "1", "--budget", "5", "--data", str(data),
+                         "--log-dir", str(logs)]) == 0
+    import os
+    assert held == [f"{os.getpid()} gitlab\n"] and not lock.exists()
+
+
+def test_prereg9_never_touches_the_het_lock(tmp_path, monkeypatch):
+    lock = tmp_path / "het.lock"
+    lock.write_text("4242 gmail\n")
+    monkeypatch.setattr(collect, "_pgid_is_alive", lambda pid: True)
+    monkeypatch.setattr(collect, "_acquire_het_lock", lambda *a, **kw: pytest.fail("prereg9 took the het lock"))
+    monkeypatch.setattr(collect, "_acquire_lock", lambda path: (_ for _ in ()).throw(RuntimeError("stop here")))
+    with pytest.raises(RuntimeError, match="stop here"):
+        collect.main(["--log-dir", str(tmp_path / "p9")])
+    assert lock.read_text() == "4242 gmail\n"
+
+
+def _record(arm, sha, task="task_e1"):
+    return {"schema": emp.SCHEMA, "pool": "GLG", "arm_id": arm, "task_id": task, "replicate": 0, "attempt": 1,
+            "status": "ok", "success": 1, "cost_usd": 0.0, "prompt_sha256": sha}
+
+
+def test_collector_refuses_existing_records_whose_prompt_sha_moved(tmp_path, monkeypatch):
+    data, logs = _het_data(tmp_path), tmp_path / "logs"
+    prompts = collect.load_prompts(data, "gitlab")
+    logs.mkdir()
+    good = _record("GLG_00", prompts["GLG_00"].sha256)
+    (logs / "worker_0.jsonl").write_text(json.dumps(good) + "\n")
+    collect.check_existing_records(logs, prompts)  # matching: fine
+    (logs / "worker_1.jsonl").write_text(json.dumps(_record("GLG_00", "0" * 64, task="task_m1")) + "\n")
+    with pytest.raises(RuntimeError, match="prompt_sha256"):
+        collect.check_existing_records(logs, prompts)
+    monkeypatch.setattr(collect, "_worker_main", lambda *a, **kw: pytest.fail("no worker may start"))
+    with pytest.raises(RuntimeError, match="prompt_sha256"):
+        collect.main(["--profile", "gitlab", "--workers", "1", "--budget", "5", "--data", str(data),
+                      "--log-dir", str(logs)])
+    assert (logs / "STATUS").read_text().strip() == "failed" and not (tmp_path / "het.lock").exists()
+
+
+def test_watchdog_forwards_the_through_index_and_treats_through_as_finished(tmp_path, monkeypatch):
+    extra = wd.collector_args(8, False, 40.0, profile="gitlab", log_dir=tmp_path, through_index=2999)
+    assert extra[extra.index("--through-index") + 1] == "2999"
+    assert collect.parse_args(extra).through_index == 2999
+    assert "--through-index" not in wd.collector_args(8, False, 40.0)  # prereg9's forward list unchanged
+    assert wd.decide("through", alive=False, minutes_since_progress=0.0) == "finished"
+    monkeypatch.setattr(wd, "HET_LOG_ROOT", tmp_path / "het")
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    launches = []
+    monkeypatch.setattr(wd, "_launch", lambda extra_, log_dir_: launches.append(extra_) or _proc(False))
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "through")
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+    assert wd.main(["--profile", "gitlab", "--budget", "40", "--through-index", "2999"]) == 0
+    assert len(launches) == 1 and "--through-index" in launches[0]  # never relaunched
+
+
+def test_watchdog_refuses_while_another_het_profile_holds_the_lock(tmp_path, monkeypatch):
+    monkeypatch.setattr(wd, "HET_LOG_ROOT", tmp_path / "het")
+    (tmp_path / "het").mkdir()
+    (tmp_path / "het" / "het.lock").write_text("4242 gmail\n")
+    monkeypatch.setattr(wd, "_group_alive", lambda pid: True)
+    monkeypatch.setattr(wd, "_launch", lambda *a: pytest.fail("must not launch"))
+    assert wd.main(["--profile", "gitlab", "--budget", "40"]) == wd.EXIT_HET_LOCKED
+    monkeypatch.setattr(wd, "_group_alive", lambda pid: False)  # a dead holder does not block
+    assert wd.het_lock_holder("gitlab") is None
+
+
+def test_launcher_documents_the_through_index():
+    text = (ROOT / "scripts" / "run_empirical_pool.sh").read_text()
+    assert "--through-index" in text

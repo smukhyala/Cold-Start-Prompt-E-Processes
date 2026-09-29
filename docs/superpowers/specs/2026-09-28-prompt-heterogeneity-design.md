@@ -118,7 +118,15 @@ Optional tier (not part of the core registration): GitLab × F (40 free-form pro
 - **GitLab:** 60 of the 140 `real-tasks`, stratified 20 easy / 20 medium / 20 hard (the bank is 20/20/100),
   drawn by `make_pools.select_tasks` with seed 20260928. Ordered into two stratified blocks of 30 (10/10/10
   each); the queue runs block A for every arm before block B, so a budget stop leaves a coherent 30-task
-  design.
+  design. *(Amended before registration: the GitLab noise replicates are stratified by block — half of each
+  pool's replicate cells (150 GLG + 120 GLK) are drawn from that pool's block-A main cells and queued right
+  after the rest of block A; the other half are drawn from its block-B main cells and queued after block B —
+  so a stop after block A still carries its own replicate pairs. **Block-A fallback:** if any GitLab pool
+  (GLG, GLK or the three anchors) has an incomplete replicate-0 block B — some arm × block-B task with no
+  terminal (`ok` or `missing`) record — every GitLab cell is analysed on the manifest's block-A task list
+  (`gitlab_block_a`), block-B episodes and their replicate pairs included in the drop. The rule is mechanical
+  (`study.task_universe`, applied by `replay.py estimate`), never a choice, and every output records its
+  `task_universe` (`subset_60` or `block_a`).)*
 - **Gmail:** the existing 30-task Amendment-1 subset, so Gmail × K is directly comparable to Gmail × G.
 
 ### 4.4 Timeouts
@@ -134,7 +142,18 @@ whether the step limit or the clock ended it.
 
 - Collector as in Pre-reg 9 with an `app` dimension (port pools per app; one WebArena server per worker per
   app). Queue order: pilot, then GitLab block A, Gmail cells, GitLab block B, bridge, replicates last
-  within each app.
+  within each app. *(Amended before registration: the order above cannot be realised by one queue per
+  profile, and concurrent profiles would put Gmail's 180 s wall clock under extra load, confounding its
+  timeouts. The heterogeneity profiles are therefore **mutually exclusive** — each collector holds a shared
+  lock, `logs/heterogeneity/het.lock`, and refuses to start while another heterogeneity profile's live
+  process holds it (a lock whose process is dead is reclaimed; Pre-registration 9's collector never takes
+  it) — and the registered order is run in **stages**: (1) the GitLab pilot; (2) GitLab through block A and
+  its replicates (`collect.py --through-index N`, N = `gitlab_stage_ends.block_a_with_replicates` in the
+  manifest, printed by `make_het_pools.py --print-stages`; the run stops cleanly with STATUS `through`, which
+  the watchdog never relaunches); (3) Gmail (K, its anchor, then its replicates); (4) the rest of GitLab
+  (block B, then its replicates); (5) the bridge. Replicates stay last within Gmail; GitLab's are stratified
+  by block (§4.3). `replay.py estimate --study het` refuses unless every heterogeneity log dir's STATUS is
+  `done`, `budget` or `through` (an explicit `--allow-unfinished-logs` overrides).)*
 - **Pilot** (gate G2): GitLab only — 5 G + 5 K + the 3 anchors on block A (13 × 30 = 390 episodes).
   Thresholds: missing ≤ 5% counting never-attempted items; 0 watchdog relaunches; all 8 workers productive;
   cost ≤ $0.25 per episode; anchor ordering oracle > explorer on the pilot tasks (instrument sanity, not a
@@ -214,14 +233,24 @@ Per cell:
 
 | class | rule |
 |---|---|
-| **flat** | regret range < 0.005 at all three primary T **and** the one-sided upper 95% MLS bound of τ_set < τ_flat |
+| **flat** | regret range < 0.005 at all three primary T **and** the bootstrap upper bound (97.5th percentile, §6.4) of the regret range at T = 200 < 0.01 |
 | **practically meaningful** | regret range ≥ 0.01 at ≥ 2 of 3 primary T (Pre-reg 9's guard) **and** the bootstrap lower bound of the regret range at T = 200 > 0.005 |
 | **moderate** | otherwise |
 
 τ_flat is fixed in Pre-registration 10, before any data, from the Stage-0 calibration: the true spread of a
 level-0.6 Beta pool whose regret range at T = 200 equals 0.005. *(Amended before registration: a fixed 0.03 is
 unreachable at J = 30 even when τ = 0 — the mean upper bound there is about 0.04 — which would make "flat"
-structurally impossible for Gmail cells.)*
+structurally impossible for Gmail cells.)* *(Amended before registration: the flat rule's τ condition — the
+one-sided upper 95% MLS bound of τ_set < τ_flat — is dropped from the decision. At a τ_flat near
+0.017 (the final review's calibration) a pool with τ = 0 clears it only 9–21% of the time at J = 30–60 (null simulation, final review), so
+"flat" would be structurally unreachable. The decision quantity is the regret range itself, and each class's
+T = 200 bootstrap interval must exclude the other class's threshold: meaningful needs its lower bound > 0.005,
+flat needs its upper bound < 0.01. The τ_set bound and whether it is below τ_flat (`tau_bound_below_flat`)
+are still reported beside every class, never decisive. Cost if wrong: "flat" rests on replay evidence rather
+than a τ equivalence bound; disclosed. H3's condition (a) is unchanged and still holds by definition of flat.
+`het_verdicts.py` recomputes τ_flat from `calibration.csv` and refuses a `--tau-flat` that differs; every
+output carries the calibration's sha256, the verdict seed and n_boot, and `unregistered` when either is not
+the registered value.)*
 
 ### 6.6 H3 — the thesis
 
@@ -266,6 +295,16 @@ that makes the agent slow is a real effect on cost, reported separately from suc
 | G flat in both apps, K meaningful in ≥ 1 | style is a weak lever; task-relevant knowledge content creates heterogeneity; adaptive search pays over knowledge-bearing candidates (H2, H3) |
 | all cells flat, anchors recovered | for this agent, hand-written and manual-derived prompt variation is a small lever on these benchmarks; H3 untestable here; the follow-up (§9) is required |
 | anchors not recovered (oracle not above the bulk, explorer not below) | the instrument is too weak; no heterogeneity claim is made |
+
+*(Amended before registration: "recovered" is defined, and has a producer. On the analysis task universe
+(§4.3: the 60 GitLab tasks, or block A under the fallback), the anchors are **recovered** iff
+`GL_anchor_oracle`'s per-prompt success rate (replicate 0, `ok` episodes) is strictly above the 90th
+percentile of the GLG ∪ GLK per-prompt success rates on the same tasks **and** `GL_anchor_explorer`'s is
+strictly below their 10th percentile (NumPy's default linear percentile); an anchor with no episode is not
+recovered. `het_verdicts.py` writes `het_anchor_recovery.csv` (both rates, both percentiles, the verdict,
+`GL_anchor_baseline`'s rate reported) and, reported only, the Gmail `GM_anchor_baseline` rate beside
+Pre-registration 9's `anchor_baseline` rate on the same 30 tasks (drift); figure 7d reads that table. The
+last row above is keyed on `recovered`. The percentile choice is a judgment call, fixed here before data.)*
 
 ## 9. Follow-up if every cell is flat (not part of this registration)
 

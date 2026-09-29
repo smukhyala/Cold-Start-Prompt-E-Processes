@@ -91,7 +91,7 @@ log = logging.getLogger("deploy.run")
 DEFAULT_OUT_DIR = ROOT / "results" / "growing_bandits" / "deploy"
 
 TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch", "capp", "capc",
-                          "emp", "emp_boot")
+                          "emp", "emp_boot", "het", "het_boot", "cal")
 REFERENCES: tuple[str, ...] = ("cp0", "p3_star")
 
 #: Episodes per cell by test (DEPLOYMENT_PLAN.md "Environments / horizons / episodes").
@@ -108,6 +108,9 @@ DEFAULT_REPLICATES: dict[str, int] = {
     "capc": 2000,
     "emp": 1000,
     "emp_boot": 250,
+    "het": 1000,
+    "het_boot": 250,
+    "cal": 1000,
 }
 DEFAULT_CAP = 64
 D_HORIZONS: tuple[int, ...] = (200, 1000)
@@ -246,10 +249,10 @@ def _cell_grid(test: str, cells_mod) -> list[tuple[str, int, int, int | None]]:
     elif test == "capc":
         # Pre-registration 8: the held-out family, uncapped, on Test C's cap-64 seeds.
         grid = [(e, T, T, None) for e in heldout for T in CAPP_HORIZON_CAPS]
-    elif test in ("emp", "emp_boot"):
+    elif test in ("emp", "emp_boot", "het", "het_boot", "cal"):
         raise RuntimeError(
             f"--test {test} cells are built from the frozen real-prompt pools by "
-            "experiments/growing_bandits/empirical/replay.py, never from cells.py"
+            "experiments/growing_bandits/empirical/ (replay.py, calibration), never from cells.py"
         )
     else:
         raise ValueError(f"unknown test {test!r}; tests={TESTS}")
@@ -258,8 +261,9 @@ def _cell_grid(test: str, cells_mod) -> list[tuple[str, int, int, int | None]]:
 
 def seeds_may_repeat(test: str) -> bool:
     """Whether cells of `test` may share a base_seed: the paired cap sweep, and the empirical
-    replay, whose raw / npmle / parametric variants of one (pool, T) are CRN-paired by design."""
-    return test in ("capp", "emp")
+    replays (Pre-registration 9's ``emp``, the heterogeneity study's ``het``, the calibration
+    family's ``cal``), whose variants of one (pool, T) are CRN-paired by design."""
+    return test in ("capp", "emp", "het", "cal")
 
 
 def matched_grid(

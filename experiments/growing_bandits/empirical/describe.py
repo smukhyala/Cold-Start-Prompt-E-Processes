@@ -9,6 +9,9 @@ envelope (``tables/k_star_envelope_all33.csv``), and writes
 K* here is an in-sample argmin on the pool's own reservoir: a ceiling, never a deployable
 policy. A cell is *informative* iff fixed-K regret moves by more than 5 x MEI = 0.01 over
 the K-grid; Pre-registration 9 evaluates its contrasts on informative primary cells only.
+
+``--study het`` reads and writes the same tables under the ``het_`` prefix, from the
+heterogeneity study's reservoirs and ``het`` episodes (`study.HETEROGENEITY`).
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ for _p in (ROOT / "src", HERE.parent / "deploy", HERE):
 
 import replay  # noqa: E402
 import run_deployment as rd  # noqa: E402
+import study as st  # noqa: E402
 
 from cold_start.growing.deploy.recommenders import PRIMARY_RECOMMENDER  # noqa: E402
 from cold_start.growing.reservoirs import Reservoir, build_reservoir  # noqa: E402
@@ -76,29 +80,37 @@ def flatness(kgrid: pd.DataFrame) -> pd.DataFrame:
     return table[cols + (["reservoir_sha256"] if "reservoir_sha256" in table.columns else [])]
 
 
-def check_kgrid_snapshot(kgrid: pd.DataFrame, shas: dict[str, str]) -> None:
+def check_kgrid_snapshot(kgrid: pd.DataFrame, shas: dict[str, str], *, study: st.Study = st.PREREG9) -> None:
     """Raise unless every K-grid row ran on the reservoir the manifest names for its cell."""
+    name = study.table("kgrid")
     if "reservoir_sha256" not in kgrid.columns:
-        raise ValueError("emp_kgrid.csv has no reservoir_sha256 column: re-run `replay.py kgrid`")
+        raise ValueError(f"{name} has no reservoir_sha256 column: re-run `replay.py kgrid`")
     stale = sorted({str(e) for e, sha in zip(kgrid["env_id"], kgrid["reservoir_sha256"], strict=True)
                     if shas.get(str(e)) != str(sha)})
     if stale:
-        raise ValueError(f"emp_kgrid.csv rows for {stale} ran on reservoirs other than the current manifest's; "
+        raise ValueError(f"{name} rows for {stale} ran on reservoirs other than the current manifest's; "
                          "re-run `replay.py kgrid`")
 
 
 def cross_pool_prediction(levels: dict[str, float], kstar: pd.DataFrame) -> pd.DataFrame:
-    low, high = sorted(levels, key=lambda p: levels[p])
+    """The level rule's K* prediction for every pair of pools (lower level first).
+
+    Two pools (Pre-registration 9) give one pair per horizon; n pools give n(n-1)/2, in the
+    order of the level-sorted pools, horizon by horizon.
+    """
+    ordered = sorted(levels, key=lambda p: levels[p])
+    pairs = [(ordered[i], ordered[j]) for i in range(len(ordered)) for j in range(i + 1, len(ordered))]
     rows = []
     prim = kstar[kstar["variant"] == "npmle"]
     for T in sorted(prim["horizon"].unique()):
         k = {r.pool: int(r.k_star) for r in prim[prim["horizon"] == T].itertuples()}
-        if low not in k or high not in k:
-            continue
-        rows.append({"horizon": int(T), "low_pool": low, "high_pool": high, "k_star_low": k[low],
-                     "k_star_high": k[high], "sign_agrees": k[low] > k[high], "tie": k[low] == k[high],
-                     "ratio_observed": k[low] / k[high],
-                     "ratio_predicted": float(np.exp(LEVEL_RULE_B * (levels[high] - levels[low])))})
+        for low, high in pairs:
+            if low not in k or high not in k:
+                continue
+            rows.append({"horizon": int(T), "low_pool": low, "high_pool": high, "k_star_low": k[low],
+                         "k_star_high": k[high], "sign_agrees": k[low] > k[high], "tie": k[low] == k[high],
+                         "ratio_observed": k[low] / k[high],
+                         "ratio_predicted": float(np.exp(LEVEL_RULE_B * (levels[high] - levels[low])))})
     return pd.DataFrame(rows)
 
 
@@ -114,11 +126,11 @@ def cap64_cost(kgrid: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def rule_gaps(out_dir: Path, kstar: pd.DataFrame) -> pd.DataFrame:
+def rule_gaps(out_dir: Path, kstar: pd.DataFrame, *, study: st.Study = st.PREREG9) -> pd.DataFrame:
     col = f"regret_{PRIMARY_RECOMMENDER}"
     rows = []
     for r in kstar.itertuples():
-        cell = out_dir / "episodes" / "emp" / f"{r.env_id}_T{r.horizon}_cap{r.horizon}"
+        cell = out_dir / "episodes" / study.test / f"{r.env_id}_T{r.horizon}_cap{r.horizon}"
         for path in sorted(cell.glob("*.parquet")):
             regret = float(pd.read_parquet(path, columns=[col])[col].mean())
             rows.append({"env_id": r.env_id, "pool": r.pool, "variant": r.variant, "horizon": r.horizon,
@@ -172,32 +184,34 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR)
     ap.add_argument("--envelope", type=Path, default=None,
                     help="corpus K* envelope (default: <out-dir>/tables/k_star_envelope_all33.csv)")
+    ap.add_argument("--study", choices=sorted(st.STUDIES), default=st.PREREG9.name)
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    study = replay.resolve_study(args.study)
     tables = args.out_dir / "tables"
-    kgrid = pd.read_csv(tables / "emp_kgrid.csv")
-    check_kgrid_snapshot(kgrid, replay.verify_reservoirs(replay.RES_DIR))
+    kgrid = pd.read_csv(tables / study.table("kgrid"))
+    check_kgrid_snapshot(kgrid, replay.verify_reservoirs(study.res_dir, study=study), study=study)
 
     import cells
 
     pools = []
-    for p in replay.POOLS:
+    for p in study.pools:
         for v in replay.VARIANTS:
-            res = replay.load_reservoir(replay.RES_DIR / f"{p}_{v}.json")
-            pools.append({"env_id": replay.env_id(p, v), "pool": p, "variant": v, **pool_summary(res)})
+            res = replay.load_reservoir(study.res_dir / f"{p}_{v}.json")
+            pools.append({"env_id": replay.env_id(p, v, study=study), "pool": p, "variant": v, **pool_summary(res)})
     pools = pd.DataFrame(pools)
     corpus = pd.DataFrame([{"env_id": e, **pool_summary(build_reservoir(spec))} for e, spec in cells.ALL_ENVS.items()])
     kstar = k_star_table(kgrid)
     levels = {r.pool: r.level for r in pools[pools["variant"] == "npmle"].itertuples()}
 
-    locate(pools, corpus).to_csv(tables / "emp_pool_location.csv", index=False)
-    kstar.to_csv(tables / "emp_kstar.csv", index=False)
+    locate(pools, corpus).to_csv(tables / study.table("pool_location"), index=False)
+    kstar.to_csv(tables / study.table("kstar"), index=False)
     envelope = pd.read_csv(args.envelope or tables / "k_star_envelope_all33.csv")
-    locate_k_star(kstar, envelope).to_csv(tables / "emp_kstar_location.csv", index=False)
-    flatness(kgrid).to_csv(tables / "emp_flatness.csv", index=False)
-    cross_pool_prediction(levels, kstar).to_csv(tables / "emp_cross_pool.csv", index=False)
-    cap64_cost(kgrid).to_csv(tables / "emp_cap64.csv", index=False)
-    rule_gaps(args.out_dir, kstar).to_csv(tables / "emp_rule_gaps.csv", index=False)
+    locate_k_star(kstar, envelope).to_csv(tables / study.table("kstar_location"), index=False)
+    flatness(kgrid).to_csv(tables / study.table("flatness"), index=False)
+    cross_pool_prediction(levels, kstar).to_csv(tables / study.table("cross_pool"), index=False)
+    cap64_cost(kgrid).to_csv(tables / study.table("cap64"), index=False)
+    rule_gaps(args.out_dir, kstar, study=study).to_csv(tables / study.table("rule_gaps"), index=False)
     prim = kstar[(kstar["variant"] == "npmle") & kstar["horizon"].isin(replay.PRIMARY_HORIZONS)]
     log.info("informative primary cells: %d of %d", int(prim["informative"].sum()), len(prim))
 

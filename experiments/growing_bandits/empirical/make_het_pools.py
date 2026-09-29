@@ -4,19 +4,22 @@
 
 writes, under ``data/heterogeneity/``:
 
-- ``bundles/{gitlab,gmail}.md`` -- frozen manual bundles (documentation only, capped at
-  25,000 words), used both as the K generator's context and as the leak guard's stoplist
-  source (an entity that already appears in the bundle is not a leak). The app description
-  has any "Seed Data Summary"-style section stripped first (that section names every seeded
-  user/epic/board by name, which would otherwise exempt them from the leak guard); manuals
-  are assembled in a fixed per-app priority order (see ``APPS``), not plain alphabetical
-  order, and a page byte-identical (or near-identical modulo its own self-referential
-  "Source: <url>" line) to one already included is skipped.
-- ``k_generation_{gitlab,gmail}.json`` -- the K generator's full request/response record,
-  including every rejected candidate and why, and the frozen entity set used to judge them.
-  Written even when generation fails (``generate_knowledge`` raises
-  ``KnowledgeGenerationError`` carrying the same record), so a failed paid call is never
-  silently lost.
+- ``bundles/{gitlab,gmail}.md`` -- frozen manual bundles (user-manual pages only -- fix round
+  2: GitLab's ``APP_DESCRIPTION.md`` is excluded entirely, like Gmail, since it describes
+  this app *instance* -- its seeded users, epics, milestones, boards and labels -- which
+  would otherwise exempt those names from the leak guard), capped at 25,000 words with an
+  equal word budget per feature area (``APPS[app]["manual_areas"]``; unused budget rolls
+  forward to the next area, never backward), used both as the K generator's context and as
+  the leak guard's stoplist source (an entity that already appears in the bundle is not a
+  leak). Within an area, files are in sorted-path priority order; a page byte-identical (or
+  near-identical modulo its own self-referential "Source: <url>" line) to one already
+  included is skipped.
+- ``k_generation_{gitlab,gmail}.json`` -- the K generator's full request/response record
+  (including every rejected candidate and why, the frozen entity set and bundle hash used to
+  judge/identify it, and -- on success -- the kept texts), written only for a *successful*
+  generation. Fix round 2: a failed generation is archived as
+  ``k_generation_{gitlab,gmail}.failed-<n>.json`` instead, so the canonical path never holds
+  an unreusable failure record and a later success is never blocked from being written there.
 - ``pools/GLG.yaml`` -- the 50 Pre-reg 9 grid ("G") prompts, re-id'd ``GLG_00..49``; the
   arm id never enters ``template.jinja``'s render, so each arm's rendered-prompt sha256 is
   asserted equal to the frozen Pre-reg 9 sha (``data/empirical_pool/pool_G.yaml``).
@@ -44,7 +47,13 @@ writes, under ``data/heterogeneity/``:
 
 A *complete* prior build (``manifest.json`` present) is frozen: refuses to rebuild unless
 ``--force``. An *incomplete* one (e.g. an interrupted/failed run) is always resumable without
-``--force`` -- see the K-generation skip-if-present note above.
+``--force`` -- see the K-generation skip-if-present note above. Fix round 2: any build that
+proceeds (forced or resuming) unlinks ``manifest.json`` first and writes it only at
+successful completion, so a failed ``--force`` run never leaves a stale ``manifest.json``
+blocking a later resume; ``--force`` also unconditionally invalidates (deletes) each app's
+canonical ``k_generation_<app>.json`` before attempting it, so a forced attempt that fails
+never leaves behind a stale-but-still-verifiable cache that a later plain resume would
+silently reuse.
 """
 
 from __future__ import annotations
@@ -101,32 +110,36 @@ OUT_DIR = ROOT / "data" / "heterogeneity"
 SEED = 20260928
 BUNDLE_MAX_WORDS = 25_000
 
-#: Section 4: what each app's manual bundle is built from. ``manual_globs`` is a *priority*
-#: order (fix round 1, issue 2): patterns are resolved and appended to the candidate list in
-#: the order given, sorted within each pattern; a path already yielded by an earlier pattern
-#: is skipped when the later, broader glob matches it again. Resolved under
-#: ``<webarena-root>/apps/user-manuals/<app>``; ``app_description`` (when set) is a single
-#: file, relative to the webarena-infinity root, prefixed before the priority-ordered manuals.
+#: Section 4 (amended before registration, spec sec. 4.2): what each app's manual bundle is
+#: built from. ``manual_areas`` is a *priority* list of feature *areas*, each area a list of
+#: one or more glob patterns sharing one word budget (fix round 2, ruling 2): resolved under
+#: ``<webarena-root>/apps/user-manuals/<app>``, sorted within a pattern, in the order given; a
+#: path already yielded by an earlier pattern (in this area or an earlier one) is skipped.
+#: GitLab's ``issues/managing_issues.md`` and the rest of ``issues/**`` are one area (per the
+#: ruling). Neither app has an ``app_description`` any more (fix round 2, finding 1): the
+#: bundle is user-manual pages only, like Gmail always was -- GitLab's ``APP_DESCRIPTION.md``
+#: describes this app *instance* (its seeded users/epics/milestones/boards/labels), which
+#: would otherwise exempt those names from the leak guard. ``app_description``, when set, is
+#: a single file relative to the webarena-infinity root, treated as its own (first) area.
 APPS: dict[str, dict] = {
     "gitlab": {
         "web_app": "apps/gitlab-plan-and-track",
-        "manual_globs": [
-            "user/project/labels.md",
-            "user/project/issue_board.md",
-            "user/project/milestones/**/*.md",
-            "user/project/issues/managing_issues.md",
-            "user/project/issues/**/*.md",
-            "user/group/epics/**/*.md",
-            "user/group/iterations/**/*.md",
+        "manual_areas": [
+            ["user/project/labels.md"],
+            ["user/project/issue_board.md"],
+            ["user/project/milestones/**/*.md"],
+            ["user/project/issues/managing_issues.md", "user/project/issues/**/*.md"],
+            ["user/group/epics/**/*.md"],
+            ["user/group/iterations/**/*.md"],
         ],
-        "app_description": "apps/gitlab-plan-and-track/APP_DESCRIPTION.md",
+        "app_description": None,
     },
     "gmail": {
         "web_app": "apps/gmail",
-        "manual_globs": [
-            "settings-and-configuration/*.md",
-            "organize-and-manage/*.md",
-            "compose-and-send/*.md",
+        "manual_areas": [
+            ["settings-and-configuration/*.md"],
+            ["organize-and-manage/*.md"],
+            ["compose-and-send/*.md"],
         ],
         "app_description": None,
     },
@@ -143,38 +156,6 @@ N_TASKS_BLOCK = 30
 
 # ---- manual bundles ---------------------------------------------------------------------
 
-#: A markdown heading line, e.g. ``## Seed Data Summary``: group 1 is the ``#`` run (its
-#: level), group 2 is the heading text.
-_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*)$", re.MULTILINE)
-
-
-def _strip_seed_data_sections(text: str) -> str:
-    """Remove every section whose heading matches /seed data/i (fix round 1, issue 1): from
-    that heading up to, but not including, the next heading of the same or higher level
-    (i.e. a ``#`` run no longer than the matched heading's), or end of file if there is none.
-    An app description's "Seed Data Summary" names every seeded user/epic/board/label by
-    name; leaving it in the bundle would exempt all of them from the leak guard, unlike
-    Gmail (whose manuals carry no such section).
-    """
-    while True:
-        matches = list(_HEADING_RE.finditer(text))
-        target = None
-        for i, m in enumerate(matches):
-            if re.search(r"seed data", m.group(2), re.IGNORECASE):
-                target = (i, m)
-                break
-        if target is None:
-            return text
-        i, m = target
-        level = len(m.group(1))
-        end = len(text)
-        for m2 in matches[i + 1 :]:
-            if len(m2.group(1)) <= level:
-                end = m2.start()
-                break
-        text = text[: m.start()] + text[end:]
-
-
 #: A manual page's own self-referential "Source: <url ending in this file's doc id>" line --
 #: stripped before hashing for *dedup* purposes only (fix round 1, issue 2), so two mirrored
 #: copies of the same support page (different doc ids under different section folders) are
@@ -187,80 +168,103 @@ def _dedup_key(body: str) -> str:
     return sha256_text(_SOURCE_LINE_RE.sub("", body))
 
 
-def _assemble_bundle(items: list[tuple[str, str]], max_words: int = BUNDLE_MAX_WORDS) -> list[dict]:
-    """Ordered, deduplicated, capped bundle sections from `items` = ``[(rel_path, body), ...]``
-    already in priority order. A `rel_path` already used, or a `body` that is a near-
-    duplicate (by ``_dedup_key``) of one already included, is skipped. Each section is
-    headed ``## <rel_path>``; the running total -- including that header -- is capped at
-    `max_words`, with the section that would cross the cap truncated to exactly fill what's
-    left (fix round 1, issue 2: the header itself now counts against the cap).
+def _assemble_bundle(areas: list[list[tuple[str, str]]], max_words: int = BUNDLE_MAX_WORDS) -> list[dict]:
+    """Ordered, deduplicated, per-area-budgeted, capped bundle sections. `areas` is a
+    priority-ordered list of areas, each already in within-area (sorted) file order as
+    ``[(rel_path, body), ...]``. A `rel_path` already used (in this area or an earlier one),
+    or a `body` that near-duplicates one already included (by ``_dedup_key``), is skipped.
+
+    Fix round 2, ruling 2: each area gets an equal share of the total budget
+    (``max_words // len(areas)``, floor); words an area doesn't use roll forward to the next
+    area (never backward, so an early thin area doesn't starve everything after it, and a fat
+    one doesn't get to starve everything after it either -- it only spends its own share).
+    Each section is headed ``## <rel_path>``; the header counts against its area's (and hence
+    the overall) budget. The file that would cross an area's remaining budget is truncated to
+    exactly fill what's left, and that area is then done (any further files in it are
+    dropped, its budget having already been exhausted). By construction the grand total never
+    exceeds `max_words` (each area's own budget is drawn only from `max_words // len(areas)`
+    plus unspent rollover from earlier areas).
     """
+    n_areas = len(areas)
+    if n_areas == 0:
+        return []
+    budget_each = max_words // n_areas
+
     sections: list[dict] = []
     seen_paths: set[str] = set()
     seen_content: set[str] = set()
-    used_words = 0
-    for rel_path, body in items:
-        if rel_path in seen_paths:
-            continue
-        seen_paths.add(rel_path)
-        key = _dedup_key(body)
-        if key in seen_content:
-            continue
-        seen_content.add(key)
+    rollover = 0
 
-        remaining = max_words - used_words
-        if remaining <= 0:
-            break
-        header = f"## {rel_path}\n\n"
-        header_words = len(header.split())
-        body_words = body.split()
-        total_words = header_words + len(body_words)
-        content_sha = sha256_text(body)
-        if total_words > remaining:
-            body_budget = max(remaining - header_words, 0)
-            truncated_body = body_words[:body_budget]
-            text = header + " ".join(truncated_body)
-            included = header_words + len(truncated_body)
-            sections.append({"path": rel_path, "sha256": content_sha, "words": included,
-                             "truncated": True, "text": text})
-            used_words += included
-            break
-        text = header + body
-        sections.append({"path": rel_path, "sha256": content_sha, "words": total_words,
-                         "truncated": False, "text": text})
-        used_words += total_words
+    for items in areas:
+        area_budget = budget_each + rollover
+        area_used = 0
+        for rel_path, body in items:
+            if rel_path in seen_paths:
+                continue
+            seen_paths.add(rel_path)
+            key = _dedup_key(body)
+            if key in seen_content:
+                continue
+            seen_content.add(key)
+
+            remaining = area_budget - area_used
+            if remaining <= 0:
+                break
+            header = f"## {rel_path}\n\n"
+            header_words = len(header.split())
+            body_words = body.split()
+            total_words = header_words + len(body_words)
+            content_sha = sha256_text(body)
+            if total_words > remaining:
+                body_budget = max(remaining - header_words, 0)
+                truncated_body = body_words[:body_budget]
+                text = header + " ".join(truncated_body)
+                included = header_words + len(truncated_body)
+                sections.append({"path": rel_path, "sha256": content_sha, "words": included,
+                                 "truncated": True, "text": text})
+                area_used += included
+                break
+            text = header + body
+            sections.append({"path": rel_path, "sha256": content_sha, "words": total_words,
+                             "truncated": False, "text": text})
+            area_used += total_words
+        rollover = area_budget - area_used
+
     return sections
 
 
 def bundle_sections(app: str, max_words: int = BUNDLE_MAX_WORDS) -> list[dict]:
-    """`app`'s bundle sections: the (seed-data-stripped) app description first, if any, then
-    its manuals in ``APPS[app]['manual_globs']`` priority order. Each entry is
-    ``{"path", "sha256", "words", "truncated", "text"}``.
+    """`app`'s bundle sections: the app description as its own (first) area, if set, then its
+    manuals in ``APPS[app]['manual_areas']`` priority order, each area budgeted per
+    `_assemble_bundle`. Each entry is ``{"path", "sha256", "words", "truncated", "text"}``.
     """
     webarena_root = _webarena_root()
     spec = APPS[app]
-    items: list[tuple[str, str]] = []
+    manual_root = webarena_root / "apps" / "user-manuals" / app
     seen: set[Path] = set()
+    areas: list[list[tuple[str, str]]] = []
 
     if spec.get("app_description"):
         p = webarena_root / spec["app_description"]
         seen.add(p)
-        body = _strip_seed_data_sections(p.read_text(encoding="utf-8", errors="ignore"))
-        items.append((p.relative_to(webarena_root).as_posix(), body))
+        areas.append([(p.relative_to(webarena_root).as_posix(),
+                       p.read_text(encoding="utf-8", errors="ignore"))])
 
-    manual_root = webarena_root / "apps" / "user-manuals" / app
-    for pattern in spec["manual_globs"]:
-        matched = sorted(manual_root.glob(pattern))
-        if not matched:
-            raise ValueError(f"{app!r}: manual glob {pattern!r} under {manual_root} matched nothing")
-        for p in matched:
-            if p in seen:
-                continue
-            seen.add(p)
-            items.append((p.relative_to(webarena_root).as_posix(),
-                         p.read_text(encoding="utf-8", errors="ignore")))
+    for globs in spec["manual_areas"]:
+        area_items: list[tuple[str, str]] = []
+        for pattern in globs:
+            matched = sorted(manual_root.glob(pattern))
+            if not matched:
+                raise ValueError(f"{app!r}: manual glob {pattern!r} under {manual_root} matched nothing")
+            for p in matched:
+                if p in seen:
+                    continue
+                seen.add(p)
+                area_items.append((p.relative_to(webarena_root).as_posix(),
+                                   p.read_text(encoding="utf-8", errors="ignore")))
+        areas.append(area_items)
 
-    return _assemble_bundle(items, max_words)
+    return _assemble_bundle(areas, max_words)
 
 
 def build_bundle(app: str, max_words: int = BUNDLE_MAX_WORDS) -> str:
@@ -448,11 +452,35 @@ def generate_knowledge(client, app: str, bundle: str, n: int = N_K) -> tuple[lis
     if fewer than `n` survive. Every rejection (including its reason) and the frozen entity
     set used to judge them are recorded in the returned dict. Writes nothing itself --
     `build_profiles` is responsible for persisting the record, on success or failure alike.
+
+    Fix round 2, finding 4: `entities` (and `bundle_sha256`) are computed up front, before the
+    network call and before the response is parsed, so *every* raw record -- including one
+    from an early failure (cut off, no JSON array, malformed JSON) -- carries them; a caller
+    checking whether a cached record is still valid for reuse needs them regardless of which
+    stage produced the record. `raw["error"]` is `None` on success and the failure message
+    otherwise; `raw["kept"]` (the final kept texts, in order) is set only on success, after
+    the `n`-th one is kept, so it always matches the pool that gets written from it.
     """
     n_request = n + N_REQUEST_SLACK
     # `.replace`, not `.format`: the manual bundle routinely contains literal `{`/`}` (Hugo
     # shortcodes, JSON snippets) that would raise inside `str.format`.
     prompt = KNOWLEDGE_PROMPT.replace("{n}", str(n_request)).replace("{bundle}", bundle)
+    ents = task_entities(app)
+
+    raw: dict = {
+        "model": GENERATOR_MODEL,
+        "max_tokens": GENERATOR_MAX_TOKENS,
+        "app": app,
+        "n_requested": n_request,
+        "n": n,
+        "prompt": prompt,
+        "bundle_sha256": sha256_text(bundle),
+        "stop_reason": None,
+        "response_text": None,
+        "rejected": [],
+        "entities": sorted(ents),
+        "error": None,
+    }
 
     with client.messages.stream(
         model=GENERATOR_MODEL,
@@ -463,36 +491,25 @@ def generate_knowledge(client, app: str, bundle: str, n: int = N_K) -> tuple[lis
 
     text = "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
     stop_reason = getattr(response, "stop_reason", None)
-
-    raw: dict = {
-        "model": GENERATOR_MODEL,
-        "max_tokens": GENERATOR_MAX_TOKENS,
-        "app": app,
-        "n_requested": n_request,
-        "n": n,
-        "prompt": prompt,
-        "stop_reason": stop_reason,
-        "response_text": text,
-        "rejected": [],
-        "entities": [],
-    }
+    raw["stop_reason"] = stop_reason
+    raw["response_text"] = text
 
     if stop_reason == "max_tokens":
-        raise KnowledgeGenerationError(
-            f"the generator's response was cut off at max_tokens={GENERATOR_MAX_TOKENS}; "
-            "refusing to use a truncated knowledge batch", raw)
+        raw["error"] = (f"the generator's response was cut off at max_tokens={GENERATOR_MAX_TOKENS}; "
+                        "refusing to use a truncated knowledge batch")
+        raise KnowledgeGenerationError(raw["error"], raw)
 
     start, end = text.find("["), text.rfind("]")
     if start < 0 or end < start:
-        raise KnowledgeGenerationError("no JSON array in the generator's response", raw)
+        raw["error"] = "no JSON array in the generator's response"
+        raise KnowledgeGenerationError(raw["error"], raw)
     try:
         items = json.loads(text[start : end + 1])
     except json.JSONDecodeError as exc:
-        raise KnowledgeGenerationError(f"malformed JSON in the generator's response: {exc}", raw) from exc
+        raw["error"] = f"malformed JSON in the generator's response: {exc}"
+        raise KnowledgeGenerationError(raw["error"], raw) from exc
 
     texts_for_app = task_texts(app)
-    ents = task_entities(app)
-    raw["entities"] = sorted(ents)
 
     kept: list[str] = []
     seen: set[str] = set()
@@ -519,10 +536,11 @@ def generate_knowledge(client, app: str, bundle: str, n: int = N_K) -> tuple[lis
     raw["rejected"] = rejected
 
     if len(kept) < n:
-        raise KnowledgeGenerationError(
-            f"only {len(kept)} valid, non-leaking, distinct knowledge extensions out of "
-            f"{len(items)} candidates; need {n}", raw)
+        raw["error"] = (f"only {len(kept)} valid, non-leaking, distinct knowledge extensions out of "
+                        f"{len(items)} candidates; need {n}")
+        raise KnowledgeGenerationError(raw["error"], raw)
 
+    raw["kept"] = kept
     return kept, raw
 
 
@@ -607,10 +625,36 @@ def _knowledge_pool_paths(out: Path, app: str) -> tuple[Path, Path]:
     return out / "pools" / f"{pool_name}.yaml", out / f"k_generation_{app}.json"
 
 
-def _reuse_knowledge_pool(pool_path: Path, k_gen_path: Path) -> tuple[list[str], dict] | None:
-    """The already-built K pool and its generation record, if both exist and the pool's
-    frozen per-arm sha256 still verifies; ``None`` if either is missing, unreadable, or
-    doesn't verify, so the caller falls back to calling the generator.
+def _archive_failed_generation(k_gen_path: Path, raw: dict) -> Path:
+    """Persist a failed generation `raw` record as ``<k_gen_path.stem>.failed-<n>.json`` (`n`
+    = the next free integer) rather than the canonical ``k_generation_<app>.json`` path (fix
+    round 2, ruling 3). The canonical path is thereby only ever written on a genuine success,
+    so it can never be mistaken for a reusable record, and a later success is never blocked
+    from being written there.
+    """
+    k_gen_path.parent.mkdir(parents=True, exist_ok=True)
+    n = 1
+    while True:
+        candidate = k_gen_path.with_name(f"{k_gen_path.stem}.failed-{n}.json")
+        if not candidate.exists():
+            break
+        n += 1
+    candidate.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
+    return candidate
+
+
+def _reuse_knowledge_pool(pool_path: Path, k_gen_path: Path, bundle: str, app: str) -> tuple[list[str], dict] | None:
+    """The already-built K pool and its generation record, if reusable; ``None`` if either
+    file is missing/unreadable, the pool's frozen per-arm sha256 doesn't verify, the record is
+    a failure (``raw["error"]`` set), or the record's kept texts don't match the pool's
+    ``prompt_guidance`` texts in order (fix round 2, ruling 3) -- any of these means "not a
+    resumable prior success," so the caller falls back to calling the generator.
+
+    If the record otherwise verifies (no error, kept texts == pool texts) but its
+    `bundle_sha256`/`entities` no longer match the *current* `bundle`/`task_entities(app)`
+    (fix round 2, finding 4) -- e.g. the manual bundle or task instructions changed since it
+    was generated -- this raises `SystemExit` rather than silently reusing stale content or
+    silently paying to regenerate it: the drift needs an explicit `--force`.
     """
     if not (pool_path.exists() and k_gen_path.exists()):
         return None
@@ -621,18 +665,39 @@ def _reuse_knowledge_pool(pool_path: Path, k_gen_path: Path) -> tuple[list[str],
         return None
     if len(pool_arms) != N_K:
         return None
-    return [pa.arm.prompt_guidance for pa in pool_arms], raw
+    if raw.get("error") is not None:
+        return None
+    pool_texts = [pa.arm.prompt_guidance for pa in pool_arms]
+    if raw.get("kept") != pool_texts:
+        return None
+
+    expected_bundle_sha = sha256_text(bundle)
+    expected_entities = sorted(task_entities(app))
+    if raw.get("bundle_sha256") != expected_bundle_sha or raw.get("entities") != expected_entities:
+        raise SystemExit(
+            f"{app}: {k_gen_path} verifies against {pool_path} but its bundle hash or entity "
+            "set no longer matches the current inputs (the manual bundle or task instructions "
+            "changed since it was generated); pass --force to regenerate")
+    return pool_texts, raw
 
 
 def _knowledge_pool(client, app: str, bundle: str, out: Path, force: bool) -> tuple[list[str], dict]:
     """`app`'s K-generation texts and record: reused from disk when not `force` and a
-    verified pool + record already exist (fix round 1, issue 4's resume); otherwise
-    generated, with the record persisted to ``k_generation_<app>.json`` before any
-    `KnowledgeGenerationError` propagates, so a failed paid call is never lost.
+    verified pool + record already exist (fix round 1, issue 4's resume; fix round 2,
+    ruling 3's stricter verification); otherwise generated, with the record persisted to
+    ``k_generation_<app>.json`` on success or archived (never overwriting the canonical path)
+    on failure, so a failed paid call is never lost and never masquerades as reusable.
+
+    `force` unconditionally invalidates (deletes) the canonical record before attempting --
+    "force" means "regenerate, discard whatever is cached" -- so a forced attempt that fails
+    never leaves a stale-but-still-verifiable cache behind for a later plain resume to
+    silently reuse.
     """
     pool_path, k_gen_path = _knowledge_pool_paths(out, app)
-    if not force:
-        reused = _reuse_knowledge_pool(pool_path, k_gen_path)
+    if force:
+        k_gen_path.unlink(missing_ok=True)
+    else:
+        reused = _reuse_knowledge_pool(pool_path, k_gen_path, bundle, app)
         if reused is not None:
             log.info("%s: reusing verified %s and %s; skipping the generator",
                      app, pool_path.name, k_gen_path.name)
@@ -640,8 +705,9 @@ def _knowledge_pool(client, app: str, bundle: str, out: Path, force: bool) -> tu
     try:
         texts, raw = generate_knowledge(client, app, bundle, n=N_K)
     except KnowledgeGenerationError as exc:
-        k_gen_path.parent.mkdir(parents=True, exist_ok=True)
-        k_gen_path.write_text(json.dumps(exc.raw, indent=2, ensure_ascii=False), encoding="utf-8")
+        archived = _archive_failed_generation(k_gen_path, exc.raw)
+        log.warning("%s: knowledge generation failed; archived the failed record to %s "
+                    "(canonical %s left untouched)", app, archived.name, k_gen_path.name)
         raise
     k_gen_path.parent.mkdir(parents=True, exist_ok=True)
     k_gen_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -660,9 +726,14 @@ def build_profiles(seed: int = SEED, out: Path = OUT_DIR, force: bool = False, c
     """
     out = Path(out)
     manifest_path = out / "manifest.json"
-    if manifest_path.exists() and not force:
-        raise SystemExit(f"a completed heterogeneity profile already exists under {out}; "
-                         "frozen (pass --force to rebuild)")
+    if manifest_path.exists():
+        if not force:
+            raise SystemExit(f"a completed heterogeneity profile already exists under {out}; "
+                             "frozen (pass --force to rebuild)")
+        # Fix round 2, ruling 3: unlink before proceeding, and only ever write it again at
+        # successful completion -- otherwise a failed --force run leaves the *previous*
+        # manifest.json in place, which then wrongly blocks a later plain resume.
+        manifest_path.unlink()
 
     axes = load_axes(AXES_PATH)
 
@@ -780,12 +851,19 @@ def build_profiles(seed: int = SEED, out: Path = OUT_DIR, force: bool = False, c
     def _sections_for_manifest(app: str) -> list[dict]:
         return [{k: v for k, v in s.items() if k != "text"} for s in bundle_sections(app)]
 
+    # Fix round 2, finding 4: the entity-set hash is computed from the generation record
+    # *actually used* for each app's K pool (`raw["entities"]`, frozen when that record was
+    # generated/reused) rather than a fresh `task_entities(app)` call, so the manifest
+    # reflects what actually gated the K pool, not whatever the entity heuristic would
+    # compute right now.
+    k_raw_by_app = {"gitlab": gitlab_raw, "gmail": gmail_raw}
+
     manifest = {
         "seed": seed,
         "block_seed": block_seed,
         "bundle_max_words": BUNDLE_MAX_WORDS,
         "real_tasks_sha256": {app: file_sha256(_real_tasks_path(app)) for app in APPS},
-        "entity_set_sha256": {app: sha256_text(json.dumps(sorted(task_entities(app)))) for app in APPS},
+        "entity_set_sha256": {app: sha256_text(json.dumps(k_raw_by_app[app]["entities"])) for app in APPS},
         "bundles": {app: _sections_for_manifest(app) for app in APPS},
         "gitlab_task_bank": gitlab_bank,
         "gitlab_task_subset_60": sixty,

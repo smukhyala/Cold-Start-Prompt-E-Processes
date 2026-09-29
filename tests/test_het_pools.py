@@ -148,65 +148,84 @@ def test_gitlab_queue_blocks_and_pilot():
     assert all(i.index == k for k, i in enumerate(q))
 
 
-# ---- fix round 1, issue 1: seed-data stripping -----------------------------------------
+# ---- fix round 2, finding 1: APP_DESCRIPTION.md excluded entirely (manual-only bundle) -
 
 
-def test_strip_seed_data_sections_removes_matched_section_only():
-    text = (
-        "# App\n\n"
-        "## Summary\n"
-        "This app has issues and boards.\n\n"
-        "## Seed Data Summary\n\n"
-        "### Users (2)\n"
-        "Sarah Chen (Owner), Bob Jones (Dev)\n\n"
-        "### Boards (1)\n"
-        "Bug Triage\n\n"
-        "## Navigation Structure\n"
-        "Issues, boards, and labels are reachable from the sidebar.\n"
-    )
-    stripped = mh._strip_seed_data_sections(text)
-    assert "Sarah Chen" not in stripped
-    assert "Seed Data Summary" not in stripped
-    assert "### Users" not in stripped and "### Boards" not in stripped
-    assert "## Summary" in stripped and "## Navigation Structure" in stripped
-    assert "sidebar" in stripped
-
-
-def test_strip_seed_data_sections_noop_without_a_match():
-    text = "# App\n\n## Summary\nNothing to strip here.\n"
-    assert mh._strip_seed_data_sections(text) == text
-
-
-def test_gitlab_bundle_strips_seed_data_and_frees_sarah_chen_entity():
+def test_gitlab_bundle_excludes_app_description_and_frees_seed_names():
+    """The old seed-data-stripping approach (fix round 1) left APP_DESCRIPTION.md's non-
+    "Seed Data Summary" sections (e.g. "Boards") in the bundle, which kept exempting some
+    seeded instance names (like the "Bug Triage" board) from the leak guard. The ruling for
+    this round instead drops APP_DESCRIPTION.md from the bundle entirely -- GitLab's bundle
+    is user-manual pages only, exactly like Gmail's always was.
+    """
     bundle = mh.build_bundle("gitlab")
-    assert "Sarah Chen" not in bundle
+    names = ("Platform Redesign", "Security Hardening", "Bug Triage", "Sprint 26",
+             "v4.0 - Platform Redesign", "AcmeCorp", "platform-v4")
+    for name in names:
+        assert name not in bundle, name
+
     ents = mh.task_entities("gitlab")
-    assert "sarah chen" in ents
-    # NOTE: "Bug Triage" is *not* asserted absent here -- unlike "Sarah Chen", it is also
-    # named outside the Seed Data Summary section (APP_DESCRIPTION.md's "Boards" section
-    # documents it as one of three fixed pre-configured board names), so it correctly
-    # remains exempt from the leak guard even after seed-data stripping. See the fix-round
-    # report for the full explanation.
+    tasks = mh.task_texts("gitlab")
+    occurs_in_a_task = [n for n in names if any(n.lower() in t.lower() for t in tasks)]
+    assert occurs_in_a_task  # sanity: real-tasks.json still names these seed-data entities
+
+    # "Sprint 26" is a real occurring seed name that the *entity extractor* (unchanged this
+    # round; its capitalized-run regex requires every word of a run to start with a letter)
+    # cannot represent on its own -- a numeral-suffixed name was never extractable, with or
+    # without APP_DESCRIPTION.md in the bundle. That is a pre-existing extractor scope limit
+    # (the same category as fix round 1's noted 4-word cap-run limit), not something this
+    # finding's ruling (which is about the APP_DESCRIPTION.md exemption, not extractor
+    # coverage) asked to fix -- so it is excluded from the flagged-by-leak_violations check
+    # below rather than asserted falsely.
+    checked = [n for n in occurs_in_a_task if n != "Sprint 26"]
+    assert checked  # sanity: still exercises the fix (e.g. "Bug Triage", "Platform Redesign")
+    for name in checked:
+        assert any("entity" in v for v in mh.leak_violations(f"Update the {name} item.", [], ents)), name
 
 
-# ---- fix round 1, issue 2: priority order, dedup, hard cap -----------------------------
+# ---- fix round 2, ruling 2: per-area word budgets (rolling forward) --------------------
 
 
-def test_assemble_bundle_priority_order_dedup_and_hard_cap():
-    items = [
+def test_assemble_bundle_single_area_priority_order_dedup_and_hard_cap():
+    areas = [[
         ("a.md", "Alpha " * 5),
         ("b.md", "Beta " * 5),
         ("a.md", "Alpha duplicate path, must be skipped regardless of its content " * 5),
         ("c.md", "Beta " * 5),  # byte-identical body to b.md -> deduped by content
         ("d.md", "Delta " * 500),
-    ]
-    sections = mh._assemble_bundle(items, max_words=20)
+    ]]
+    sections = mh._assemble_bundle(areas, max_words=20)
     paths = [s["path"] for s in sections]
     assert paths == ["a.md", "b.md", "d.md"]
     assert "c.md" not in paths
     assert sum(s["words"] for s in sections) <= 20
     assert sum(len(s["text"].split()) for s in sections) <= 20
     assert sections[-1]["truncated"] is True
+
+
+def test_assemble_bundle_multi_area_budget_and_rollover():
+    """budget = cap // number_of_areas per area, in priority order; an area's unused budget
+    rolls forward (never backward), so the small early areas here let the last, larger area
+    use more than its own bare 1/3 share before being truncated.
+    """
+    areas = [
+        [("a.md", "Alpha " * 3)],
+        [("b.md", "Beta " * 3)],
+        [("c.md", "Charlie " * 100)],
+    ]
+    sections = mh._assemble_bundle(areas, max_words=30)
+    paths = [s["path"] for s in sections]
+    assert paths == ["a.md", "b.md", "c.md"]
+    assert sections[0]["truncated"] is False
+    assert sections[1]["truncated"] is False
+    assert sections[2]["truncated"] is True
+    assert sum(s["words"] for s in sections) <= 30
+
+
+def test_assemble_bundle_dedups_path_across_areas():
+    areas = [[("a.md", "Alpha " * 5)], [("a.md", "Alpha duplicate path, must be skipped " * 5)]]
+    sections = mh._assemble_bundle(areas, max_words=1000)
+    assert [s["path"] for s in sections] == ["a.md"]
 
 
 def test_assemble_bundle_dedups_near_identical_content_ignoring_source_line():
@@ -216,41 +235,53 @@ def test_assemble_bundle_dedups_near_identical_content_ignoring_source_line():
     body_a = "Some shared procedural content about a feature.\n\nSource: https://example.com/111\n"
     body_b = "Some shared procedural content about a feature.\n\nSource: https://example.com/222\n"
     assert body_a != body_b  # not byte-identical
-    sections = mh._assemble_bundle([("a.md", body_a), ("b.md", body_b)], max_words=1000)
+    sections = mh._assemble_bundle([[("a.md", body_a), ("b.md", body_b)]], max_words=1000)
     assert [s["path"] for s in sections] == ["a.md"]
 
 
-def test_gitlab_bundle_priority_order_and_previously_dropped_files():
+def test_gitlab_bundle_every_area_represented_and_priority_order():
+    """Ruling 2: every area of the priority list is represented in the real bundle (labels,
+    issue_board, milestones, issues, epics, iterations), in that order, under the default
+    25,000-word cap and its equal-per-area budget with rollover -- and APP_DESCRIPTION.md
+    (finding 1) never appears.
+    """
     sections = mh.bundle_sections("gitlab")
     paths = [s["path"] for s in sections]
 
     def idx(suffix):
         return next(i for i, p in enumerate(paths) if p.endswith(suffix))
 
-    # labels.md, issue_board.md, milestones/*, and issues/managing_issues.md were dropped
-    # by the old plain-alphabetical-then-cut ordering; under the ruled priority order they
-    # now survive the 25,000-word cap.
-    for suffix in ("APP_DESCRIPTION.md", "user/project/labels.md", "user/project/issue_board.md",
-                   "user/project/milestones/_index.md", "user/project/issues/managing_issues.md"):
+    for suffix in ("user/project/labels.md", "user/project/issue_board.md",
+                   "user/project/milestones/_index.md", "user/project/issues/managing_issues.md",
+                   "user/group/epics/_index.md", "user/group/iterations/_index.md"):
         assert any(p.endswith(suffix) for p in paths), suffix
 
-    assert idx("APP_DESCRIPTION.md") < idx("user/project/labels.md")
     assert idx("user/project/labels.md") < idx("user/project/issue_board.md")
     assert idx("user/project/issue_board.md") < idx("user/project/milestones/_index.md")
     assert idx("user/project/milestones/_index.md") < idx("user/project/issues/managing_issues.md")
-    assert idx("user/project/issues/managing_issues.md") < idx("user/project/issues/_index.md")
+    assert idx("user/project/issues/managing_issues.md") < idx("user/group/epics/_index.md")
+    assert idx("user/group/epics/_index.md") < idx("user/group/iterations/_index.md")
+
+    assert not any(p.endswith("APP_DESCRIPTION.md") for p in paths)
+    assert sum(s["words"] for s in sections) <= mh.BUNDLE_MAX_WORDS
 
 
-def test_gmail_bundle_priority_order_settings_first():
+def test_gmail_bundle_every_area_represented_including_compose_and_send():
+    """Ruling 2: under the old plain-priority-order cap (fix round 1), Gmail's compose-and-
+    send area was dropped entirely once settings-and-configuration and organize-and-manage
+    consumed the whole 25,000-word cap. With an equal per-area budget it now always gets a
+    (possibly truncated) share.
+    """
     sections = mh.bundle_sections("gmail")
     paths = [s["path"] for s in sections]
-    assert paths[0].startswith("apps/user-manuals/gmail/settings-and-configuration/")
+    assert any("settings-and-configuration/" in p for p in paths)
+    assert any("organize-and-manage/" in p for p in paths)
+    assert any("compose-and-send/" in p for p in paths)
+    first_settings = next(i for i, p in enumerate(paths) if "settings-and-configuration/" in p)
     first_organize = next(i for i, p in enumerate(paths) if "organize-and-manage/" in p)
-    first_compose = next((i for i, p in enumerate(paths) if "compose-and-send/" in p), None)
-    last_settings = max(i for i, p in enumerate(paths) if "settings-and-configuration/" in p)
-    assert last_settings < first_organize
-    if first_compose is not None:
-        assert first_organize < first_compose
+    first_compose = next(i for i, p in enumerate(paths) if "compose-and-send/" in p)
+    assert first_settings < first_organize < first_compose
+    assert sum(s["words"] for s in sections) <= mh.BUNDLE_MAX_WORDS
 
 
 def test_gmail_bundle_dedups_near_identical_pages():
@@ -267,6 +298,11 @@ def test_gmail_bundle_dedups_near_identical_pages():
 def test_bundle_hard_cap_counts_header_words():
     a = mh.build_bundle("gitlab", max_words=500)
     assert len(a.split()) <= 500
+
+
+def test_bundle_determinism_at_default_cap():
+    assert mh.build_bundle("gitlab") == mh.build_bundle("gitlab")
+    assert mh.build_bundle("gmail") == mh.build_bundle("gmail")
 
 
 # ---- fix round 1, issue 3: possessive splitting + email entities -----------------------
@@ -298,6 +334,107 @@ def test_extract_entities_extracts_email_addresses():
 
 def test_generate_knowledge_requests_n_plus_20():
     assert mh.N_REQUEST_SLACK == 20
+
+
+# ---- fix round 2, finding 4: entities/bundle hash computed before parsing --------------
+
+
+def test_generate_knowledge_raw_carries_entities_and_bundle_hash_even_on_early_failure(monkeypatch):
+    """`entities` and `bundle_sha256` are computed before the response is parsed, so a raw
+    record from an EARLY failure (here: no JSON array at all) still carries them --
+    previously only a late failure (too-few-survive, past the parsing/filtering step) did.
+    """
+    monkeypatch.setattr(mh, "task_texts", lambda app: ["Reassign this to Sarah Chen today."])
+    monkeypatch.setattr(mh, "task_entities", lambda app: {"sarah chen"})
+    client = _FakeClient("not json at all, no brackets here")
+    with pytest.raises(mh.KnowledgeGenerationError) as excinfo:
+        mh.generate_knowledge(client, "gmail", "bundle text", n=40)
+    assert excinfo.value.raw["entities"] == ["sarah chen"]
+    assert excinfo.value.raw["bundle_sha256"] == mh.sha256_text("bundle text")
+    assert excinfo.value.raw["error"]
+
+
+def test_generate_knowledge_records_error_none_and_kept_on_success(monkeypatch):
+    good = [f"Guidance {i}: open the sidebar, pick the feature, confirm the banner. " + "word " * 40 for i in range(40)]
+    monkeypatch.setattr(mh, "task_texts", lambda app: [])
+    monkeypatch.setattr(mh, "task_entities", lambda app: set())
+    client = _FakeClient(json.dumps(good))
+    texts, raw = mh.generate_knowledge(client, "gmail", "bundle text", n=40)
+    assert raw["error"] is None
+    assert raw["kept"] == texts
+    assert raw["bundle_sha256"] == mh.sha256_text("bundle text")
+
+
+# ---- fix round 2, ruling 3: reuse verification, failure archiving, safe resume ---------
+
+
+def test_reuse_knowledge_pool_accepts_a_verified_matching_record(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh, "task_entities", lambda app: {"x"})
+    texts = [f"Guidance {i} about the feature. " + "word " * 40 for i in range(40)]
+    arms = [mh.freeform_arm(f"GMK_{i:02d}", t) for i, t in enumerate(texts)]
+    pool_path = tmp_path / "GMK.yaml"
+    mh.write_pool(pool_path, "GMK", arms, mh.FREEFORM_TEMPLATE, mh.AXES_PATH, meta={})
+    k_gen_path = tmp_path / "k_generation_gmail.json"
+    k_gen_path.write_text(json.dumps({
+        "kept": texts, "error": None, "bundle_sha256": mh.sha256_text("bundle"), "entities": ["x"],
+    }))
+    reused = mh._reuse_knowledge_pool(pool_path, k_gen_path, "bundle", "gmail")
+    assert reused is not None
+    got_texts, got_raw = reused
+    assert got_texts == texts
+    assert got_raw["entities"] == ["x"]
+
+
+def test_reuse_knowledge_pool_rejects_a_failure_record(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh, "task_entities", lambda app: {"x"})
+    texts = [f"Guidance {i} about the feature. " + "word " * 40 for i in range(40)]
+    arms = [mh.freeform_arm(f"GMK_{i:02d}", t) for i, t in enumerate(texts)]
+    pool_path = tmp_path / "GMK.yaml"
+    mh.write_pool(pool_path, "GMK", arms, mh.FREEFORM_TEMPLATE, mh.AXES_PATH, meta={})
+    k_gen_path = tmp_path / "k_generation_gmail.json"
+    k_gen_path.write_text(json.dumps({
+        "kept": texts, "error": "boom", "bundle_sha256": mh.sha256_text("bundle"), "entities": ["x"],
+    }))
+    assert mh._reuse_knowledge_pool(pool_path, k_gen_path, "bundle", "gmail") is None
+
+
+def test_reuse_knowledge_pool_rejects_mismatched_kept_texts(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh, "task_entities", lambda app: {"x"})
+    texts = [f"Guidance {i} about the feature. " + "word " * 40 for i in range(40)]
+    arms = [mh.freeform_arm(f"GMK_{i:02d}", t) for i, t in enumerate(texts)]
+    pool_path = tmp_path / "GMK.yaml"
+    mh.write_pool(pool_path, "GMK", arms, mh.FREEFORM_TEMPLATE, mh.AXES_PATH, meta={})
+    k_gen_path = tmp_path / "k_generation_gmail.json"
+    k_gen_path.write_text(json.dumps({
+        "kept": ["totally different text"] * 40, "error": None,
+        "bundle_sha256": mh.sha256_text("bundle"), "entities": ["x"],
+    }))
+    assert mh._reuse_knowledge_pool(pool_path, k_gen_path, "bundle", "gmail") is None
+
+
+def test_reuse_knowledge_pool_refuses_loudly_when_inputs_drifted(tmp_path, monkeypatch):
+    monkeypatch.setattr(mh, "task_entities", lambda app: {"x"})
+    texts = [f"Guidance {i} about the feature. " + "word " * 40 for i in range(40)]
+    arms = [mh.freeform_arm(f"GMK_{i:02d}", t) for i, t in enumerate(texts)]
+    pool_path = tmp_path / "GMK.yaml"
+    mh.write_pool(pool_path, "GMK", arms, mh.FREEFORM_TEMPLATE, mh.AXES_PATH, meta={})
+    k_gen_path = tmp_path / "k_generation_gmail.json"
+    k_gen_path.write_text(json.dumps({
+        "kept": texts, "error": None, "bundle_sha256": "a-stale-hash", "entities": ["x"],
+    }))
+    with pytest.raises(SystemExit, match="force"):
+        mh._reuse_knowledge_pool(pool_path, k_gen_path, "bundle", "gmail")
+
+
+def test_archive_failed_generation_uses_next_free_integer_without_touching_canonical(tmp_path):
+    k_gen_path = tmp_path / "k_generation_gmail.json"
+    p1 = mh._archive_failed_generation(k_gen_path, {"error": "first"})
+    p2 = mh._archive_failed_generation(k_gen_path, {"error": "second"})
+    assert p1.name == "k_generation_gmail.failed-1.json"
+    assert p2.name == "k_generation_gmail.failed-2.json"
+    assert not k_gen_path.exists()
+    assert json.loads(p1.read_text())["error"] == "first"
+    assert json.loads(p2.read_text())["error"] == "second"
 
 
 # ---- fix round 1, issue 4: end-to-end build_profiles with a fake client + resume -------
@@ -356,7 +493,10 @@ def test_build_profiles_end_to_end_with_fake_client_and_resume(tmp_path):
 
     assert (out / "pools" / "GLK.yaml").exists()
     assert (out / "k_generation_gitlab.json").exists()
-    assert (out / "k_generation_gmail.json").exists()  # the failed record was persisted
+    # Fix round 2, ruling 3: the failed record is archived, not written to the canonical
+    # path -- the canonical path only ever holds a genuine success.
+    assert (out / "k_generation_gmail.failed-1.json").exists()
+    assert not (out / "k_generation_gmail.json").exists()
     assert not (out / "manifest.json").exists()
     assert client.calls == {"gitlab": 1, "gmail": 1}
 
@@ -401,3 +541,75 @@ def test_build_profiles_end_to_end_with_fake_client_and_resume(tmp_path):
     # --force rebuilds everything unconditionally, including a fresh call for gitlab too.
     mh.build_profiles(out=out, client=client, force=True)
     assert client.calls == {"gitlab": 2, "gmail": 3}
+
+
+class _ScriptedFakeClient:
+    """Like `_ResumeFakeClient`, but scripted per call number rather than "first call only":
+    `script[app]` is a list of bools (True = succeed) indexed by that app's call count so
+    far (1-based); once exhausted, later calls succeed. Needed for fix round 2's ruling-3
+    test, which drives a specific app through succeed -> (forced) fail -> succeed across
+    three separate `build_profiles` calls, not just "fails once, ever".
+    """
+
+    def __init__(self, good_json: str, bad_json: str, script: dict[str, list[bool]]):
+        self.messages = self
+        self._good = good_json
+        self._bad = bad_json
+        self._script = script
+        self.calls: dict[str, int] = {"gitlab": 0, "gmail": 0}
+
+    @staticmethod
+    def _app_of(prompt: str) -> str:
+        return "gitlab" if "gitlab" in prompt.lower() else "gmail"
+
+    def stream(self, **kw):
+        assert "temperature" not in kw
+        prompt = kw["messages"][0]["content"]
+        app = self._app_of(prompt)
+        self.calls[app] += 1
+        n = self.calls[app]
+        outcomes = self._script.get(app, [])
+        ok = outcomes[n - 1] if n - 1 <= len(outcomes) - 1 else True
+        text = self._good if ok else self._bad
+        response = SimpleNamespace(content=[SimpleNamespace(type="text", text=text)], stop_reason="end_turn")
+        return _FakeStream(response)
+
+
+def test_build_profiles_failed_force_run_invalidates_only_the_forced_app_and_resume_regenerates_it(tmp_path):
+    """Fix round 2, ruling 3's core scenario: a completed build, then a `--force` rebuild
+    where gitlab succeeds again but gmail fails, then a plain resume. Asserts (a) no
+    `manifest.json` remains after the failed forced run, (b) gitlab's freshly-forced cache is
+    reused on resume (no 3rd call), and (c) gmail -- whose cache was invalidated by `--force`
+    and then failed to regenerate -- is regenerated on resume rather than silently reusing
+    either the archived failure or a stale pre-force record.
+    """
+    good = _safe_knowledge_batch(60)
+    bad = json.dumps(["short"] * 5)
+    out = tmp_path / "het"
+    client = _ScriptedFakeClient(good, bad, script={"gitlab": [True, True], "gmail": [True, False, True]})
+
+    # Round 1: a clean, fully successful build (no force needed -- `out` is empty).
+    mh.build_profiles(out=out, client=client)
+    assert (out / "manifest.json").exists()
+    assert client.calls == {"gitlab": 1, "gmail": 1}
+
+    # Round 2: --force. gitlab succeeds again (its 2nd call); gmail fails (its 2nd call).
+    with pytest.raises(mh.KnowledgeGenerationError):
+        mh.build_profiles(out=out, client=client, force=True)
+    assert not (out / "manifest.json").exists()  # unlinked before proceeding, never rewritten
+    assert client.calls == {"gitlab": 2, "gmail": 2}
+    assert (out / "k_generation_gitlab.json").exists()  # gitlab's fresh (round-2) record
+    assert (out / "k_generation_gmail.failed-1.json").exists()
+    # --force invalidates the canonical record up front, so the failed attempt leaves none
+    # behind -- not the archived failure, and not a stale pre-force success either.
+    assert not (out / "k_generation_gmail.json").exists()
+
+    # Round 3: resume, no --force. GitLab's just-refreshed cache is reused (no 3rd call);
+    # Gmail has no canonical cache to reuse, so it is regenerated -- never silently reusing
+    # the archived failure record.
+    mh.build_profiles(out=out, client=client)
+    assert client.calls == {"gitlab": 2, "gmail": 3}
+    assert (out / "manifest.json").exists()
+    gmail_raw = json.loads((out / "k_generation_gmail.json").read_text())
+    assert gmail_raw["error"] is None
+    assert len(mp.load_pool(out / "pools" / "GMK.yaml")) == 40

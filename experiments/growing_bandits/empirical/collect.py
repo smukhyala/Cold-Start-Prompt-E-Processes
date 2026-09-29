@@ -1,6 +1,15 @@
-"""Collect the real prompt pools' outcomes on WebArena Gmail (spec section 3.3).
+"""Collect the real prompt pools' outcomes on WebArena (spec section 3.3; heterogeneity spec 4.5).
 
     .venv/bin/python experiments/growing_bandits/empirical/collect.py --workers 8 [--pilot]
+    .venv/bin/python experiments/growing_bandits/empirical/collect.py --profile gitlab --budget USD [--pilot]
+
+``--profile`` (`PROFILES`, default ``prereg9``) picks the app, wall clock, task bank, frozen
+data (queue + pools + manifest entry), log dir and port range; ``--data`` / ``--log-dir``
+still override the paths. ``prereg9`` is Pre-registration 9's Gmail collector exactly
+(``data/empirical_pool``, ``logs/empirical_pool``); ``gitlab``, ``gmail`` and ``bridge`` are
+the prompt-heterogeneity study's, read from ``data/heterogeneity`` and written under
+``logs/heterogeneity/<profile>``, and each needs an explicit ``--budget``. The agent itself
+(model, effort, steps, vision, headless) is identical in every profile.
 
 At start the collector checks ``queue.jsonl`` against ``manifest.json``'s sha256, computes the
 items still without a terminal record (``ok`` or ``missing``) and deals THOSE round-robin to
@@ -42,6 +51,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures as cf
 import datetime as dt
+import functools
 import json
 import logging
 import multiprocessing as mp_
@@ -70,6 +80,8 @@ from cold_start.types import RunResult  # noqa: E402
 log = logging.getLogger("empirical.collect")
 
 LOG_DIR = ROOT / "logs" / "empirical_pool"
+HET_DATA_DIR = ROOT / "data" / "heterogeneity"
+HET_LOG_ROOT = ROOT / "logs" / "heterogeneity"
 BASE_PORT = 8001
 BUDGET_USD = 260.0
 MAX_ATTEMPTS = 3
@@ -110,6 +122,70 @@ PROVIDER_DOWN_STREAK = 3
 # Record fields truncated to this many characters.
 TEXT_LEN = 300
 
+# ---- profiles ---------------------------------------------------------------------------
+
+DEFAULT_PROFILE = "prereg9"
+#: Per-profile differences from Pre-reg 9 (the heterogeneity spec, sections 4.3-4.5). Paths
+#: are relative to the profile's data dir; the manifest's ``files`` map is keyed the same way.
+#: ``frozen`` is every file whose sha256 must match the manifest before any server starts.
+#: Ports: each profile owns 100 of them, so two profiles on one machine never collide.
+_HET_PROFILES: dict[str, dict] = {
+    "gitlab": {"web_app": "apps/gitlab-plan-and-track", "timeout_s": 600, "n_bank_tasks": 140,
+               "pools": ("pools/GLG.yaml", "pools/GLK.yaml", "pools/anchors_gitlab.yaml"), "base_port": 8101},
+    "gmail": {"web_app": "apps/gmail", "timeout_s": 180, "n_bank_tasks": 60,
+              "pools": ("pools/GMK.yaml", "pools/anchors_gmail.yaml"), "base_port": 8201},
+    "bridge": {"web_app": "apps/gmail", "timeout_s": 600, "n_bank_tasks": 60,
+               "pools": ("pools/GMB.yaml",), "base_port": 8301},
+}
+
+
+def _build_profiles() -> dict[str, dict]:
+    """Every profile's settings, from the module constants as they are *now*.
+
+    ``prereg9`` is built from the historical knobs (`AGENT`, `N_BANK_TASKS`, `LOG_DIR`,
+    `BASE_PORT`, `BUDGET_USD`, ``make_pools.DATA_DIR``) so it stays exactly Pre-reg 9's
+    collector; the others copy `AGENT` and change only ``web_app`` and ``timeout_s``.
+    """
+    profiles = {
+        DEFAULT_PROFILE: {
+            "agent": dict(AGENT),
+            "n_bank_tasks": N_BANK_TASKS,
+            "data_dir": make_pools.DATA_DIR,
+            "log_dir": LOG_DIR,
+            "queue": "queue.jsonl",
+            "pools": ("pool_G.yaml", "pool_F.yaml", "pool_anchor.yaml"),
+            "frozen": ("queue.jsonl",),
+            "base_port": BASE_PORT,
+            "budget_usd": BUDGET_USD,
+        },
+    }
+    for name, het in _HET_PROFILES.items():
+        queue = f"{name}/queue.jsonl"
+        profiles[name] = {
+            "agent": {**AGENT, "web_app": het["web_app"], "timeout_s": het["timeout_s"]},
+            "n_bank_tasks": het["n_bank_tasks"],
+            "data_dir": HET_DATA_DIR,
+            "log_dir": HET_LOG_ROOT / name,
+            "queue": queue,
+            "pools": het["pools"],
+            "frozen": (queue, *het["pools"]),
+            "base_port": het["base_port"],
+            "budget_usd": None,  # a paid stage names its own hard stop (--budget)
+        }
+    return profiles
+
+
+#: The profile table (import-time snapshot of `_build_profiles`).
+PROFILES: dict[str, dict] = _build_profiles()
+
+
+def profile_spec(name: str) -> dict:
+    """Profile `name`'s settings, rebuilt from the module constants at call time."""
+    profiles = _build_profiles()
+    if name not in profiles:
+        raise ValueError(f"unknown profile {name!r}; expected one of {sorted(profiles)}")
+    return profiles[name]
+
 INFRA_EXCEPTION = "exception"
 INFRA_PROVIDER = "provider"
 #: A worker's return value / the collector's final STATUS, and the collector's exit code.
@@ -129,6 +205,10 @@ class WorkerConfig:
     #: Queue indices this worker owns this launch (`partition_remaining`); ``None`` falls back
     #: to ``index % n_workers == worker``.
     assigned: tuple[int, ...] | None = None
+    #: Recorded on every attempt (the profile's agent wall clock and ports).
+    profile: str = DEFAULT_PROFILE
+    timeout_s: int = AGENT["timeout_s"]
+    base_port: int = BASE_PORT
 
 
 def _default_failure_streak() -> int:
@@ -202,6 +282,20 @@ def classify_detail(result: RunResult | None, exc: BaseException | None) -> tupl
 
 def classify(result: RunResult | None, exc: BaseException | None) -> str:
     return classify_detail(result, exc)[0]
+
+
+def ended_by(result: RunResult | None, max_steps: int) -> str | None:
+    """What ended the episode: ``clock`` (the wall-clock timeout), ``steps`` (the step limit
+    reached without the agent declaring done) or ``agent`` (it stopped on its own); ``None``
+    when the harness raised and there is no episode to describe."""
+    if result is None:
+        return None
+    trace = result.trace or {}
+    if trace.get("timed_out"):
+        return "clock"
+    if int(result.steps) >= max_steps and not trace.get("is_done"):
+        return "steps"
+    return "agent"
 
 
 def _parses(chunk: bytes) -> bool:
@@ -341,8 +435,11 @@ def _record(item, attempt: int, status: str, result: RunResult | None, exc: Base
         "queue_index": item.index,
         "pilot": item.pilot,
         "worker": cfg.worker,
-        "port": BASE_PORT + cfg.worker,
+        "port": cfg.base_port + cfg.worker,
         "prompt_sha256": prompt.sha256,
+        "profile": cfg.profile,
+        "timeout_s": cfg.timeout_s,
+        "ended_by": ended_by(result, cfg.max_steps),
         "timestamp_utc": dt.datetime.now(dt.UTC).isoformat(),
     }
 
@@ -542,24 +639,42 @@ def _release_lock(lock_path: Path) -> None:
         pass
 
 
-def load_prompts(data_dir: Path) -> dict[str, make_pools.PoolArm]:
+def load_prompts(data_dir: Path, profile: str = DEFAULT_PROFILE) -> dict[str, make_pools.PoolArm]:
+    """Every arm of the profile's pool files (each rendered prompt sha-checked by `load_pool`)."""
     out: dict[str, make_pools.PoolArm] = {}
-    for name in ("G", "F", "anchor"):
-        for arm in make_pools.load_pool(data_dir / f"pool_{name}.yaml"):
+    for rel in profile_spec(profile)["pools"]:
+        for arm in make_pools.load_pool(Path(data_dir) / rel):
             if arm.arm.arm_id in out:
                 raise RuntimeError(f"duplicate arm id {arm.arm.arm_id}")
             out[arm.arm.arm_id] = arm
     return out
 
 
-def verify_queue(data_dir: Path) -> None:
-    """Refuse to start unless ``queue.jsonl`` is byte-identical to the frozen one in ``manifest.json``."""
+def verify_queue(data_dir: Path, profile: str = DEFAULT_PROFILE) -> None:
+    """Refuse to start unless the profile's queue (and, for the heterogeneity profiles, its
+    pool files) are byte-identical to the frozen ones in ``manifest.json``'s ``files`` map."""
     data_dir = Path(data_dir)
     manifest = json.loads((data_dir / "manifest.json").read_text())
-    expected = manifest["files"]["queue.jsonl"]
-    got = make_pools.file_sha256(data_dir / "queue.jsonl")
-    if got != expected:
-        raise RuntimeError(f"queue.jsonl sha256 {got} != manifest's frozen {expected}; refusing to start")
+    for rel in profile_spec(profile)["frozen"]:
+        expected = manifest["files"].get(rel)
+        if expected is None:
+            raise RuntimeError(f"{data_dir / 'manifest.json'} has no frozen entry for {rel} "
+                               f"(profile {profile}); refusing to start")
+        got = make_pools.file_sha256(data_dir / rel)
+        if got != expected:
+            raise RuntimeError(f"{rel} sha256 {got} != manifest's frozen {expected}; refusing to start")
+
+
+def check_queue_arms(queue: list[make_pools.QueueItem], prompts: dict[str, make_pools.PoolArm]) -> None:
+    """Every queue item's arm is a loaded prompt of the same pool -- checked before any
+    server starts, so a mismatch cannot crash every worker (and every relaunch) mid-run."""
+    for item in queue:
+        prompt = prompts.get(item.arm_id)
+        if prompt is None:
+            raise RuntimeError(f"queue item {item.index}: arm {item.arm_id} is in no pool file of this profile")
+        if prompt.pool != item.pool:
+            raise RuntimeError(f"queue item {item.index}: arm {item.arm_id} is queued as pool {item.pool} "
+                               f"but its pool file says {prompt.pool}")
 
 
 def partition_remaining(queue: list[make_pools.QueueItem], log_dir: Path, n_workers: int,
@@ -660,7 +775,7 @@ def archive_out_of_queue(log_dir: Path, queue: list[make_pools.QueueItem]) -> di
 
 
 def _worker_main(worker: int, n_workers: int, data_dir: str, log_dir: str, budget: float, pilot: bool,
-                 assigned: tuple[int, ...] | None = None) -> str:
+                 assigned: tuple[int, ...] | None = None, profile: str = DEFAULT_PROFILE) -> str:
     from dotenv import load_dotenv
 
     import cold_start.cli._bootstrap  # noqa: F401
@@ -668,21 +783,26 @@ def _worker_main(worker: int, n_workers: int, data_dir: str, log_dir: str, budge
 
     load_dotenv(ROOT / ".env")
     logging.basicConfig(level=logging.INFO, format=f"%(asctime)s w{worker} %(levelname)s %(message)s")
+    spec = profile_spec(profile)
     data, logs = Path(data_dir), Path(log_dir)
-    queue = make_pools.read_queue(data / "queue.jsonl")
-    prompts = load_prompts(data)
-    adapter = WebArenaInfinityAdapter(port=BASE_PORT + worker, artifacts_dir=str(logs / "artifacts" / f"w{worker}"),
+    queue = make_pools.read_queue(data / spec["queue"])
+    prompts = load_prompts(data, profile)
+    agent = spec["agent"]
+    adapter = WebArenaInfinityAdapter(port=spec["base_port"] + worker,
+                                      artifacts_dir=str(logs / "artifacts" / f"w{worker}"),
                                       axes_path=str(ROOT / "configs" / "axes.yaml"),
-                                      template_path=str(ROOT / "configs" / "template.jinja"), **AGENT)
+                                      template_path=str(ROOT / "configs" / "template.jinja"), **agent)
     try:
         # The first start takes the same reset-with-backoff path as every recovery: a server
         # slow to come up on a loaded machine must not kill the worker on one 15 s shot.
         _recover(adapter)
-        if len(adapter.task_ids()) != N_BANK_TASKS:
-            raise RuntimeError(f"task bank has {len(adapter.task_ids())} tasks; expected {N_BANK_TASKS}")
+        n_bank = spec["n_bank_tasks"]
+        if len(adapter.task_ids()) != n_bank:
+            raise RuntimeError(f"task bank has {len(adapter.task_ids())} tasks; expected {n_bank}")
         check_bank(adapter, queue)
         cfg = WorkerConfig(worker=worker, n_workers=n_workers, log_dir=logs, budget_usd=budget, pilot_only=pilot,
-                           assigned=assigned)
+                           assigned=assigned, profile=profile, timeout_s=int(agent["timeout_s"]),
+                           base_port=spec["base_port"])
         return run_worker(cfg, queue, prompts, adapter)
     finally:
         try:
@@ -691,17 +811,37 @@ def _worker_main(worker: int, n_workers: int, data_dir: str, log_dir: str, budge
             log.warning("worker %d: close() during shutdown raised: %r", worker, err)
 
 
-def main(argv: list[str] | None = None) -> int:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """The CLI, with ``data`` / ``log_dir`` / ``budget`` resolved from ``--profile`` unless given."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--profile", choices=sorted(PROFILES), default=DEFAULT_PROFILE)
     ap.add_argument("--workers", type=int, default=8)
-    ap.add_argument("--data", type=Path, default=make_pools.DATA_DIR)
-    ap.add_argument("--log-dir", type=Path, default=LOG_DIR)
-    ap.add_argument("--budget", type=float, default=BUDGET_USD)
+    ap.add_argument("--data", type=Path, default=None, help="default: the profile's data dir")
+    ap.add_argument("--log-dir", type=Path, default=None, help="default: the profile's log dir")
+    ap.add_argument("--budget", type=float, default=None,
+                    help=f"USD hard stop (prereg9 default {BUDGET_USD}; required for every other profile)")
     ap.add_argument("--pilot", action="store_true", help="run only the pilot items")
     ap.add_argument("--archive-out-of-queue", action="store_true",
-                    help="amendment 1: archive already-collected records outside the current "
+                    help="amendment 1 (prereg9 only): archive already-collected records outside the current "
                          "queue.jsonl, write STATUS paused, and exit -- never launches a worker")
     args = ap.parse_args(argv)
+    spec = profile_spec(args.profile)
+    if args.data is None:
+        args.data = spec["data_dir"]
+    if args.log_dir is None:
+        args.log_dir = spec["log_dir"]
+    if args.budget is None:
+        args.budget = spec["budget_usd"]
+    if args.archive_out_of_queue and args.profile != DEFAULT_PROFILE:
+        ap.error("--archive-out-of-queue is Pre-reg 9's amendment-1 operation (--profile prereg9 only)")
+    if args.budget is None and not args.archive_out_of_queue:
+        ap.error(f"--profile {args.profile} has no default budget: pass --budget USD (the hard stop)")
+    return args
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    spec = profile_spec(args.profile)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     args.log_dir.mkdir(parents=True, exist_ok=True)
     _become_process_group_leader()  # before any lock acquisition, in every mode (fix round 2)
@@ -723,17 +863,22 @@ def main(argv: list[str] | None = None) -> int:
     status_path.write_text("running\n")
     final = OUTCOME_FAILED
     try:
-        verify_queue(args.data)
-        load_prompts(args.data)  # fail fast on a moved hash, before any server starts
-        queue = make_pools.read_queue(args.data / "queue.jsonl")
+        verify_queue(args.data, args.profile)
+        prompts = load_prompts(args.data, args.profile)  # fail fast on a moved hash, before any server starts
+        queue = make_pools.read_queue(args.data / spec["queue"])
+        check_queue_arms(queue, prompts)
         shares = partition_remaining(queue, args.log_dir, args.workers, args.pilot)
         log.info("%d items left; shares %s", sum(len(x) for x in shares), [len(x) for x in shares])
         clear_exit_markers(args.log_dir)
         ctx = mp_.get_context("spawn")
         outcomes: list[str] = []
+        # prereg9 submits exactly the historical call; any other profile binds its name.
+        worker_fn = _worker_main if args.profile == DEFAULT_PROFILE else \
+            functools.partial(_worker_main, profile=args.profile)
+        log.info("profile %s: agent %s", args.profile, spec["agent"])
         with cf.ProcessPoolExecutor(max_workers=args.workers, mp_context=ctx) as pool:
             futures = {
-                pool.submit(_worker_main, w, args.workers, str(args.data), str(args.log_dir), args.budget,
+                pool.submit(worker_fn, w, args.workers, str(args.data), str(args.log_dir), args.budget,
                             args.pilot, shares[w]): w
                 for w in range(args.workers)
             }

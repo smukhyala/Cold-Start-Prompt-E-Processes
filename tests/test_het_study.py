@@ -178,7 +178,7 @@ def test_prompt_bootstrap_contrast_reads_the_studys_tests(tmp_path):
                                        rule="noninferiority", out_dir=tmp_path, expected_n_boot=4, study=h).iloc[0]
     assert row["test"] == "het" and row["n_informative"] == 6 and row["n_boot"] == 4
     assert row["hi"] == pytest.approx(np.percentile([0.0005 * b for b in range(4)], 97.5))
-    assert not row["as_registered"]  # no het registration exists yet (Task 8 adds them)
+    assert not row["as_registered"]  # het registrations name a section 6.5 class, never the flatness guard
     with pytest.raises(FileNotFoundError):  # Pre-reg 9 (the default) finds no emp tree here
         rc.prompt_bootstrap_contrast("p3_star", "fixed_K_star", horizons=(50, 100, 200), mei=0.002,
                                      rule="noninferiority", out_dir=tmp_path, expected_n_boot=4)

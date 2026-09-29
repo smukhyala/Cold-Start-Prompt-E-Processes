@@ -144,6 +144,18 @@ def _kgrid_df(pools: tuple[str, ...] = POOLS) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _flatness_df() -> pd.DataFrame:
+    """A synthetic `emp_flatness.csv` (`describe.flatness`'s columns): npmle regret range per pool at
+    every primary horizon, for Pre-reg 9's G and F (fix round 1: figure 3's source for a *measured*
+    historical regret range)."""
+    rows = []
+    for pool, rr200 in (("G", 0.018), ("F", 0.041)):
+        for T, frac in ((50, 0.5), (100, 0.75), (200, 1.0)):
+            rows.append({"env_id": f"emp_{pool}_npmle", "pool": pool, "variant": "npmle", "horizon": T,
+                        "regret_range": rr200 * frac, "informative": True, "reservoir_sha256": "beadfeed"})
+    return pd.DataFrame(rows)
+
+
 def _write_all_tables(tables_dir: Path) -> None:
     tables_dir.mkdir(parents=True, exist_ok=True)
     _components_df().to_csv(tables_dir / "het_components.csv", index=False)
@@ -155,6 +167,7 @@ def _write_all_tables(tables_dir: Path) -> None:
     _stage0_gmail_df().to_csv(tables_dir / "stage0_gmail.csv", index=False)
     _stage0_gitlab_df().to_csv(tables_dir / "stage0_gitlab_paired.csv", index=False)
     _kgrid_df().to_csv(tables_dir / "het_kgrid.csv", index=False)
+    _flatness_df().to_csv(tables_dir / "emp_flatness.csv", index=False)
 
 
 # ---- pure helper behaviour -----------------------------------------------------------------------
@@ -249,17 +262,86 @@ def test_fig7d_anchor_recovery_panel_is_annotated_empty_without_anchor_columns()
 
 def test_historical_points_combines_gmail_and_gitlab_stage0():
     pts = fg._historical_points(_stage0_gmail_df(), _stage0_gitlab_df())
-    labels = {p["label"] for p in pts}
-    assert "G (historical)" in labels
-    assert "F (historical)" in labels
-    assert "all_18_arms (historical)" in labels
+    names = {p["name"] for p in pts}
+    assert "G" in names
+    assert "F" in names
+    assert "all_18_arms" in names
     assert len(pts) == 5
+    source_of = {p["name"]: p["source"] for p in pts}
+    assert source_of["G"] == "gmail"
+    assert source_of["F"] == "gmail"
+    assert source_of["all_18_arms"] == "gitlab"
     for p in pts:
         assert p["tau_lo"] <= p["tau_main"] <= p["tau_hi"]
 
 
 def test_historical_points_empty_when_no_stage0_tables():
     assert fg._historical_points(None, None) == []
+
+
+# ---- fix round 1: measured vs interpolated historical points (figure 3) --------------------------
+
+
+def _beta200(cal: pd.DataFrame) -> pd.DataFrame:
+    return cal[(cal["family"] == "beta") & (cal["horizon"] == 200)].sort_values("true_sd")
+
+
+def test_measured_regret_range_reads_the_npmle_t200_row_for_the_pool():
+    flatness = _flatness_df()
+    assert fg._measured_regret_range(flatness, "G") == pytest.approx(0.018)
+    assert fg._measured_regret_range(flatness, "F") == pytest.approx(0.041)
+
+
+def test_measured_regret_range_none_when_missing_or_ambiguous():
+    assert fg._measured_regret_range(None, "G") is None
+    assert fg._measured_regret_range(pd.DataFrame(), "G") is None
+    flatness = _flatness_df()
+    assert fg._measured_regret_range(flatness, "nonexistent_pool") is None
+    duplicated = pd.concat([_flatness_df(), _flatness_df()], ignore_index=True)
+    assert fg._measured_regret_range(duplicated, "G") is None  # two matching rows: ambiguous
+
+
+def test_historical_figure_points_uses_measured_for_gmail_and_interpolates_gitlab():
+    beta = _beta200(_calibration_df())
+    flatness = _flatness_df()
+    pts = fg._historical_figure_points(beta, _stage0_gmail_df(), _stage0_gitlab_df(), flatness)
+    by_name = {p["name"]: p for p in pts}
+
+    assert by_name["G"]["kind"] == "measured"
+    assert by_name["G"]["y"] == pytest.approx(0.018)
+    assert by_name["G"]["label"] == "G (historical)"
+    assert by_name["F"]["kind"] == "measured"
+    assert by_name["F"]["y"] == pytest.approx(0.041)
+    assert by_name["F"]["label"] == "F (historical)"
+
+    for name in ("all_18_arms", "without_oracle_and_explorer", "generic_12_arms"):
+        p = by_name[name]
+        assert p["kind"] == "interpolated"
+        assert p["label"] == f"{name} (historical, interpolated)"
+        assert p["y"] == pytest.approx(fg._interp_regret_range(beta, p["tau_main"]))
+
+
+def test_historical_figure_points_all_interpolated_without_flatness_table():
+    beta = _beta200(_calibration_df())
+    pts = fg._historical_figure_points(beta, _stage0_gmail_df(), _stage0_gitlab_df(), None)
+    assert len(pts) == 5
+    assert all(p["kind"] == "interpolated" for p in pts)
+    assert all(p["label"].endswith("(historical, interpolated)") for p in pts)
+    by_name = {p["name"]: p for p in pts}
+    assert by_name["G"]["y"] == pytest.approx(fg._interp_regret_range(beta, by_name["G"]["tau_main"]))
+
+
+def test_historical_figure_points_falls_back_when_pools_row_is_missing():
+    """A flatness table that exists but has no row for a given pool (e.g. only G, not F) falls back to
+    interpolation for that pool alone."""
+    beta = _beta200(_calibration_df())
+    flatness = _flatness_df()
+    flatness_g_only = flatness[flatness["pool"] == "G"]
+    pts = fg._historical_figure_points(beta, _stage0_gmail_df(), None, flatness_g_only)
+    by_name = {p["name"]: p for p in pts}
+    assert by_name["G"]["kind"] == "measured"
+    assert by_name["F"]["kind"] == "interpolated"
+    assert by_name["F"]["y"] == pytest.approx(fg._interp_regret_range(beta, by_name["F"]["tau_main"]))
 
 
 # ---- integration: make_figures --------------------------------------------------------------------
@@ -275,6 +357,7 @@ def test_make_figures_full_tables_produces_all_seven_figures(tmp_path, recwarn):
         calibration_csv=tables_dir / "calibration.csv",
         stage0_dir=tables_dir,
         kgrid_csv=tables_dir / "het_kgrid.csv",
+        prereg9_flatness_csv=tables_dir / "emp_flatness.csv",
         tau_flat=0.03,
     )
 

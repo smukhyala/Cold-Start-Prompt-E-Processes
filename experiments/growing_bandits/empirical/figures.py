@@ -18,9 +18,16 @@ Seven figures (spec section 7), one PNG + PDF each under `out_dir` (``fig{n}_<sl
    T = 200 on y; tail mixtures as a second marker set), the empirical cells as labelled points with
    their tau_main interval as horizontal error bars (y from ``het_classification.csv``'s
    ``regret_range_T200``), and the historical Stage-0 points (Pre-reg 9 Gmail G/F, the old GitLab
-   paired subsets) labelled "historical". Stage 0 ran no K-grid on these, so they have no measured
-   regret range: their y is the calibration curve's own value interpolated at their tau_main, which is
-   an interpolated placement, never a measurement, and is only drawn when a calibration curve is given.
+   paired subsets). Fix round 1 (controller ruling): Gmail's G/F *do* have a measured regret range --
+   Pre-registration 9's own K-grid, ``emp_flatness.csv`` (``prereg9_flatness_csv``, default
+   ``results/growing_bandits/deploy/tables/emp_flatness.csv``) -- so they plot at that measured value
+   (npmle, T=200) and are labelled ``"<pool> (historical)"``. The old GitLab paired subsets
+   (``stage0_gitlab_paired.csv``) never had a K-grid at all, and Gmail's G/F fall back the same way if
+   ``emp_flatness.csv`` or that pool's row is missing: their y is the calibration curve's own value
+   interpolated at their tau_main -- an interpolated *placement*, never a measurement -- labelled
+   ``"<name> (historical, interpolated)"`` with a distinct hollow marker and its own legend entry.
+   Historical points are only drawn when a calibration curve is given (needed for the interpolation
+   fallback and the shared axes).
 4. Regret-vs-K curves per empirical pool at T in {50, 100, 200}, from ``het_kgrid.csv`` (variant
    ``npmle``).
 5. Policy gaps to the ceiling (``het_policy_gaps.csv``'s delta with its lo/hi interval), restricted to
@@ -65,6 +72,11 @@ if str(HERE) not in sys.path:
 #: `study.HETEROGENEITY.table("kgrid")`, written as a literal path here so this module needs no import
 #: from the deploy tree just to name it.
 DEFAULT_KGRID_CSV = ROOT / "results" / "growing_bandits" / "deploy" / "tables" / "het_kgrid.csv"
+#: Fix round 1 (controller ruling): Pre-registration 9's own flatness table (`describe.flatness`,
+#: `study.PREREG9.table("flatness")` == "emp_flatness.csv"), read for figure 3's Gmail G/F historical
+#: points' *measured* regret range at T=200 (they had a real K-grid; the old GitLab paired subsets
+#: never did).
+DEFAULT_PREREG9_FLATNESS_CSV = ROOT / "results" / "growing_bandits" / "deploy" / "tables" / "emp_flatness.csv"
 
 #: Spec section 6.5's regret-range thresholds -- fixed by the spec itself, not by Pre-registration 10,
 #: so (unlike tau_flat) they are safe to hard-code here.
@@ -87,7 +99,12 @@ AXIS = "#33363c"
 FAMILY_COLORS: dict[str, str] = {"G": "#3987e5", "K": "#c98500", "F": "#d55181"}
 POOL_FAMILY: dict[str, str] = {"GMG": "G", "GLG": "G", "GMB": "G", "GMK": "K", "GLK": "K"}
 HIST_COLOR = MUTED
+#: Fix round 1: measured historical points (Gmail G/F, `emp_flatness.csv`) draw hollow diamonds;
+#: interpolated ones (no measured regret range -- the old GitLab paired subsets, or Gmail G/F when
+#: `emp_flatness.csv` lacks that pool) draw hollow squares, each with its own legend entry, so
+#: "measured" vs "interpolated" never rides on the point's text label alone.
 HIST_MARKER = "D"
+HIST_MARKER_INTERP = "s"
 COMPONENT_COLORS: dict[str, str] = {
     "prompt": FAMILY_COLORS["G"], "task": "#d95926", "interaction": "#199e70", "noise": MUTED,
 }
@@ -205,18 +222,59 @@ def _anchor_columns(df: pd.DataFrame | None) -> list[str]:
 
 
 def _historical_points(stage0_gmail: pd.DataFrame | None, stage0_gitlab: pd.DataFrame | None) -> list[dict]:
-    """``[{label, tau_main, tau_lo, tau_hi}]`` from Stage 0's tables (figure 3's "historical" points):
-    ``stage0_gmail.csv``'s ``pool`` rows (G, F) and ``stage0_gitlab_paired.csv``'s ``subset`` rows."""
+    """``[{name, tau_main, tau_lo, tau_hi, source}]`` from Stage 0's tables (figure 3's historical
+    points, before resolving a y): ``stage0_gmail.csv``'s ``pool`` rows (G, F; ``source="gmail"``, a
+    candidate for a *measured* y off `emp_flatness.csv`) and ``stage0_gitlab_paired.csv``'s ``subset``
+    rows (``source="gitlab"``, always interpolated -- Stage 0 never ran a K-grid on the old paired
+    run)."""
     rows: list[dict] = []
     if stage0_gmail is not None and not stage0_gmail.empty and "pool" in stage0_gmail.columns:
         for _, r in stage0_gmail.iterrows():
-            rows.append({"label": f"{r['pool']} (historical)", "tau_main": float(r["tau_main"]),
-                        "tau_lo": float(r["tau_lo"]), "tau_hi": float(r["tau_hi"])})
+            rows.append({"name": str(r["pool"]), "tau_main": float(r["tau_main"]),
+                        "tau_lo": float(r["tau_lo"]), "tau_hi": float(r["tau_hi"]), "source": "gmail"})
     if stage0_gitlab is not None and not stage0_gitlab.empty and "subset" in stage0_gitlab.columns:
         for _, r in stage0_gitlab.iterrows():
-            rows.append({"label": f"{r['subset']} (historical)", "tau_main": float(r["tau_main"]),
-                        "tau_lo": float(r["tau_lo"]), "tau_hi": float(r["tau_hi"])})
+            rows.append({"name": str(r["subset"]), "tau_main": float(r["tau_main"]),
+                        "tau_lo": float(r["tau_lo"]), "tau_hi": float(r["tau_hi"]), "source": "gitlab"})
     return rows
+
+
+def _measured_regret_range(flatness: pd.DataFrame | None, pool: str, horizon: int = 200) -> float | None:
+    """`emp_flatness.csv`'s own npmle regret range for `pool` at `horizon` (Pre-registration 9's real
+    K-grid), or ``None`` if the table is missing/empty, lacks the needed columns, has no row (or more
+    than one -- ambiguous) matching, or the value is non-finite. Figure 3 falls back to interpolation
+    on ``None`` (fix round 1: only Gmail G/F are ever candidates for a measured value; the callers
+    decide who asks)."""
+    if flatness is None or flatness.empty or not {"pool", "variant", "horizon", "regret_range"} <= set(flatness.columns):
+        return None
+    sub = flatness[(flatness["variant"] == "npmle") & (flatness["horizon"] == int(horizon)) & (flatness["pool"] == pool)]
+    if len(sub) != 1:
+        return None
+    val = float(sub["regret_range"].iloc[0])
+    return val if np.isfinite(val) else None
+
+
+def _historical_figure_points(beta_sorted: pd.DataFrame, stage0_gmail: pd.DataFrame | None,
+                              stage0_gitlab: pd.DataFrame | None,
+                              prereg9_flatness: pd.DataFrame | None) -> list[dict]:
+    """Figure 3's historical points, each resolved to a y and a label (fix round 1, controller ruling).
+
+    Gmail's G/F get a *measured* y -- `emp_flatness.csv`'s npmle regret range at T=200 for that pool --
+    when `_measured_regret_range` finds one; otherwise (table missing, that pool's row missing, or
+    non-finite) they fall back to `_interp_regret_range` on the calibration curve, exactly like the old
+    GitLab paired subsets, which are always interpolated (Stage 0 never ran a K-grid for them).
+    ``[{name, tau_main, tau_lo, tau_hi, source, y, kind, label}]``, ``kind`` one of
+    ``"measured"``/``"interpolated"``."""
+    points: list[dict] = []
+    for h in _historical_points(stage0_gmail, stage0_gitlab):
+        measured = _measured_regret_range(prereg9_flatness, h["name"]) if h["source"] == "gmail" else None
+        if measured is not None:
+            y, kind = measured, "measured"
+        else:
+            y, kind = _interp_regret_range(beta_sorted, h["tau_main"]), "interpolated"
+        label = f"{h['name']} (historical)" if kind == "measured" else f"{h['name']} (historical, interpolated)"
+        points.append({**h, "y": y, "kind": kind, "label": label})
+    return points
 
 
 # ---- drawing helpers ------------------------------------------------------------------------------
@@ -316,7 +374,8 @@ def _fig2_tau_bands(components: pd.DataFrame, calibration: pd.DataFrame | None, 
 
 def _fig3_value_of_search(components: pd.DataFrame, classification: pd.DataFrame | None,
                           calibration: pd.DataFrame | None, stage0_gmail: pd.DataFrame | None,
-                          stage0_gitlab: pd.DataFrame | None, out_dir: Path) -> list[Path]:
+                          stage0_gitlab: pd.DataFrame | None, prereg9_flatness: pd.DataFrame | None,
+                          out_dir: Path) -> list[Path]:
     stem = "fig3_value_of_search"
     fig, ax = plt.subplots(figsize=(7.2, 4.8))
     if calibration is None or calibration.empty or not {"family", "horizon", "true_sd", "regret_range"} <= set(calibration.columns):
@@ -360,19 +419,25 @@ def _fig3_value_of_search(components: pd.DataFrame, classification: pd.DataFrame
     else:
         ax.text(0.02, 0.02, "no het_classification.csv: empirical cells omitted", transform=ax.transAxes,
                 ha="left", va="bottom", fontsize=7, color=MUTED)
-    for i, h in enumerate(_historical_points(stage0_gmail, stage0_gitlab)):
-        y = _interp_regret_range(beta, h["tau_main"])
+    # Fix round 1 (controller ruling): Gmail G/F have a measured regret range (Pre-reg 9's own K-grid,
+    # `emp_flatness.csv`); the old GitLab paired subsets never had one and are always interpolated.
+    # Each kind gets its own marker and, the first time it appears, its own legend entry -- "measured"
+    # vs "interpolated" never rides on the point's text label alone.
+    marker_of = {"measured": HIST_MARKER, "interpolated": HIST_MARKER_INTERP}
+    kinds_seen: set[str] = set()
+    for i, p in enumerate(_historical_figure_points(beta, stage0_gmail, stage0_gitlab, prereg9_flatness)):
+        y = p["y"]
         if not np.isfinite(y):
             continue
-        ax.errorbar([h["tau_main"]], [y], xerr=[[max(h["tau_main"] - h["tau_lo"], 0.0)],
-                    [max(h["tau_hi"] - h["tau_main"], 0.0)]], fmt=HIST_MARKER, color=HIST_COLOR,
+        first = p["kind"] not in kinds_seen
+        kinds_seen.add(p["kind"])
+        ax.errorbar([p["tau_main"]], [y], xerr=[[max(p["tau_main"] - p["tau_lo"], 0.0)],
+                    [max(p["tau_hi"] - p["tau_main"], 0.0)]], fmt=marker_of[p["kind"]], color=HIST_COLOR,
                     markersize=6, markerfacecolor="none", markeredgecolor=HIST_COLOR, ecolor=HIST_COLOR,
-                    elinewidth=1.2, capsize=2, zorder=1)
-        ax.annotate(h["label"], (h["tau_main"], y), textcoords="offset points",
+                    elinewidth=1.2, capsize=2, zorder=1,
+                    label=f"historical ({p['kind']})" if first else None)
+        ax.annotate(p["label"], (p["tau_main"], y), textcoords="offset points",
                     xytext=(6, -10 - 11 * (i % 3)), fontsize=7, color=MUTED)
-    ax.text(0.98, 0.02, "historical points: y interpolated on the calibration curve (no measured "
-            "regret range for these runs)", transform=ax.transAxes, ha="right", va="bottom", fontsize=6.5,
-            color=MUTED)
     ax.set_xlabel("true SD of the prompt pool")
     ax.set_ylabel("regret range at T = 200")
     ax.set_title("Value of search vs heterogeneity")
@@ -569,7 +634,7 @@ def _fig7_supplement(components: pd.DataFrame, timeout_rates: pd.DataFrame | Non
 
 def make_figures(tables_dir: Path, out_dir: Path, *, calibration_csv: Path | None = None,
                  stage0_dir: Path | None = None, kgrid_csv: Path | None = None,
-                 tau_flat: float | None = None) -> list[Path]:
+                 tau_flat: float | None = None, prereg9_flatness_csv: Path | None = None) -> list[Path]:
     """The spec section 7 figures, drawn from `tables_dir`'s ``het_*.csv`` tables (`het_verdicts.py`'s
     output directory).
 
@@ -580,8 +645,10 @@ def make_figures(tables_dir: Path, out_dir: Path, *, calibration_csv: Path | Non
     (``tables_dir/calibration.csv``, `calibrate.py`'s output), `stage0_dir` (`tables_dir`, holding
     `stage0.py`'s ``stage0_gmail.csv``/``stage0_gitlab_paired.csv``), `kgrid_csv` (the real deployment
     tree's ``tables/het_kgrid.csv``, `replay.py kgrid`'s output -- a different directory from
-    `tables_dir` in production). `tau_flat` is Pre-registration 10's fixed value (figure 2's flat band);
-    ``None`` omits that band, annotated.
+    `tables_dir` in production), `prereg9_flatness_csv` (fix round 1: the real deployment tree's
+    ``tables/emp_flatness.csv``, `describe.flatness`'s output for Pre-registration 9 -- figure 3's
+    source for Gmail G/F's *measured* regret range). `tau_flat` is Pre-registration 10's fixed value
+    (figure 2's flat band); ``None`` omits that band, annotated.
     """
     tables_dir = Path(tables_dir)
     out_dir = Path(out_dir)
@@ -599,12 +666,15 @@ def make_figures(tables_dir: Path, out_dir: Path, *, calibration_csv: Path | Non
     stage0_gmail = _read_optional(stage0_root / "stage0_gmail.csv")
     stage0_gitlab = _read_optional(stage0_root / "stage0_gitlab_paired.csv")
     kgrid = _read_optional(Path(kgrid_csv) if kgrid_csv is not None else DEFAULT_KGRID_CSV)
+    prereg9_flatness = _read_optional(
+        Path(prereg9_flatness_csv) if prereg9_flatness_csv is not None else DEFAULT_PREREG9_FLATNESS_CSV)
 
     paths: list[Path] = []
     with plt.rc_context(RC):
         paths += _fig1_variance_decomposition(components, out_dir)
         paths += _fig2_tau_bands(components, calibration, tau_flat, out_dir)
-        paths += _fig3_value_of_search(components, classification, calibration, stage0_gmail, stage0_gitlab, out_dir)
+        paths += _fig3_value_of_search(components, classification, calibration, stage0_gmail, stage0_gitlab,
+                                       prereg9_flatness, out_dir)
         paths += _fig4_regret_vs_k(kgrid, out_dir)
         paths += _fig5_policy_gaps(policy_gaps, classification, out_dir)
         paths += _fig6_portability(portability, out_dir)

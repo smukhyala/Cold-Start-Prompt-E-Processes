@@ -67,10 +67,11 @@ SEED_STRIDE = 1_000
 
 HORIZONS: tuple[int, ...] = replay.PRIMARY_HORIZONS  # (50, 100, 200)
 K_GRID: tuple[int, ...] = tuple(int(k) for k in replay.kse.DEFAULT_K_GRID)
-#: A pool's probability of an arm strictly better than the flat bulk's mean + 3 sd
-#: (i.e. clearly not just bulk noise): the same threshold for every pool, beta or mixture,
-#: so it is comparable across the whole table.
-UPPER_TAIL_THRESHOLD = LEVEL + 3.0 * BULK_SD
+#: Spec section 6.4's upper-tail statistic: mass at or above the pool's own weighted
+#: median plus this shift. Per-pool (not a fixed absolute threshold) so it is the same
+#: statistic `stage0.analyze_cell` computes on the real pools' NPMLE atoms, and figure 3
+#: can plot calibration pools against empirical cells on one axis.
+UPPER_TAIL_DELTA = 0.10
 
 CAL_RUN_SUBDIR = "cal_run"
 CALIBRATION_CSV = "calibration.csv"
@@ -109,6 +110,22 @@ def _pool_params(pool_id: str, pool: Reservoir) -> dict:
 
 def _cal_seed(pool_index: int, horizon: int) -> int:
     return CAL_SEED_BASE + SEED_STRIDE * (pool_index * POOL_STRIDE + int(horizon))
+
+
+def _upper_tail_mass(res: EmpiricalReservoir) -> float:
+    """Share of `res`'s mass at or above its own weighted median + `UPPER_TAIL_DELTA`.
+
+    Matches `stage0.analyze_cell`'s NPMLE upper-tail statistic exactly (spec section 6.4):
+    the weighted median of the discretized atoms (`res.quantile(0.5)` is the same
+    ``inf{x : F(x) >= u}`` definition stage0's `_weighted_median` computes by hand on its
+    own NPMLE grid), plus a fixed 0.10 shift, with an **at-or-above** mass -- not
+    `Reservoir.tail_prob`'s strict ``>`` survival function, which can silently exclude an
+    atom sitting exactly on the threshold. Computed directly on `res.atoms`/`res.weights`
+    (public on `EmpiricalReservoir`) so a threshold landing exactly on a grid point counts,
+    same as stage0's ``weights[grid >= median + 0.10].sum()``.
+    """
+    threshold = res.quantile(0.5) + UPPER_TAIL_DELTA
+    return float(res.weights[res.atoms >= threshold].sum())
 
 
 def tau_flat_from_calibration(frame: pd.DataFrame, horizon: int = 200, target: float = 0.005) -> float:
@@ -159,7 +176,7 @@ def calibrate(workers: int, m: int = 1000, out_dir: Path | str = ROOT / "results
         res = EmpiricalReservoir(emp.GRID, weights, label=pool_id, validate=False)
         u = (np.arange(20_001) + 0.5) / 20_001
         true_sd = float(np.std(res.sample_from_uniforms(u)))
-        upper_tail_mass = float(res.tail_prob(UPPER_TAIL_THRESHOLD))
+        upper_tail_mass = _upper_tail_mass(res)
         meta_rows.append({"pool_id": pool_id, "family": pool.family, "true_sd": true_sd,
                           "upper_tail_mass": upper_tail_mass, **_pool_params(pool_id, pool)})
         for T in HORIZONS:

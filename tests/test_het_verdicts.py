@@ -81,9 +81,12 @@ def test_h_verdict_bounds_are_one_sided_95():
     draws = np.linspace(-1.0, 1.0, 2001)
     out = hv.h_verdict(draws, refute_below=0.01)
     assert out["lo"] == pytest.approx(np.percentile(draws, 5)) and out["hi"] == pytest.approx(np.percentile(draws, 95))
-    # both conditions met (a positive difference smaller than 0.01): supported is checked first, flagged
+    assert not out["effect_below_threshold"]
+    # both conditions met (a positive difference smaller than 0.01): supported, with the explicit flag
     both = hv.h_verdict(np.linspace(0.001, 0.005, 101), refute_below=0.01)
-    assert both["verdict"] == "supported" and both["refute_condition_met"]
+    assert both["verdict"] == "supported" and both["effect_below_threshold"] is True
+    assert not hv.h_verdict(np.linspace(-0.02, 0.005, 101), refute_below=0.01)["effect_below_threshold"]
+    assert not hv.h_verdict(np.linspace(0.01, 0.05, 101), refute_below=0.01)["effect_below_threshold"]
     with pytest.raises(ValueError):
         hv.h_verdict(np.array([0.1, np.nan]), refute_below=0.01)
 
@@ -96,17 +99,30 @@ def _contrasts(rows):
 
 
 def test_h3_supported_untestable_refuted():
+    # the brief's cases, on per-cell rows (fix round 1: pooled class rows never decide)
     classes = {"GLK": "meaningful", "GLG": "flat", "GMG": "flat"}
-    ok = _contrasts([("meaningful", "het_scale", "supported"), ("meaningful", "het_spread", "supported"),
-                     ("flat", "het_scale", "inconclusive"), ("flat", "het_spread", "inconclusive")])
+    flat_ok = [(c, r, "inconclusive") for c in ("GLG", "GMG") for r in ("het_scale", "het_spread")]
+    ok = _contrasts([("GLK", "het_scale", "supported"), ("GLK", "het_spread", "supported"), *flat_ok])
     assert hv.h3(classes, ok)["verdict"] == "supported"
     assert hv.h3({"GLG": "flat", "GMG": "moderate"}, ok)["verdict"] == "untestable"
-    bad = _contrasts([("meaningful", "het_scale", "reversed"), ("meaningful", "het_spread", "supported"),
-                      ("flat", "het_scale", "inconclusive"), ("flat", "het_spread", "inconclusive")])
+    bad = _contrasts([("GLK", "het_scale", "reversed"), ("GLK", "het_spread", "supported"), *flat_ok])
     assert hv.h3(classes, bad)["verdict"] == "refuted"
-    flat_diff = _contrasts([("meaningful", "het_scale", "supported"), ("meaningful", "het_spread", "supported"),
-                            ("flat", "het_scale", "supported"), ("flat", "het_spread", "inconclusive")])
+    flat_diff = _contrasts([("GLK", "het_scale", "supported"), ("GLK", "het_spread", "supported"),
+                            ("GLG", "het_scale", "supported"), *flat_ok[1:]])
     assert hv.h3(classes, flat_diff)["verdict"] == "refuted"
+
+
+def test_h3_pooled_rows_are_supplementary_never_decisive():
+    classes = {"GLK": "meaningful", "GLG": "flat", "GMG": "flat"}
+    per_cell = [("GLK", "het_scale", "supported"), ("GLK", "het_spread", "supported"),
+                ("GLG", "het_scale", "inconclusive"), ("GMG", "het_scale", "inconclusive")]
+    # only the pooled rows would refute: a pooled flat difference and a pooled meaningful reversal
+    rows = _contrasts([*per_cell, ("flat", "het_scale", "supported"), ("meaningful", "het_spread", "reversed")])
+    out = hv.h3(classes, rows)
+    assert out["verdict"] == "supported" and out["refuting"] == [] and len(out["supplementary"]) == 2
+    # pooled rows alone never support either
+    pooled = _contrasts([("meaningful", "het_scale", "supported"), ("meaningful", "het_spread", "supported")])
+    assert hv.h3({"GLK": "meaningful"}, pooled)["verdict"] == "inconclusive"
 
 
 def test_h3_needs_both_contrasts_in_one_meaningful_cell():
@@ -141,11 +157,13 @@ def test_h3_flat_difference_uses_the_numbers_when_present():
     assert hv.h3(classes, rows)["verdict"] == "supported"
 
 
-def test_h3_untestable_takes_precedence():
+def test_h3_refuted_beats_untestable():
     classes = {"GLG": "flat", "GMG": "moderate"}
-    rows = _contrasts([("flat", "het_scale", "supported")])
-    out = hv.h3(classes, rows)
-    assert out["verdict"] == "untestable" and out["refuting"]  # reported, not decided
+    out = hv.h3(classes, _contrasts([("GLG", "het_scale", "supported")]))
+    assert out["verdict"] == "refuted" and out["refuting"]
+    assert hv.h3(classes, _contrasts([("GLG", "het_scale", "inconclusive")]))["verdict"] == "untestable"
+    # a pooled row alone does not refute, so no meaningful cell is still untestable
+    assert hv.h3(classes, _contrasts([("flat", "het_scale", "supported")]))["verdict"] == "untestable"
 
 
 # ---- H2 ------------------------------------------------------------------------------------
@@ -216,12 +234,12 @@ def _h1_frames(seed=0, gl_sd=0.2, gm_sd=0.0):
     p_gm = np.clip(0.6 + rng.normal(0, gm_sd, 20)[:, None] + rng.normal(0, 0.1, len(gm_tasks))[None, :], 0.02, 0.98)
     gl = pd.DataFrame(_rows("GLG", glg, gl_tasks, p_gl, rng))
     gm = pd.DataFrame(_rows("GMB", gmb, gm_tasks, p_gm, rng))
-    return gl, gm, bridge_map
+    return gl, gm, bridge_map, {"GLG": (glg, gl_tasks), "GMB": (gmb, gm_tasks)}
 
 
 def test_h1_pairs_the_bridge_prompts_and_resamples_them_jointly():
-    gl, gm, bridge_map = _h1_frames()
-    out = hv.h1(gl, gm, bridge_map, n_boot=200, seed=11)
+    gl, gm, bridge_map, uni = _h1_frames()
+    out = hv.h1(gl, gm, bridge_map, n_boot=200, seed=11, universe=uni)
     Ygl, arms_gl, _, _, _ = het.success_matrix(gl, "GLG")
     Ygm, arms_gm, _, _, _ = het.success_matrix(gm, "GMB")
     order = [arms_gl.index(bridge_map[b]) for b in arms_gm]
@@ -237,13 +255,13 @@ def test_h1_pairs_the_bridge_prompts_and_resamples_them_jointly():
 
 
 def test_h1_refuses_a_bridge_map_that_does_not_cover_the_bridge_arms():
-    gl, gm, bridge_map = _h1_frames()
+    gl, gm, bridge_map, uni = _h1_frames()
     short = dict(list(bridge_map.items())[:19])
     with pytest.raises(ValueError, match="bridge"):
-        hv.h1(gl, gm, short, n_boot=5, seed=0)
+        hv.h1(gl, gm, short, n_boot=5, seed=0, universe=uni)
     wrong = {**bridge_map, "GMB_00": "GLG_99"}
     with pytest.raises(ValueError, match="GLG_99"):
-        hv.h1(gl, gm, wrong, n_boot=5, seed=0)
+        hv.h1(gl, gm, wrong, n_boot=5, seed=0, universe=uni)
 
 
 def test_g_index_pairing():
@@ -258,9 +276,10 @@ def test_h1_secondary_pairs_all_g_prompts_by_index():
     tasks = _tasks(4)
     eff = rng.normal(0, 0.2, 50)
     p = np.clip(0.5 + eff[:, None] + np.zeros(len(tasks))[None, :], 0.02, 0.98)
-    gl = pd.DataFrame(_rows("GLG", [f"GLG_{i:02d}" for i in range(50)], tasks, p, rng))
-    gm = pd.DataFrame(_rows("GMG", [f"GMG_G_{i:02d}" for i in range(50)], tasks, np.full_like(p, 0.6), rng))
-    out = hv.h1_secondary(gl, gm, n_boot=100, seed=3)
+    glg, gmg = [f"GLG_{i:02d}" for i in range(50)], [f"GMG_G_{i:02d}" for i in range(50)]
+    gl = pd.DataFrame(_rows("GLG", glg, tasks, p, rng))
+    gm = pd.DataFrame(_rows("GMG", gmg, tasks, np.full_like(p, 0.6), rng))
+    out = hv.h1_secondary(gl, gm, n_boot=100, seed=3, universe={"GLG": (glg, tasks), "GMG": (gmg, tasks)})
     assert out["n_prompts"] == 50 and out["verdict"] == "supported"
 
 
@@ -280,6 +299,18 @@ def test_h4_spearman_and_bootstrap_ci():
 
 
 # ---- per-cell analysis, noise borrow, timeout sensitivity -----------------------------------
+
+
+def _study_spec():
+    gm_tasks, gl_tasks = _tasks(4), _tasks(6)
+    return {"GMG": ([f"GMG_G_{i:02d}" for i in range(20)], gm_tasks, 0.0, 60),
+            "GMK": ([f"GMK_{i:02d}" for i in range(16)], gm_tasks, 0.15, 60),
+            "GMB": ([f"GMB_{i:02d}" for i in range(8)], gm_tasks, 0.0, 0),
+            "GLG": ([f"GLG_{i:02d}" for i in range(20)], gl_tasks, 0.1, 60),
+            "GLK": ([f"GLK_{i:02d}" for i in range(16)], gl_tasks, 0.2, 60)}
+
+
+UNI = {pool: (arms, tasks) for pool, (arms, tasks, _, _) in _study_spec().items()}
 
 
 def _study_outcomes(seed=0, *, clock_rate=0.0):
@@ -309,7 +340,7 @@ def test_cell_noise_borrows_the_declared_donor():
 
 def test_analyze_pools_runs_stage0_per_cell_with_its_noise():
     out = _study_outcomes()
-    comp = hv.analyze_pools(out, study=H)
+    comp = hv.analyze_pools(out, study=H, universe=UNI, tail_n_boot=6)
     assert list(comp["pool"]) == list(H.pools)
     gmb = comp.set_index("pool").loc["GMB"]
     assert gmb["noise_from"] == "GMG" and np.isfinite(gmb["tau_set_upper_one_sided"])
@@ -329,7 +360,7 @@ def test_success_matrix_ceiling_is_a_parameter():
 
 def test_timeout_sensitivity_sets_clock_episodes_missing():
     out = _study_outcomes(1, clock_rate=0.08)
-    sens, rates = hv.timeout_sensitivity(out, study=H)
+    sens, rates = hv.timeout_sensitivity(out, study=H, universe=UNI)
     row = sens.set_index("pool").loc["GLK"]
     sub = out[(out["pool"] == "GLK") & (out["replicate"] == 0)]
     n_clock = int((sub["ended_by"] == "clock").sum())
@@ -344,7 +375,7 @@ def test_timeout_sensitivity_sets_clock_episodes_missing():
 def test_timeout_sensitivity_reports_a_cell_without_ended_by():
     out = _study_outcomes(1, clock_rate=0.05)
     out.loc[out["pool"] == "GMG", "ended_by"] = None
-    sens, _ = hv.timeout_sensitivity(out, study=H)
+    sens, _ = hv.timeout_sensitivity(out, study=H, universe=UNI)
     gmg = sens.set_index("pool").loc["GMG"]
     assert not gmg["available"] and "ended_by" in gmg["note"]
 
@@ -405,14 +436,33 @@ def test_boot_regret_range_lower_bound():
 def test_classify_pools_from_tables():
     kgrid = pd.DataFrame(_kgrid_rows("GLK", {50: 0.02, 100: 0.015, 200: 0.012})
                          + _kgrid_rows("GLG", {50: 0.001, 100: 0.002, 200: 0.003}))
-    boot = pd.DataFrame(_boot_kgrid_rows("GLK", [0.01] * 5) + _boot_kgrid_rows("GLG", [0.001] * 5))
+    boot = pd.DataFrame([r for T in (50, 100, 200) for r in
+                         _boot_kgrid_rows("GLK", [0.01 + 0.001 * b for b in range(5)], T=T)
+                         + _boot_kgrid_rows("GLG", [0.001] * 5, T=T)])
     comp = pd.DataFrame([{"pool": "GLK", "tau_set_upper_one_sided": 0.1},
                          {"pool": "GLG", "tau_set_upper_one_sided": 0.02}])
     cls = hv.classify_pools(comp, kgrid, boot, tau_flat=0.03, expected_n_boot=5, manifest_sha256="m")
     c = cls.set_index("pool")
     assert c.loc["GLK", "class"] == "meaningful" and c.loc["GLG", "class"] == "flat"
-    assert c.loc["GLK", "regret_range_T200"] == pytest.approx(0.012) and c.loc["GLK", "rr_lo_T200"] == pytest.approx(0.01)
+    ranges = [0.01 + 0.001 * b for b in range(5)]
+    assert c.loc["GLK", "regret_range_T200"] == pytest.approx(0.012)
+    for T in (50, 100, 200):
+        assert c.loc["GLK", f"rr_lo_T{T}"] == pytest.approx(np.percentile(ranges, 2.5))
+        assert c.loc["GLK", f"rr_hi_T{T}"] == pytest.approx(np.percentile(ranges, 97.5))
     assert set(cls["manifest_sha256"]) == {"m"} and set(cls["tau_flat"]) == {0.03}
+    with pytest.raises(ValueError, match="T=50"):  # the CI is needed at every primary T
+        hv.classify_pools(comp, kgrid, boot[boot["horizon"] != 50], tau_flat=0.03, expected_n_boot=5,
+                          manifest_sha256="m")
+
+
+def test_classification_reads_only_the_T200_lower_bound():
+    kgrid = pd.DataFrame(_kgrid_rows("GLK", {50: 0.02, 100: 0.015, 200: 0.012}))
+    comp = pd.DataFrame([{"pool": "GLK", "tau_set_upper_one_sided": 0.1}])
+    for lo200, want in ((0.006, "meaningful"), (0.004, "moderate")):
+        boot = pd.DataFrame(_boot_kgrid_rows("GLK", [0.0] * 5, T=50) + _boot_kgrid_rows("GLK", [0.0] * 5, T=100)
+                            + _boot_kgrid_rows("GLK", [lo200] * 5, T=200))
+        assert hv.classify_pools(comp, kgrid, boot, tau_flat=0.03, expected_n_boot=5,
+                                 manifest_sha256="m").iloc[0]["class"] == want
 
 
 # ---- registered_contrast: rules, registrations, the classification-selected cells ----------
@@ -567,7 +617,7 @@ def _tiny_study(tmp_path):
 
 def test_boot_kgrid_runs_every_bootstrap_reservoir(tmp_path):
     s = _tiny_study(tmp_path)
-    frame = replay.run_boot_kgrid(s.res_dir, workers=1, study=s, n_boot=2, horizon=20, n_replicates=8,
+    frame = replay.run_boot_kgrid(s.res_dir, workers=1, study=s, n_boot=2, horizons=(20,), n_replicates=8,
                                   k_grid=(2, 4, 8))
     assert sorted({(int(b), p) for b, p in zip(frame["boot"], frame["pool"], strict=True)}) == [
         (0, "A"), (0, "B"), (1, "A"), (1, "B")]
@@ -587,7 +637,7 @@ def test_boot_kgrid_refuses_a_saved_boot_reservoir_that_differs(tmp_path):
     boot_dir.mkdir(parents=True)
     (boot_dir / "A_npmle_b000.json").write_text('{"type": "empirical", "atoms": [0.5], "weights": [1.0]}')
     with pytest.raises(ValueError, match="A_npmle_b000"):
-        replay.run_boot_kgrid(s.res_dir, workers=1, study=s, n_boot=1, horizon=20, n_replicates=8, k_grid=(2,))
+        replay.run_boot_kgrid(s.res_dir, workers=1, study=s, n_boot=1, horizons=(20,), n_replicates=8, k_grid=(2,))
 
 
 def test_boot_kgrid_is_a_replay_stage(tmp_path, monkeypatch):
@@ -611,7 +661,7 @@ def test_cli_requires_tau_flat(tmp_path):
 def test_hypotheses_rows_and_portability():
     out = _study_outcomes(4)
     bridge = {f"GMB_{j:02d}": f"GLG_{2 * j:02d}" for j in range(8)}
-    rows, port = hv.hypotheses(out, bridge, n_boot=50, seed=9)
+    rows, port = hv.hypotheses(out, bridge, universe=UNI, n_boot=50, seed=9)
     got = [(r["hypothesis"], r["role"], r["decides"]) for r in rows]
     assert got == [("H1", "primary", True), ("H1", "secondary", False), ("H2", "Gmail", True),
                    ("H2", "GitLab", True), ("H4", "reported", False)]
@@ -630,3 +680,155 @@ def test_h4_is_the_blup_rank_correlation_and_refuses_constant_effects():
     assert raw == pytest.approx(blup)
     with pytest.raises(ValueError, match="undefined"):
         hv.h4(np.zeros(50), np.arange(50.0), n_boot=20, seed=0)
+
+
+# ---- fix round 1 ------------------------------------------------------------------------------
+
+
+def test_verdict_seed_is_the_ruled_base():
+    assert hv.VERDICT_SEED == 60_000_000_000
+
+
+def _write_design(tmp_path, arms_by_pool, gm_tasks, gl_tasks):
+    import yaml
+    for pool, arms in arms_by_pool.items():
+        path = tmp_path / "pools" / f"{pool}.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump({"pool": pool, "arms": [{"arm_id": a} for a in arms]}))
+    (tmp_path / "manifest.json").write_text(json.dumps({"gmail_task_subset_30": gm_tasks,
+                                                        "gitlab_task_subset_60": gl_tasks}))
+
+
+def test_design_universe_comes_from_pool_files_and_the_manifest(tmp_path):
+    import dataclasses
+
+    import yaml
+    spec = _study_spec()
+    arms = {p: a for p, (a, *_) in spec.items() if p != "GMG"}
+    _write_design(tmp_path, arms, spec["GMK"][1], spec["GLK"][1])
+    g = tmp_path / "pool_G.yaml"
+    g.write_text(yaml.safe_dump({"pool": "G", "arms": [{"arm_id": f"G_{i:02d}"} for i in range(20)]}))
+    study = dataclasses.replace(H, data_dir=tmp_path)
+    # GMG's arms come from the Pre-reg 9 pool file (`EXTRA_POOL_FILES`), pointed at a tmp copy here
+    import het_verdicts
+    old = dict(het_verdicts.EXTRA_POOL_FILES)
+    het_verdicts.EXTRA_POOL_FILES["GMG"] = g
+    try:
+        uni = hv.design_universe(study)
+    finally:
+        het_verdicts.EXTRA_POOL_FILES.clear()
+        het_verdicts.EXTRA_POOL_FILES.update(old)
+    assert uni["GMG"] == (spec["GMG"][0], spec["GMG"][1])  # relabelled GMG_G_xx, Gmail tasks
+    assert uni["GLK"] == (spec["GLK"][0], spec["GLK"][1]) and uni["GMB"][1] == spec["GMB"][1]
+
+
+def test_a_never_attempted_arm_or_task_is_missing_not_dropped():
+    out = _study_outcomes()
+    gone = out[out["arm_id"] != "GLK_03"]  # the snapshot has no row at all for one arm of the pool file
+    with pytest.raises(ValueError, match="GLK_03"):
+        hv.analyze_pools(gone, study=H, universe=UNI, tail_n_boot=2)
+    # one never-attempted cell counts toward the 5% ceiling as an imputed cell
+    one = out[~((out["arm_id"] == "GLK_03") & (out["task_id"] == "task_e0") & (out["replicate"] == 0))]
+    Y, arms, tasks, n_imp, _ = hv._matrix(one, "GLK", UNI)
+    assert Y.shape == (16, 18) and n_imp == 1 and arms == UNI["GLK"][0]
+    # a task in the manifest subset that no episode reached: missing, never silently dropped
+    uni = {**UNI, "GLK": (UNI["GLK"][0], [*UNI["GLK"][1], "task_h9"])}
+    with pytest.raises(ValueError, match="task_h9"):
+        hv._matrix(out, "GLK", uni)
+
+
+def test_upper_tail_ci_refits_the_npmle_per_prompt_resample():
+    out = _study_outcomes()
+    Y, _, tasks, n_imp, rcs = hv._matrix(out, "GLK", UNI)
+    point = hv.stage0.analyze_cell(Y, tasks, n_imputed=n_imp, row_counts=rcs)["upper_tail_mass"]
+    assert hv.upper_tail_mass(Y, rcs) == pytest.approx(point)
+    draws = het.prompt_bootstrap(Y, hv.upper_tail_mass, n_boot=6, seed=5, row_counts=rcs)
+    lo, hi = hv.upper_tail_ci(Y, rcs, n_boot=6, seed=5)
+    assert (lo, hi) == (pytest.approx(np.percentile(draws, 2.5)), pytest.approx(np.percentile(draws, 97.5)))
+    comp = hv.analyze_pools(out, study=H, universe=UNI, tail_n_boot=6).set_index("pool")
+    assert comp.loc["GLK", "upper_tail_seed"] == hv.VERDICT_SEED + hv.TAIL_SEED_OFFSET + H.pools.index("GLK")
+    assert (comp["upper_tail_mass_lo"] <= comp["upper_tail_mass_hi"]).all()
+
+
+def test_timeout_sensitivity_drops_a_prompt_that_always_timed_out():
+    out = _study_outcomes(2, clock_rate=0.03)
+    arm = "GLK_05"
+    sel = (out["pool"] == "GLK") & (out["arm_id"] == arm) & (out["replicate"] == 0)
+    out.loc[sel, "ended_by"] = "clock"
+    out.loc[sel, "success"] = 0
+    sens, _ = hv.timeout_sensitivity(out, study=H, universe=UNI)
+    row = sens.set_index("pool").loc["GLK"]
+    assert bool(row["available"]) and row["n_prompts_dropped"] == 1 and row["dropped_prompts"] == arm
+    assert row["n_prompts"] == 15
+    # a task every prompt timed out on still leaves the matrix structurally short: NA, with the reason
+    out.loc[(out["pool"] == "GLG") & (out["task_id"] == "task_e0") & (out["replicate"] == 0), "ended_by"] = "clock"
+    sens, _ = hv.timeout_sensitivity(out, study=H, universe=UNI)
+    glg = sens.set_index("pool").loc["GLG"]
+    assert not bool(glg["available"]) and "task_e0" in glg["note"]
+
+
+def test_gmg_timeouts_are_na_with_a_note_when_prereg9_logs_are_absent(tmp_path):
+    out = _study_outcomes(1)
+    got = hv.attach_ended_by(out.drop(columns=["ended_by"]), log_dirs=(),
+                             extra_log_dirs={"GMG": (tmp_path / "absent", "G")})
+    assert got["ended_by"].isna().all()  # nothing fabricated
+    got.loc[got["pool"] != "GMG", "ended_by"] = out.loc[out["pool"] != "GMG", "ended_by"]
+    sens, _ = hv.timeout_sensitivity(got, study=H, universe=UNI)
+    assert sens.set_index("pool").loc["GLK", "available"]
+    gmg = sens.set_index("pool").loc["GMG"]
+    assert not bool(gmg["available"]) and "not imputed" in gmg["note"]
+
+
+def test_gmg_timed_out_is_joined_after_the_relabel(tmp_path):
+    snap = pd.DataFrame([{"pool": "GMG", "arm_id": f"GMG_G_0{k}", "task_id": "task_e0", "replicate": r,
+                          "attempt": 1, "status": "ok", "success": 0} for k in range(2) for r in (0, 1)])
+    old = tmp_path / "old"
+    old.mkdir()
+    lines = [{"schema": "x", "pool": "G", "arm_id": f"G_0{k}", "task_id": "task_e0", "replicate": r, "attempt": 1,
+              "status": "ok", "success": 0, "cost_usd": 0.0, "timed_out": bool(k == 1 and r == 0)}
+             for k in range(2) for r in (0, 1)]
+    lines.append({**lines[0], "pool": "F", "arm_id": "G_00"})  # another pool's record never leaks in
+    (old / "worker_0.jsonl").write_text("".join(json.dumps(x) + "\n" for x in lines[:4]))
+    (old / "worker_1.jsonl").write_text(json.dumps({**lines[4], "arm_id": "F_00"}) + "\n")
+    got = hv.attach_ended_by(snap, log_dirs=(), extra_log_dirs={"GMG": (old, "G")})
+    assert list(got["ended_by"]) == ["not_clock", "not_clock", "clock", "not_clock"]
+
+
+def test_boot_kgrid_covers_every_primary_horizon_with_the_boot_stage_cells(tmp_path):
+    s = _tiny_study(tmp_path)
+    frame = replay.run_boot_kgrid(s.res_dir, workers=1, study=s, n_boot=1, horizons=(10, 20), n_replicates=4,
+                                  k_grid=(2, 8))
+    assert sorted(set(frame["horizon"])) == [10, 20]
+    for T in (10, 20):
+        seeds = set(frame.loc[frame["horizon"] == T, "base_seed"])
+        assert seeds == {replay.seed_for(p, T, 0, study=s) for p in s.pools}
+    point = {replay.seed_for(p, T, None, study=s) for p in s.pools for T in replay.ALL_HORIZONS}
+    assert not set(frame["base_seed"]) & point
+    assert replay.BOOT_KGRID_HORIZONS == (50, 100, 200)
+
+
+def _cluster_tree(root, test, policy, reference):
+    rng = np.random.default_rng(0)
+    for i in range(6):
+        for T in (50, 100, 200):
+            base = rng.normal(0.12, 0.02, 40)
+            for pol, shift in ((policy, -0.004), (reference, 0.0)):
+                path = root / "episodes" / test / f"env{i}_T{T}_cap{T}" / f"{pol}.parquet"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                pd.DataFrame({"env_id": f"env{i}", "horizon": T, "cap": T, "base_seed": 100 + i, "episode": np.arange(40),
+                              COL: base + shift}).to_parquet(path, index=False)
+
+
+def test_cluster_t_path_never_marks_a_het_tuple_registered(tmp_path):
+    _cluster_tree(tmp_path, "het", "p3_star", "fixed_K8")
+    out = rc.registered_contrast("p3_star", "fixed_K8", test="het", horizons=(50, 100, 200), mei=0.002,
+                                 out_dir=tmp_path, n_boot=200, rule="superior")
+    assert not out["as_registered"].any()
+    _cluster_tree(tmp_path, "robust", "phi_k4", "p3_star")  # Pre-registration 2's tuple is still registered
+    out = rc.registered_contrast("phi_k4", "p3_star", test="robust", horizons=(50, 100, 200), mei=0.002,
+                                 out_dir=tmp_path, n_boot=200)
+    assert out["as_registered"].all()
+    _cluster_tree(tmp_path, "emp", "p3_star", "fixed_K_star")  # a Pre-reg 9 tuple belongs to the bootstrap path
+    out = rc.registered_contrast("p3_star", "fixed_K_star", test="emp", horizons=(50, 100, 200), mei=0.002,
+                                 out_dir=tmp_path, n_boot=200, rule="noninferiority")
+    assert not out["as_registered"].any()

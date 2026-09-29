@@ -4,13 +4,16 @@
     .venv/bin/python experiments/growing_bandits/empirical/replay.py point --workers 12
     .venv/bin/python experiments/growing_bandits/empirical/replay.py kgrid --workers 12
     .venv/bin/python experiments/growing_bandits/empirical/replay.py boot  --workers 12
+    .venv/bin/python experiments/growing_bandits/empirical/replay.py boot_kgrid --study het --workers 12
 
 ``estimate`` reads the collector's logs and writes the six reservoirs (G/F x npmle/raw/
 parametric), the noise model and the parametric fit table under
 ``data/empirical_pool/reservoirs/``. ``point`` deploys `TEST_POLICIES["emp"]` on every
 (pool, variant, T) at M = 1000; ``kgrid`` runs fixed-K over the K-grid on the same cells;
 ``boot`` re-estimates the NPMLE on B = 200 prompt resamples and deploys the four contrast
-policies at the primary horizons, M = 250.
+policies at the primary horizons, M = 250; ``boot_kgrid`` (Pre-registration 10, section 6.5) runs
+fixed-K over the K-grid at T = 200, M = 250 on every bootstrap reservoir of every cell, for the
+bootstrap lower bound of the regret range (``tables/<prefix>_boot_kgrid.csv``).
 
 One data snapshot ties the verdict together: ``estimate`` freezes the terminal outcomes it
 read into ``reservoirs/outcomes_snapshot.jsonl`` and writes ``reservoirs/manifest.json`` with
@@ -37,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import json
 import logging
 import multiprocessing as mp
@@ -81,6 +85,8 @@ N_BOOT = 200
 BOOT_SEED = 20260926
 CONTRAST_POLICIES: tuple[str, ...] = ("p3_star", "fixed_K_star", "level_star", "phi_k4")
 NOISE_BOOT = 1000
+#: `boot_kgrid`: the horizon whose regret-range lower bound section 6.5 classifies on (Pre-reg 10).
+BOOT_KGRID_HORIZON = 200
 #: `phi_k4`'s model variant (`policy_table.POLICIES["phi_k4"]["params"]["artifact"]`), i.e.
 #: the key `thresholds.json["by_cap"]["<cap>"]` must carry for `missing_cap_constants`.
 PHI_K4_VARIANT: str = pt.POLICIES["phi_k4"]["params"]["artifact"]
@@ -361,8 +367,10 @@ def _kgrid_item(item: kse.Item) -> dict:
 
 
 def kgrid(cells: list[CellSpec], *, workers: int, k_grid: tuple[int, ...] = kse.DEFAULT_K_GRID,
-          study: st.Study = st.PREREG9) -> pd.DataFrame:
-    items = [kse.Item(split=study.test, spec=c, K=int(K)) for c in cells for K in k_grid if int(K) <= c.horizon]
+          study: st.Study = st.PREREG9, split: str | None = None) -> pd.DataFrame:
+    """Fixed-K over `k_grid` on every cell; ``split`` (recorded on each row) defaults to the study's test."""
+    split = study.test if split is None else split
+    items = [kse.Item(split=split, spec=c, K=int(K)) for c in cells for K in k_grid if int(K) <= c.horizon]
     # Built once, here, in the parent: `CSTable.load_or_build` writes through a fixed
     # `.tmp` name (`run_deployment.prebuild_shared_tables` does the same for the study's
     # own cells), so two pool workers racing to build the same (T, alpha) table for the
@@ -377,6 +385,45 @@ def kgrid(cells: list[CellSpec], *, workers: int, k_grid: tuple[int, ...] = kse.
     frame = pd.DataFrame(rows)
     parts = frame["env_id"].str.split("_", expand=True)
     return frame.assign(pool=parts[1], variant=parts[2])
+
+
+def run_boot_kgrid(res_dir: Path, *, workers: int, study: st.Study = st.PREREG9, n_boot: int = N_BOOT,
+                   horizon: int = BOOT_KGRID_HORIZON, n_replicates: int = BOOT_REPLICATES,
+                   k_grid: tuple[int, ...] = kse.DEFAULT_K_GRID) -> pd.DataFrame:
+    """The K-grid at `horizon` on every bootstrap reservoir of every pool (Pre-registration 10, section 6.5).
+
+    The reservoirs are the ``boot`` stage's, regenerated deterministically from the frozen snapshot
+    and ``noise.json`` (both checked against the manifest) with the same `bootstrap_reservoirs` call and
+    seed; a reservoir the ``boot`` stage saved under ``<res_dir>/boot/`` must equal its regenerated
+    spec byte for byte, or this raises (the episodes and this K-grid would describe different
+    replicates). Cells are the boot stage's own (`make_emp_cell` with ``boot=b``: same env id and
+    seed). Each row carries its replicate (``boot``), its reservoir's sha256 and the manifest's.
+    """
+    res_dir = Path(res_dir)
+    verify_reservoirs(res_dir, study=study)
+    manifest_sha = rc.file_sha256(res_dir / MANIFEST_FILE)
+    outcomes = load_snapshot(res_dir)
+    if rc.file_sha256(res_dir / "noise.json") != load_manifest(res_dir)["noise"]:
+        raise ValueError("noise.json no longer matches the reservoir manifest; re-run `replay.py estimate`")
+    noise = json.loads((res_dir / "noise.json").read_text())
+    cells: list[CellSpec] = []
+    shas: dict[str, str] = {}
+    for b, pool, res in bootstrap_reservoirs(outcomes, noise, n_boot=n_boot, study=study):
+        name = f"{pool}_npmle_b{b:03d}"
+        text = json.dumps(res.to_spec())
+        saved = res_dir / "boot" / f"{name}.json"
+        if saved.exists() and saved.read_text() != text:
+            raise ValueError(f"{saved} differs from the reservoir regenerated from the snapshot ({name}); "
+                             "re-run `replay.py boot` so its episodes and this K-grid share one set of replicates")
+        cell = make_emp_cell(pool, "npmle", horizon, res, n_replicates, boot=b, study=study)
+        shas[cell.env_id] = hashlib.sha256(text.encode()).hexdigest()
+        cells.append(cell)
+    frame = kgrid(cells, workers=workers, k_grid=k_grid, study=study, split=study.boot_test)
+    boots = frame["env_id"].str.extract(r"_b(\d{3})$")[0]
+    if boots.isna().any():
+        raise ValueError(f"boot_kgrid rows without a replicate suffix: {sorted(frame.loc[boots.isna(), 'env_id'])}")
+    return frame.assign(boot=boots.astype(int), reservoir_sha256=frame["env_id"].map(shas),
+                        manifest_sha256=manifest_sha)
 
 
 def point_cells(res_dir: Path | None = None, *, study: st.Study = st.PREREG9) -> list[CellSpec]:
@@ -485,7 +532,7 @@ def purge_stale_emp_comparators(out_dir: str | Path, *, boot_only: bool = False,
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("stage", choices=["estimate", "point", "kgrid", "boot"])
+    ap.add_argument("stage", choices=["estimate", "point", "kgrid", "boot", "boot_kgrid"])
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR)
     ap.add_argument("--study", choices=sorted(st.STUDIES), default=st.PREREG9.name)
@@ -506,6 +553,12 @@ def main(argv: list[str] | None = None) -> None:
         shas = verify_reservoirs(res_dir, study=study)
         frame = stamp_kgrid(kgrid(point_cells(res_dir, study=study), workers=args.workers, study=study), shas)
         out = args.out_dir / "tables" / study.table("kgrid")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        frame.to_csv(out, index=False)
+        log.info("wrote %s (%d rows)", out, len(frame))
+    elif args.stage == "boot_kgrid":
+        frame = run_boot_kgrid(res_dir, workers=args.workers, study=study)
+        out = args.out_dir / "tables" / study.table("boot_kgrid")
         out.parent.mkdir(parents=True, exist_ok=True)
         frame.to_csv(out, index=False)
         log.info("wrote %s (%d rows)", out, len(frame))

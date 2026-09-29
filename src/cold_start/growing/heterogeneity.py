@@ -43,6 +43,7 @@ def success_matrix(
     pool: str,
     expected_arms: list[str] | None = None,
     expected_tasks: list[str] | None = None,
+    max_missing: float | None = 0.05,
 ) -> tuple[np.ndarray, list[str], list[str], int, np.ndarray]:
     """(prompts x tasks) replicate-0 ``ok`` success matrix.
 
@@ -55,6 +56,11 @@ def success_matrix(
     the grand mean only) and silently produces a degenerate ``row_counts`` entry of 0, which callers
     computing ``J / row_counts`` (fix round 2, finding N1) would divide by zero on. A caller that wants
     a dropped arm/task included anyway must supply real data for it, not rely on imputation.
+
+    `max_missing` is that ceiling (default 0.05, the spec's). ``None`` disables it -- only for a
+    declared sensitivity analysis that deliberately creates missing cells (spec section 6.8: clock-ended
+    episodes set to missing), which reports its imputed-cell count beside the result; the zero-observed
+    row/column check still applies.
 
     Returns ``(Y, arm_ids, task_ids, n_imputed, row_counts)`` where ``row_counts[i]`` is the number of
     genuinely observed (non-imputed) cells in row ``i``.
@@ -84,10 +90,10 @@ def success_matrix(
             f"arm(s) {zero_arms} and task(s) {zero_tasks} -- imputation cannot fill a row/column with "
             f"no real data; supply observations for these ids or drop them from expected_arms/expected_tasks"
         )
-    if total and n_imp / total > 0.05:
+    if max_missing is not None and total and n_imp / total > max_missing:
         raise ValueError(
             f"success_matrix: {n_imp}/{total} cells missing for pool {pool!r} "
-            f"({n_imp / total:.1%} > the 5% imputation ceiling)"
+            f"({n_imp / total:.1%} > the {max_missing:.0%} imputation ceiling)"
         )
     if n_imp:
         grand = float(Y[observed].mean()) if observed.any() else 0.0

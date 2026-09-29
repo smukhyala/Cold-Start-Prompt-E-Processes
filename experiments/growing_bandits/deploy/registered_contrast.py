@@ -25,7 +25,9 @@ else produces a different contrast and the output says which.
 The prompt-bootstrap contrasts (Pre-registration 9's ``emp_*``) run on one replay study
 (`study.Study`; ``--study``, default: the registration's own, else ``prereg9``), which
 names the point / bootstrap tests, the ``<prefix>_flatness.csv`` table and the reservoir
-manifest their inputs must match.
+manifest their inputs must match. Pre-registration 10's ``het_*`` registrations (H3) read their
+cells from the section 6.5 classification (``--classification``) instead of the flatness guard, and
+add the ``superior`` / ``inferior`` rules, whose opposite-direction outcome is ``reversed``.
 """
 
 from __future__ import annotations
@@ -97,10 +99,39 @@ REGISTRATIONS: dict[str, dict] = {
                 "horizons": (50, 100, 200), "mei": 0.002, "out": "emp_phi.csv", "rule": "not_better",
                 "interval": "prompt_bootstrap", "n_boot": 200},
 }
+
+
+def _het_registrations() -> dict[str, dict]:
+    """Pre-registration 10 (spec 2026-09-28-prompt-heterogeneity section 6.6): the H3 replay contrasts, on
+    the prompt-bootstrap interval of the heterogeneity study's ``het``/``het_boot`` episodes. ``cells``
+    names the section 6.5 class whose cells enter the contrast (read from ``het_classification.csv``,
+    never Pre-registration 9's flatness guard): ``meaningful`` for the thesis, ``flat`` (the ``_flat``
+    twins) for H3's refutation check that flat cells show no policy difference."""
+    contrasts = {
+        "het_scale": ("p3_star", "fixed_K8", "superior"),       # scaling K with the budget pays
+        "het_spread": ("always_search", "p3_star", "inferior"),  # spreading every pull over new prompts loses
+        "het_primary": ("p3_star", "fixed_K_star", "noninferiority"),  # Pre-registration 9's three,
+        "het_level": ("level_star", "p3_star", "not_better"),          # same rules, for continuity
+        "het_phi": ("phi_k4", "p3_star", "not_better"),
+    }
+    out: dict[str, dict] = {}
+    for cells, suffix in (("meaningful", ""), ("flat", "_flat")):
+        for name, (policy, reference, rule) in contrasts.items():
+            out[f"{name}{suffix}"] = {
+                "policy": policy, "reference": reference, "test": "het", "horizons": (50, 100, 200),
+                "mei": 0.002, "out": f"{name}{suffix}.csv", "rule": rule, "interval": "prompt_bootstrap",
+                "n_boot": 200, "study": "het", "cells": cells,
+            }
+    return out
+
+
+REGISTRATIONS.update(_het_registrations())
+#: Section 6.5's cell classes, as ``het_classification.csv`` writes them.
+CELL_CLASSES: tuple[str, ...] = ("flat", "moderate", "meaningful")
 #: Decision rules. ``superiority`` (the default) reads the environment-mean t interval and
 #: is the rule of Pre-registrations 2-6; the two paired-CI rules are Pre-registration 8's,
 #: for a panel below `CLUSTER_MIN_ENVS` where no environment-level interval exists.
-RULES: tuple[str, ...] = ("superiority", "noninferiority", "not_better")
+RULES: tuple[str, ...] = ("superiority", "noninferiority", "not_better", "superior", "inferior")
 REGISTERED = REGISTRATIONS["h1b_prime"]
 ALL_HORIZONS: tuple[int, ...] = (50, 100, 200, 500, 1000)
 
@@ -186,6 +217,11 @@ def verdict_by_rule(rule: str, *, delta: float, lo: float, hi: float, mei: float
     above +mei. ``not_better``: the policy is not better than the reference by more than
     `mei` -- supported iff the paired lower bound is above -mei, refuted iff the upper
     bound is at or below -mei. Anything else is inconclusive.
+
+    Pre-registration 10 (section 6.6), on the prompt-bootstrap interval: ``superior`` -- the
+    policy's regret is lower than the reference's by more than `mei`: supported iff ``hi < -mei``,
+    ``reversed`` iff ``lo > +mei``; ``inferior`` -- the policy's regret is higher by more than
+    `mei`: supported iff ``lo > +mei``, ``reversed`` iff ``hi < -mei``. Anything else is inconclusive.
     """
     if rule == "superiority":
         return verdict(delta, cluster_lo, cluster_hi, cluster_p, mei)
@@ -200,6 +236,18 @@ def verdict_by_rule(rule: str, *, delta: float, lo: float, hi: float, mei: float
             return "supported"
         if hi <= -mei:
             return "refuted"
+        return "inconclusive"
+    if rule == "superior":
+        if hi < -mei:
+            return "supported"
+        if lo > mei:
+            return "reversed"
+        return "inconclusive"
+    if rule == "inferior":
+        if lo > mei:
+            return "supported"
+        if hi < -mei:
+            return "reversed"
         return "inconclusive"
     raise KeyError(f"unknown rule {rule!r}; rules={RULES}")
 
@@ -279,6 +327,8 @@ BOOT_COLUMNS: tuple[str, ...] = (
 EMP_RESERVOIR_MANIFEST = st.PREREG9.res_dir / "manifest.json"
 #: `replay.py point`/`boot` stamp the manifest they ran against, per test, under ``tables/``.
 RESERVOIR_STAMP = "{test}_reservoir_stamp.json"
+#: Pre-registration 10's section 6.5 classification (`het_verdicts.py` writes it).
+HET_CLASSIFICATION = ROOT / "results" / "growing_bandits" / "heterogeneity" / "het_classification.csv"
 
 
 def file_sha256(path: Path) -> str:
@@ -330,10 +380,41 @@ def _informative_cells(flatness_path: Path, horizons: tuple[int, ...]) -> set[tu
     return {(str(r.env_id), int(r.horizon)) for r in flat.itertuples() if bool(r.informative)}
 
 
+def load_classification(path: Path, *, study: st.Study, manifest_path: Path | None = None) -> dict[str, str]:
+    """``{pool: class}`` from ``het_classification.csv``; with `manifest_path`, every row must carry
+    that reservoir manifest's sha256 (the classification was computed on the same data snapshot as
+    the episodes the contrast reads)."""
+    frame = pd.read_csv(path)
+    classes = {str(p): str(c) for p, c in zip(frame["pool"], frame["class"], strict=True)}
+    unknown = sorted(p for p in classes if p not in study.pools)
+    bad = sorted(f"{p}={c}" for p, c in classes.items() if c not in CELL_CLASSES)
+    if unknown or bad or len(classes) != len(frame):
+        raise ValueError(f"classification {path}: pools not in {study.name} {unknown}, unknown classes {bad}, "
+                         f"{len(frame) - len(classes)} duplicate pool rows")
+    if manifest_path is not None:
+        want = file_sha256(manifest_path)
+        got = sorted({str(x) for x in frame["manifest_sha256"]}) if "manifest_sha256" in frame.columns else []
+        if got != [want]:
+            raise ValueError(f"classification {path} was computed on reservoir manifest(s) {got}, not {manifest_path} "
+                             f"({want}); re-run het_verdicts.py")
+    return classes
+
+
+def _class_selection(cells: str, classes: dict[str, str], study: st.Study) -> tuple[list[str], str | None]:
+    """The pools a ``cells`` selection names -- every pool of a class, or one pool -- and the class
+    a registration must name to cover it (``None``: no class, e.g. a pool absent from the classification)."""
+    if cells in CELL_CLASSES:
+        return sorted(p for p, c in classes.items() if c == cells), cells
+    if cells in study.pools:
+        return [cells], classes.get(cells)
+    raise ValueError(f"cells={cells!r}: expected one of {CELL_CLASSES} or a pool of {study.name} {study.pools}")
+
+
 def prompt_bootstrap_contrast(
     policy: str, reference: str, *, horizons: tuple[int, ...], mei: float, rule: str, out_dir: Path,
     expected_n_boot: int, flatness_path: Path | None = None, reservoir_manifest: Path | None = None,
-    paired_n_boot: int = 10_000, study: st.Study = st.PREREG9,
+    paired_n_boot: int = 10_000, study: st.Study = st.PREREG9, cells: str | None = None,
+    classification_path: Path | None = None,
 ) -> pd.DataFrame:
     """Pre-registration 9: the full-sample Δ on informative primary cells, with the 95% percentile
     interval of the same statistic over the prompt-bootstrap replicates (test ``emp_boot``).
@@ -355,6 +436,15 @@ def prompt_bootstrap_contrast(
     `study` names the point / bootstrap tests (``emp``/``emp_boot`` for Pre-registration 9),
     the default flatness table and which registrations can match (``"study"`` key, default
     ``prereg9``).
+
+    `cells` (Pre-registration 10; ``None`` keeps Pre-registration 9's flatness guard exactly): the
+    informative set is instead every primary horizon of the cells section 6.5 classified as
+    ``cells`` (``"meaningful"``, ``"flat"``, ``"moderate"``) in `classification_path`
+    (default `HET_CLASSIFICATION`), or of the one pool named by ``cells`` (section 6.6's per-cell
+    reading). The flatness guard's minimum does not apply (the classification is the guard); a
+    class with no cell gives verdict ``no_cells``. The row gains a ``cells`` column, and it is
+    ``as_registered`` only when a registration names the class of the selected cells. With
+    `reservoir_manifest`, the classification must carry that manifest's sha256.
     """
     out_dir = Path(out_dir)
     horizons = tuple(int(h) for h in horizons)
@@ -362,20 +452,34 @@ def prompt_bootstrap_contrast(
     flatness_path = flatness_path or out_dir / "tables" / study.table("flatness")
     if reservoir_manifest is not None:
         check_reservoir_snapshot(out_dir, pd.read_csv(flatness_path), reservoir_manifest, horizons, study=study)
-    informative = _informative_cells(flatness_path, horizons)
+    if cells is None:
+        informative = _informative_cells(flatness_path, horizons)
+        selection_class = None
+    else:
+        classes = load_classification(classification_path or HET_CLASSIFICATION, study=study,
+                                      manifest_path=reservoir_manifest)
+        pools, selection_class = _class_selection(cells, classes, study)
+        informative = {(f"{test}_{p}_npmle", T) for p in pools for T in horizons}
     as_registered = any(
         (policy, reference, horizons, float(mei), rule) == (r["policy"], r["reference"], tuple(r["horizons"]),
                                                              float(r["mei"]), r.get("rule"))
+        and r.get("cells") == selection_class
+        and (cells is None or selection_class is not None)
         for r in REGISTRATIONS.values()
         if r.get("interval") == "prompt_bootstrap" and r.get("study", st.PREREG9.name) == study.name
     )
+    columns = list(BOOT_COLUMNS) if cells is None else [*BOOT_COLUMNS, "cells"]
     row = {"row": "primary", "policy": policy, "reference": reference, "test": test, "horizon": "all",
            "n_informative": len(informative), "informative_cells": ";".join(f"{e}@{t}" for e, t in sorted(informative)),
            "mei": float(mei), "rule": rule, "as_registered": as_registered,
-           "delta": np.nan, "lo": np.nan, "hi": np.nan, "paired_lo": np.nan, "paired_hi": np.nan, "n_boot": 0}
-    if len(informative) < FLATNESS_MIN_INFORMATIVE:
+           "delta": np.nan, "lo": np.nan, "hi": np.nan, "paired_lo": np.nan, "paired_hi": np.nan, "n_boot": 0,
+           "cells": cells}
+    if cells is not None and not informative:
+        row["verdict"] = "no_cells"
+        return pd.DataFrame([row])[columns]
+    if cells is None and len(informative) < FLATNESS_MIN_INFORMATIVE:
         row["verdict"] = "uninformative"
-        return pd.DataFrame([row])[list(BOOT_COLUMNS)]
+        return pd.DataFrame([row])[columns]
 
     diffs, env_of, horizon_of = _diffs(out_dir, test, policy, reference, horizons)
     point_by_key: dict[tuple[str, int], float] = {}
@@ -435,7 +539,7 @@ def prompt_bootstrap_contrast(
     row.update({"delta": delta, "lo": lo, "hi": hi, "paired_lo": float(paired["lo"]),
                 "paired_hi": float(paired["hi"]), "n_boot": expected_n_boot,
                 "verdict": verdict_by_rule(rule, delta=delta, lo=lo, hi=hi, mei=mei)})
-    return pd.DataFrame([row])[list(BOOT_COLUMNS)]
+    return pd.DataFrame([row])[columns]
 
 
 def main(argv: list[str] | None = None) -> pd.DataFrame:
@@ -453,6 +557,9 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
     ap.add_argument("--reservoir-manifest", type=Path, default=None,
                     help="prompt-bootstrap registrations: the snapshot every input must match "
                          "(default: the study's <res_dir>/manifest.json)")
+    ap.add_argument("--classification", type=Path, default=HET_CLASSIFICATION,
+                    help="registrations with a 'cells' class: the section 6.5 classification "
+                         "(het_verdicts.py's het_classification.csv)")
     ap.add_argument("--study", choices=sorted(st.STUDIES), default=None,
                     help="prompt-bootstrap registrations: the replay study (default: the registration's, "
                          "else prereg9)")
@@ -471,7 +578,8 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
     if reg.get("interval") == "prompt_bootstrap":
         out = prompt_bootstrap_contrast(args.policy, args.reference, horizons=horizons, mei=args.mei,
                                         rule=reg["rule"], out_dir=args.out_dir, expected_n_boot=reg["n_boot"],
-                                        reservoir_manifest=args.reservoir_manifest, study=study)
+                                        reservoir_manifest=args.reservoir_manifest, study=study,
+                                        cells=reg.get("cells"), classification_path=args.classification)
         path = args.out or (args.out_dir / "tables" / reg["out"])
         path.parent.mkdir(parents=True, exist_ok=True)
         out.to_csv(path, index=False)

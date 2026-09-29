@@ -91,11 +91,14 @@ Optional tier (not part of the core registration): GitLab × F (40 free-form pro
   they are sent unchanged.
 - **K (knowledge-bearing)** — 40 per app, written by `claude-opus-4-7` from a **frozen manual bundle** for
   that app, never from task text:
-  - GitLab bundle: `apps/gitlab-plan-and-track/APP_DESCRIPTION.md` (2,790 words) plus the user-manual pages
-    covering the features that app implements (issues, labels, milestones, boards, epics, iterations,
-    search), capped at ~25,000 words.
-  - Gmail bundle: the `apps/user-manuals/gmail/` pages for organize-and-manage, compose-and-send and
-    settings-and-configuration, capped at ~25,000 words.
+  - GitLab bundle: the user-manual pages covering the features the app implements (labels, boards,
+    milestones, issues, epics, iterations), capped at 25,000 words with an equal word budget per feature area
+    (unused budget rolls forward). *Amended before registration:* the clone's `APP_DESCRIPTION.md` is excluded
+    — it describes this app instance (its seeded users, epics, milestones, boards and labels), so including it
+    would give K prompts instance knowledge that Gmail's manual-only bundle cannot, and would exempt those
+    names from the leak guard.
+  - Gmail bundle: the `apps/user-manuals/gmail/` pages for settings-and-configuration, organize-and-manage
+    and compose-and-send, capped at 25,000 words with the same per-area budget rule.
   - Bundles are frozen by sha256 before generation. One generation call per app asks for 50 system-prompt
     extensions that give **procedural guidance for this application** (where features live, how workflows
     run, shortcuts, how to confirm a change took effect), varied in scope, emphasis, structure and length

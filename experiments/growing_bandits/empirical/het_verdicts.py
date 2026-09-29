@@ -2,6 +2,9 @@
 
     .venv/bin/python experiments/growing_bandits/empirical/het_verdicts.py --tau-flat <from Pre-reg 10>
 
+``--tau-flat`` is recomputed from ``--calibration`` (``results/.../calibration.csv``,
+`calibrate.tau_flat_from_calibration`) and a mismatch refuses (I3 ruling).
+
 Reads the heterogeneity study's frozen outcomes snapshot (`replay.load_snapshot`, sha-checked), its
 K-grid (``tables/het_kgrid.csv``, `replay.py kgrid --study het`), its bootstrap K-grid
 (``tables/het_boot_kgrid.csv``, `replay.py boot_kgrid --study het`) and its ``het``/``het_boot``
@@ -12,7 +15,7 @@ episodes, and writes under ``results/growing_bandits/heterogeneity/``:
   study's declared borrow: GMB uses GMG's), split-half reliability, discriminating-task tau,
   upper-tail NPMLE mass with its prompt-bootstrap 95% CI (B = 200, NPMLE re-fit per resample).
 * ``het_classification.csv`` -- section 6.5 per cell (`classify_cell`), with the regret range's bootstrap
-  CI at every primary T (section 6.4; classification reads only T = 200's lower bound), stamped with the reservoir
+  CI at every primary T (section 6.4; classification reads T = 200's bounds), stamped with the reservoir
   manifest's sha256 so the H3 contrasts can refuse a classification from another snapshot.
 * ``het_policy_gaps.csv`` -- every ``het_*`` registration (`registered_contrast.REGISTRATIONS`), on its
   class's cells pooled (the registered row) and on each of those cells alone (section 6.6 reads the
@@ -24,14 +27,24 @@ episodes, and writes under ``results/growing_bandits/heterogeneity/``:
 * ``het_timeout_sensitivity.csv`` / ``het_timeout_rates.csv`` -- section 6.8: the per-cell analysis
   with clock-ended episodes set to missing (imputed, counted, beyond the 5% ceiling of the primary
   analysis), and per-prompt timeout rates.
+* ``het_anchor_recovery.csv`` -- section 8 as amended (I2): the GitLab anchors' rates against the GLG + GLK
+  per-prompt 10th / 90th percentiles on the analysis universe, ``recovered``, and the Gmail anchor's rate
+  beside Pre-registration 9's (reported).
+* ``het_provenance.json`` -- the provenance every table also carries as columns (`PROVENANCE_COLUMNS`):
+  ``task_universe`` (``subset_60`` or, under the block-A fallback, ``block_a``), ``tau_flat``, the
+  calibration's sha256, the verdict seed and n_boot, and ``unregistered`` (a non-default ``--seed`` /
+  ``--n-boot``).
 
 Every cell's matrix is built on the design universe (`design_universe`): the pool file's arms and the
 app's task subset from ``data/heterogeneity/manifest.json`` -- a never-attempted arm or task is a missing
-cell (counted toward the 5% ceiling), never a silently smaller matrix. Seeds: ``VERDICT_SEED`` plus a
+cell (counted toward the 5% ceiling), never a silently smaller matrix. GitLab's task subset is the full 60
+unless the block-A fallback applies (`study.task_universe`: any GitLab pool with an incomplete
+replicate-0 block B), detected mechanically on the snapshot and required to match the reservoir
+manifest's ``task_universe`` (written by ``replay.py estimate``, which applied the same rule). Seeds: ``VERDICT_SEED`` plus a
 fixed offset per bootstrap.
 
 Heterogeneity quantities (section 2): tau_main = sqrt((MS_prompt - MS_resid)/J) for H1, H2, H4;
-tau_set's one-sided upper 95% MLS bound for the section 6.5 flat rule. Contrast intervals for H1/H2/H4
+tau_set's one-sided upper 95% MLS bound, reported beside the section 6.5 class (not decisive, C1). Contrast intervals for H1/H2/H4
 come from `heterogeneity.prompt_bootstrap` (prompts resampled, each cell's task set held fixed).
 """
 
@@ -56,6 +69,7 @@ for _p in (ROOT / "src", HERE.parent / "deploy", HERE):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+import calibrate  # noqa: E402
 import describe  # noqa: E402
 import registered_contrast as rc  # noqa: E402
 import replay  # noqa: E402
@@ -76,6 +90,8 @@ MEANINGFUL_RANGE = 0.01
 MEANINGFUL_MIN_HORIZONS = 2
 RR_LO_HORIZON = 200
 RR_LO_MIN = 0.005
+#: C1 ruling (section 6.5 amended): flat also needs the T = 200 regret range's bootstrap upper bound < 0.01.
+FLAT_RR_HI_MAX = 0.01
 RR_LO_PERCENTILE = 2.5
 RR_HI_PERCENTILE = 97.5
 #: Sections 6.3 / 6.6.
@@ -98,6 +114,22 @@ EXTRA_POOL_FILES: dict[str, Path] = {"GMG": ROOT / "data" / "empirical_pool" / "
 H3_SCALE, H3_SPREAD = "het_scale", "het_spread"
 HET_REGISTRATIONS: tuple[str, ...] = tuple(k for k, r in rc.REGISTRATIONS.items() if r.get("study") == "het")
 
+#: Section 8 as amended (I2 ruling): the anchors are recovered iff GL_anchor_oracle's per-prompt success
+#: rate on the analysis universe is above the 90th percentile of the GLG + GLK per-prompt rates on the
+#: same universe AND GL_anchor_explorer's is below their 10th percentile (numpy's default linear
+#: percentile; both strict). GL_anchor_baseline is reported, as is the Gmail GM_anchor_baseline rate
+#: beside Pre-registration 9's own anchor (``anchor_baseline``) on the same 30 tasks (drift, reported).
+ANCHOR_ORACLE, ANCHOR_EXPLORER, ANCHOR_BASELINE_GL = "GL_anchor_oracle", "GL_anchor_explorer", "GL_anchor_baseline"
+ANCHOR_BASELINE_GM, PREREG9_ANCHOR = "GM_anchor_baseline", "anchor_baseline"
+ANCHOR_BULK_POOLS: tuple[str, ...] = ("GLG", "GLK")
+ANCHOR_PCT_LO, ANCHOR_PCT_HI = 10.0, 90.0
+#: I3 ruling: `tau_flat` is recomputed from ``calibration.csv`` and must equal ``--tau-flat`` to this tolerance.
+TAU_FLAT_TOL = 1e-12
+DEFAULT_CALIBRATION = OUT_DIR / calibrate.CALIBRATION_CSV
+#: Every het output table carries these provenance columns (I1, I3 rulings).
+PROVENANCE_COLUMNS: tuple[str, ...] = ("task_universe", "tau_flat", "calibration_sha256", "verdict_seed",
+                                       "verdict_n_boot", "unregistered")
+
 _GMG_ARM = re.compile(r"^GMG_G_(\d+)$")
 _GLG_ARM = re.compile(r"^GLG_(\d+)$")
 
@@ -105,18 +137,20 @@ _GLG_ARM = re.compile(r"^GLG_(\d+)$")
 # ---- section 6.5 --------------------------------------------------------------------------
 
 
-def classify_cell(regret_range: Mapping[int, float], rr_lo_T200: float, tau_set_upper: float,
-                  tau_flat: float) -> str:
-    """``flat`` iff the regret range is < 0.005 at T = 50, 100 and 200 and tau_set's one-sided upper 95%
-    MLS bound is < `tau_flat`; ``meaningful`` iff the regret range is >= 0.01 at >= 2 of the 3 and the
-    bootstrap lower bound of the regret range at T = 200 is > 0.005; ``moderate`` otherwise.
+def classify_cell(regret_range: Mapping[int, float], rr_lo_T200: float, rr_hi_T200: float) -> str:
+    """Section 6.5 as amended before registration (C1 ruling): ``flat`` iff the regret range is < 0.005
+    at T = 50, 100 and 200 **and** the bootstrap upper bound of the T = 200 regret range is < 0.01;
+    ``meaningful`` iff the regret range is >= 0.01 at >= 2 of the 3 and the bootstrap lower bound at
+    T = 200 is > 0.005; ``moderate`` otherwise. Each class's T = 200 interval must exclude the other
+    class's threshold. tau_set's one-sided upper MLS bound is reported beside the class
+    (`classify_pools`' ``tau_bound_below_flat``), never decisive: at J = 30-60 the tau-bound rule is
+    structurally unreachable (a null pool's bound exceeds tau_flat most of the time).
     A missing horizon raises `KeyError`; a non-finite input raises `ValueError`."""
     rr = [float(regret_range[T]) for T in PRIMARY_HORIZONS]
-    for name, v in (("regret_range", rr), ("rr_lo_T200", [rr_lo_T200]), ("tau_set_upper", [tau_set_upper]),
-                    ("tau_flat", [tau_flat])):
+    for name, v in (("regret_range", rr), ("rr_lo_T200", [rr_lo_T200]), ("rr_hi_T200", [rr_hi_T200])):
         if not np.all(np.isfinite(np.asarray(v, dtype=float))):
             raise ValueError(f"classify_cell: non-finite {name} {v}")
-    if all(v < FLAT_RANGE for v in rr) and float(tau_set_upper) < float(tau_flat):
+    if all(v < FLAT_RANGE for v in rr) and float(rr_hi_T200) < FLAT_RR_HI_MAX:
         return "flat"
     if sum(v >= MEANINGFUL_RANGE for v in rr) >= MEANINGFUL_MIN_HORIZONS and float(rr_lo_T200) > RR_LO_MIN:
         return "meaningful"
@@ -173,7 +207,8 @@ def classify_pools(components: pd.DataFrame, kgrid: pd.DataFrame, boot_kgrid: pd
     """One section 6.5 row per pool of `components`: the point regret range at each primary T (the npmle
     K-grid, `describe.k_star_table`'s max - min over K) with its prompt-bootstrap 95% interval
     (``rr_lo_T<T>`` / ``rr_hi_T<T>``, section 6.4), tau_set's upper bound, the class. Classification
-    reads only ``rr_lo_T200``."""
+    reads ``rr_lo_T200`` and ``rr_hi_T200`` (C1 ruling); ``tau_set_upper_one_sided`` and
+    ``tau_bound_below_flat`` (upper bound < `tau_flat`) are reported only."""
     table = describe.k_star_table(kgrid[kgrid["variant"] == "npmle"])
     rr_of = {(str(r.pool), int(r.horizon)): float(r.regret_range) for r in table.itertuples()}
     ci = boot_regret_range_ci(boot_kgrid, expected_n_boot=expected_n_boot)
@@ -190,7 +225,8 @@ def classify_pools(components: pd.DataFrame, kgrid: pd.DataFrame, boot_kgrid: pd
         for T in PRIMARY_HORIZONS:
             row.update({f"regret_range_T{T}": rr[T], f"rr_lo_T{T}": ci[(pool, T)][0], f"rr_hi_T{T}": ci[(pool, T)][1]})
         row.update({"tau_set_upper_one_sided": up, "tau_flat": float(tau_flat),
-                    "class": classify_cell(rr, ci[(pool, RR_LO_HORIZON)][0], up, tau_flat),
+                    "tau_bound_below_flat": bool(np.isfinite(up) and up < float(tau_flat)),
+                    "class": classify_cell(rr, ci[(pool, RR_LO_HORIZON)][0], ci[(pool, RR_LO_HORIZON)][1]),
                     "n_boot": int(expected_n_boot), "manifest_sha256": manifest_sha256})
         rows.append(row)
     return pd.DataFrame(rows)
@@ -242,17 +278,33 @@ def pool_arm_ids(pool: str, *, study: st.Study, pool_file: Path | None = None) -
     return ids
 
 
-def design_universe(study: st.Study = st.HETEROGENEITY, *, manifest: Mapping | None = None) -> dict[str, tuple[list[str], list[str]]]:
+def design_universe(study: st.Study = st.HETEROGENEITY, *, outcomes: pd.DataFrame | None = None,
+                    task_universe: str | None = None, manifest: Mapping | None = None
+                    ) -> dict[str, tuple[list[str], list[str]]]:
     """``{pool: (arm ids, task ids)}``: the design each cell's matrix is built on -- every arm of the pool
     file and the app's task subset from ``<data_dir>/manifest.json`` (`TASK_SUBSET_KEY`), independent of
-    what the outcomes happen to contain."""
+    what the outcomes happen to contain.
+
+    GitLab cells follow the block-A fallback (spec 4.3 as amended, I1 ruling; `study.task_universe`):
+    `task_universe` (``"subset_60"`` / ``"block_a"``) when given, else detected mechanically from
+    `outcomes` -- one of the two is required for a study with a `study.BlockFallback`."""
     if manifest is None:
         manifest = json.loads((study.data_dir / "manifest.json").read_text())
+    if study.block_fallback is not None and task_universe is None:
+        if outcomes is None:
+            raise ValueError("design_universe needs `outcomes` (to detect the task universe) or `task_universe`")
+        task_universe = st.task_universe(outcomes, study, manifest)
     out = {}
     for pool in study.pools:
-        tasks = [str(t) for t in manifest[TASK_SUBSET_KEY[POOL_APP[pool]]]]
+        app = POOL_APP[pool]
+        if app == "gitlab" and study.block_fallback is not None:
+            tasks = st.universe_tasks(study, task_universe, manifest)
+            key = f"{app} ({task_universe})"
+        else:
+            tasks = [str(t) for t in manifest[TASK_SUBSET_KEY[app]]]
+            key = TASK_SUBSET_KEY[app]
         if not tasks or len(set(tasks)) != len(tasks):
-            raise ValueError(f"manifest {TASK_SUBSET_KEY[POOL_APP[pool]]}: {len(tasks)} ids, {len(set(tasks))} distinct")
+            raise ValueError(f"manifest {key}: {len(tasks)} ids, {len(set(tasks))} distinct")
         out[pool] = (pool_arm_ids(pool, study=study), tasks)
     return out
 
@@ -482,38 +534,51 @@ def _analyze(Y, tasks, n_imp, row_counts, noise, seed) -> dict:
                                n_imputed=n_imp, row_counts=row_counts, seed=seed)
 
 
-def upper_tail_mass(Y: np.ndarray, row_counts: np.ndarray) -> float:
-    """Section 6.4's upper-tail mass, exactly as `stage0.analyze_cell` computes it: an NPMLE on the prompt
-    means with per-prompt variance MS_resid / J, and its mass at or above (weighted median + 0.10)."""
+def upper_tail_mass(Y: np.ndarray, row_counts: np.ndarray, noise_var: float) -> float:
+    """Section 6.4's upper-tail mass, deconvolved with execution noise only -- the same noise the replay
+    reservoir uses (`replay.estimate`'s ``emp.npmle_reservoir``: per-prompt variance v / n, v the cell's
+    replicate-pair noise or its declared borrow, n its observed episodes) -- not stage 0's MS_resid / J
+    (minor ruling, final review). The NPMLE's mass at or above (weighted median + 0.10). NaN when `noise_var`
+    is not finite and positive."""
     Y = np.asarray(Y, dtype=float)
-    J = Y.shape[1]
-    rcs = np.asarray(row_counts, dtype=float)
-    vc = het.variance_components(Y, n_imputed=int(round(float(np.sum(J - rcs)))), row_counts=rcs)
-    grid, weights, _ = emp.npmle(Y.mean(axis=1), np.full(Y.shape[0], vc["ms_resid"] / J))
+    if noise_var is None or not np.isfinite(noise_var) or noise_var <= 0.0:
+        return float("nan")
+    n = np.asarray(row_counts, dtype=float)
+    grid, weights, _ = emp.npmle(Y.mean(axis=1), float(noise_var) / n)
     median = stage0._weighted_median(grid, weights)
     return float(weights[grid >= median + UPPER_TAIL_DELTA].sum())
 
 
-def upper_tail_ci(Y: np.ndarray, row_counts: np.ndarray, *, n_boot: int = TAIL_N_BOOT, seed: int) -> tuple[float, float]:
+def upper_tail_ci(Y: np.ndarray, row_counts: np.ndarray, noise_var: float, *, n_boot: int = TAIL_N_BOOT,
+                  seed: int) -> tuple[float, float]:
     """95% percentile interval of the upper-tail mass over a prompt bootstrap (tasks fixed, NPMLE re-fit
-    on every resample)."""
-    draws = het.prompt_bootstrap(Y, upper_tail_mass, n_boot=n_boot, seed=seed, row_counts=row_counts)
+    on every resample, the cell's full-sample execution noise held fixed)."""
+    if noise_var is None or not np.isfinite(noise_var) or noise_var <= 0.0:
+        return float("nan"), float("nan")
+
+    def mass(Yb: np.ndarray, row_counts: np.ndarray) -> float:
+        return upper_tail_mass(Yb, row_counts, noise_var)
+
+    draws = het.prompt_bootstrap(Y, mass, n_boot=n_boot, seed=seed, row_counts=row_counts)
     return float(np.percentile(draws, 2.5)), float(np.percentile(draws, 97.5))
 
 
 def analyze_pools(outcomes: pd.DataFrame, *, study: st.Study, universe: Universe, seed: int = SPLIT_HALF_SEED,
                   tail_n_boot: int = TAIL_N_BOOT, tail_seed: int = VERDICT_SEED) -> pd.DataFrame:
-    """`stage0.analyze_cell` on every pool of `study` (its design universe; its noise or declared borrow), plus
-    the upper-tail mass's prompt-bootstrap CI (``upper_tail_mass_lo``/``_hi``; seed ``tail_seed +
-    TAIL_SEED_OFFSET + pool index``)."""
+    """`stage0.analyze_cell` on every pool of `study` (its design universe; its noise or declared borrow), with
+    the upper-tail mass replaced by its execution-noise deconvolution (`upper_tail_mass`, the replay
+    reservoir's noise; ``upper_tail_noise_var``) and its prompt-bootstrap CI (``upper_tail_mass_lo``/``_hi``;
+    seed ``tail_seed + TAIL_SEED_OFFSET + pool index``)."""
     rows = []
     for k, pool in enumerate(study.pools):
         Y, _, tasks, n_imp, row_counts = _matrix(outcomes, pool, universe)
         noise = cell_noise(outcomes, pool, study=study)
         out = _analyze(Y, tasks, n_imp, row_counts, noise, seed)
         tseed = int(tail_seed) + TAIL_SEED_OFFSET + k
-        lo, hi = upper_tail_ci(Y, row_counts, n_boot=tail_n_boot, seed=tseed)
-        rows.append({"pool": pool, **out, "upper_tail_mass_lo": lo, "upper_tail_mass_hi": hi,
+        v = noise[0] if noise[1] >= 1 else float("nan")
+        lo, hi = upper_tail_ci(Y, row_counts, v, n_boot=tail_n_boot, seed=tseed)
+        rows.append({"pool": pool, **out, "upper_tail_mass": upper_tail_mass(Y, row_counts, v),
+                     "upper_tail_mass_lo": lo, "upper_tail_mass_hi": hi, "upper_tail_noise_var": v,
                      "upper_tail_n_boot": int(tail_n_boot), "upper_tail_seed": tseed, "n_imputed": int(n_imp),
                      "missing_frac": n_imp / Y.size, "noise_df": int(noise[1]), "noise_from": noise[2]})
     return pd.DataFrame(rows)
@@ -612,6 +677,94 @@ def timeout_sensitivity(outcomes: pd.DataFrame, *, study: st.Study, universe: Un
     return pd.DataFrame(rows), pd.DataFrame(rates, columns=["pool", "arm_id", "n_episodes", "n_clock", "timeout_rate"])
 
 
+# ---- anchor recovery (section 8 as amended, I2 ruling) ----------------------------------------
+
+
+def _arm_rates(outcomes: pd.DataFrame, arms: Iterable[str], tasks: Iterable[str]) -> dict[str, tuple[float, int]]:
+    """``{arm: (success rate, n)}`` over replicate-0 ``ok`` episodes on `tasks` (NaN, 0 when none)."""
+    ok = outcomes[(outcomes["replicate"].astype(int) == 0) & (outcomes["status"] == het.STATUS_OK)
+                  & outcomes["task_id"].astype(str).isin([str(t) for t in tasks])]
+    out = {}
+    for arm in arms:
+        s = ok.loc[ok["arm_id"].astype(str) == str(arm), "success"].astype(float)
+        out[str(arm)] = (float(s.mean()) if len(s) else float("nan"), int(len(s)))
+    return out
+
+
+def anchor_recovery(outcomes: pd.DataFrame, *, universe: Universe, prereg9_snapshot: Path | None) -> pd.DataFrame:
+    """One row: the GitLab anchors' per-prompt rates on the analysis universe (GLG's task list -- the full
+    60 or, under the block-A fallback, block A), the GLG + GLK per-prompt rates' 10th / 90th percentiles on
+    the same universe, ``recovered`` (oracle > p90 and explorer < p10, strict; False if either anchor has no
+    episode), and the Gmail GM_anchor_baseline rate beside Pre-registration 9's ``anchor_baseline`` on the
+    Gmail task subset (reported, never decisive). `prereg9_snapshot` is sha-checked against its manifest."""
+    gl_tasks = universe[ANCHOR_BULK_POOLS[0]][1]
+    for pool in ANCHOR_BULK_POOLS[1:]:
+        if list(universe[pool][1]) != list(gl_tasks):
+            raise ValueError(f"anchor recovery: {pool}'s task universe differs from {ANCHOR_BULK_POOLS[0]}'s")
+    bulk_arms = [a for pool in ANCHOR_BULK_POOLS for a in universe[pool][0]]
+    bulk = np.array([r for r, n in _arm_rates(outcomes, bulk_arms, gl_tasks).values() if n > 0], dtype=float)
+    anchors = _arm_rates(outcomes, (ANCHOR_ORACLE, ANCHOR_EXPLORER, ANCHOR_BASELINE_GL), gl_tasks)
+    p10 = float(np.percentile(bulk, ANCHOR_PCT_LO)) if bulk.size else float("nan")
+    p90 = float(np.percentile(bulk, ANCHOR_PCT_HI)) if bulk.size else float("nan")
+    (r_or, n_or), (r_ex, n_ex), (r_bl, n_bl) = (anchors[a] for a in (ANCHOR_ORACLE, ANCHOR_EXPLORER, ANCHOR_BASELINE_GL))
+    oracle_above = bool(n_or > 0 and np.isfinite(p90) and r_or > p90)
+    explorer_below = bool(n_ex > 0 and np.isfinite(p10) and r_ex < p10)
+    gm_tasks = universe["GMK"][1] if "GMK" in universe else []
+    r_gm, n_gm = _arm_rates(outcomes, (ANCHOR_BASELINE_GM,), gm_tasks)[ANCHOR_BASELINE_GM]
+    r_p9, n_p9, note = float("nan"), 0, ""
+    if prereg9_snapshot is not None and Path(prereg9_snapshot).exists():
+        st.check_extra_snapshot(prereg9_snapshot)
+        p9 = pd.DataFrame([json.loads(line) for line in Path(prereg9_snapshot).read_text().splitlines() if line.strip()])
+        r_p9, n_p9 = _arm_rates(p9, (PREREG9_ANCHOR,), gm_tasks)[PREREG9_ANCHOR]
+    else:
+        note = "Pre-registration 9 snapshot absent: its anchor rate is NA"
+    return pd.DataFrame([{
+        "oracle_arm": ANCHOR_ORACLE, "oracle_rate": r_or, "oracle_n": n_or,
+        "explorer_arm": ANCHOR_EXPLORER, "explorer_rate": r_ex, "explorer_n": n_ex,
+        "gl_baseline_rate": r_bl, "gl_baseline_n": n_bl,
+        "bulk_pools": "+".join(ANCHOR_BULK_POOLS), "bulk_n_prompts": int(bulk.size), "bulk_p10": p10, "bulk_p90": p90,
+        "n_tasks": len(gl_tasks), "oracle_above_p90": oracle_above, "explorer_below_p10": explorer_below,
+        "recovered": bool(oracle_above and explorer_below),
+        "gm_anchor_baseline_rate": r_gm, "gm_anchor_baseline_n": n_gm,
+        "prereg9_anchor_baseline_rate": r_p9, "prereg9_anchor_baseline_n": n_p9,
+        "gm_anchor_drift": r_gm - r_p9 if n_gm and n_p9 else float("nan"), "note": note,
+    }])
+
+
+# ---- provenance (I1, I3 rulings) ----------------------------------------------------------------
+
+
+def registered_tau_flat(tau_flat: float, calibration_csv: Path) -> dict:
+    """I3 ruling: recompute tau_flat from `calibration_csv` (`calibrate.tau_flat_from_calibration`) and refuse
+    a `tau_flat` that differs by more than `TAU_FLAT_TOL`; returns ``{tau_flat, calibration_sha256}``."""
+    calibration_csv = Path(calibration_csv)
+    if not calibration_csv.exists():
+        raise FileNotFoundError(f"no {calibration_csv}: tau_flat's provenance is the Stage-0 calibration")
+    recomputed = calibrate.tau_flat_from_calibration(pd.read_csv(calibration_csv))
+    if abs(float(tau_flat) - recomputed) > TAU_FLAT_TOL:
+        raise ValueError(f"--tau-flat {tau_flat!r} != {recomputed!r} recomputed from {calibration_csv}; refusing")
+    return {"tau_flat": recomputed, "calibration_sha256": rc.file_sha256(calibration_csv)}
+
+
+def provenance(*, task_universe: str | None, tau_flat: float, calibration_sha256: str, seed: int,
+               n_boot: int) -> dict:
+    """The columns every het output table carries (`PROVENANCE_COLUMNS`); ``unregistered`` is True when
+    ``--seed`` or ``--n-boot`` differs from the registered `VERDICT_SEED` / `N_BOOT`."""
+    return {"task_universe": task_universe, "tau_flat": float(tau_flat), "calibration_sha256": calibration_sha256,
+            "verdict_seed": int(seed), "verdict_n_boot": int(n_boot),
+            "unregistered": bool(int(seed) != VERDICT_SEED or int(n_boot) != N_BOOT)}
+
+
+def stamp(frame: pd.DataFrame, prov: Mapping) -> pd.DataFrame:
+    """`frame` with the provenance columns set (an existing ``tau_flat`` must already agree)."""
+    out = frame.copy()
+    if "tau_flat" in out.columns and len(out) and not np.allclose(out["tau_flat"].astype(float), prov["tau_flat"]):
+        raise ValueError("a table's tau_flat differs from the provenance tau_flat")
+    for k in PROVENANCE_COLUMNS:
+        out[k] = prov[k]
+    return out
+
+
 # ---- hypotheses -------------------------------------------------------------------------------
 
 
@@ -667,59 +820,100 @@ def hypotheses(outcomes: pd.DataFrame, bridge_arm_map: Mapping[str, str], *, uni
     return rows, port
 
 
-def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--tau-flat", type=float, required=True,
-                    help="section 6.5's tau_flat, as fixed in Pre-registration 10 from the calibration")
-    ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR, help="the replay tree (tables/, episodes/)")
-    ap.add_argument("--results-dir", type=Path, default=OUT_DIR)
-    ap.add_argument("--n-boot", type=int, default=N_BOOT, help="prompt bootstrap for H1, H2, H4")
-    ap.add_argument("--seed", type=int, default=VERDICT_SEED)
-    ap.add_argument("--prereg9-log-dir", type=Path, default=replay.LOG_DIR,
-                    help="Pre-registration 9's logs, for GMG's timeout flags")
-    args = ap.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-    study = replay.resolve_study(st.HETEROGENEITY.name)
-    res_dir, results = study.res_dir, args.results_dir
+def run_verdicts(*, study: st.Study, out_dir: Path, results: Path, tau_flat: float, calibration_csv: Path,
+                 n_boot: int = N_BOOT, seed: int = VERDICT_SEED, prereg9_log_dir: Path | None = None,
+                 expected_boot_n: int = replay.N_BOOT, tail_n_boot: int = TAIL_N_BOOT,
+                 registration_n_boot: int | None = None) -> dict[str, pd.DataFrame]:
+    """Every section 6 output of `study` under `results` (see the module docstring). `expected_boot_n`,
+    `tail_n_boot` and `registration_n_boot` exist so a synthetic end-to-end test can run at small sizes; the
+    CLI always passes the registered values."""
+    prov_tau = registered_tau_flat(tau_flat, calibration_csv)
+    res_dir = study.res_dir
     manifest = res_dir / replay.MANIFEST_FILE
     manifest_sha = rc.file_sha256(manifest)
     outcomes = replay.load_snapshot(res_dir)
-    tables = args.out_dir / "tables"
+    data_manifest = json.loads((study.data_dir / "manifest.json").read_text())
+    task_universe = st.task_universe(outcomes, study, data_manifest)
+    frozen_universe = replay.load_manifest(res_dir).get("task_universe")
+    if task_universe is not None and frozen_universe != task_universe:
+        raise ValueError(f"task universe {task_universe!r} detected on the snapshot, but the reservoir manifest "
+                         f"records {frozen_universe!r}; re-run `replay.py estimate --study {study.name}`")
+    prov = provenance(task_universe=task_universe, tau_flat=prov_tau["tau_flat"],
+                      calibration_sha256=prov_tau["calibration_sha256"], seed=seed, n_boot=n_boot)
+    tables = Path(out_dir) / "tables"
     kgrid = pd.read_csv(tables / study.table("kgrid"))
     describe.check_kgrid_snapshot(kgrid, replay.verify_reservoirs(res_dir, study=study), study=study)
     boot_kgrid = pd.read_csv(tables / study.table("boot_kgrid"))
     if set(boot_kgrid["manifest_sha256"].astype(str)) != {manifest_sha}:
         raise ValueError(f"{study.table('boot_kgrid')} was not computed on {manifest}; re-run replay.py boot_kgrid")
+    results = Path(results)
     results.mkdir(parents=True, exist_ok=True)
+    out: dict[str, pd.DataFrame] = {}
 
-    universe = design_universe(study)
-    components = analyze_pools(outcomes, study=study, universe=universe, tail_seed=args.seed)
-    components.to_csv(results / "het_components.csv", index=False)
-    classification = classify_pools(components, kgrid, boot_kgrid, tau_flat=args.tau_flat,
-                                    expected_n_boot=replay.N_BOOT, manifest_sha256=manifest_sha)
-    cls_path = results / "het_classification.csv"
-    classification.to_csv(cls_path, index=False)
+    def write(name: str, frame: pd.DataFrame) -> Path:
+        frame = stamp(frame, prov)
+        out[name] = frame
+        path = results / name
+        frame.to_csv(path, index=False)
+        return path
+
+    universe = design_universe(study, task_universe=task_universe, manifest=data_manifest)
+    components = analyze_pools(outcomes, study=study, universe=universe, tail_seed=seed, tail_n_boot=tail_n_boot)
+    write("het_components.csv", components)
+    classification = classify_pools(components, kgrid, boot_kgrid, tau_flat=prov["tau_flat"],
+                                    expected_n_boot=expected_boot_n, manifest_sha256=manifest_sha)
+    cls_path = write("het_classification.csv", classification)
     classes = dict(zip(classification["pool"], classification["class"], strict=True))
-    log.info("classification: %s", classes)
+    log.info("classification (%s): %s", task_universe, classes)
 
-    gaps = policy_gaps(args.out_dir, classes, cls_path, reservoir_manifest=manifest, study=study)
-    gaps.to_csv(results / "het_policy_gaps.csv", index=False)
+    gaps = policy_gaps(out_dir, classes, cls_path, reservoir_manifest=manifest, study=study,
+                       expected_n_boot=registration_n_boot)
+    write("het_policy_gaps.csv", gaps)
 
-    bridge = json.loads((study.data_dir / "manifest.json").read_text())["bridge_source"]
-    rows, port = hypotheses(outcomes, bridge, universe=universe, n_boot=args.n_boot, seed=args.seed)
+    extras = [snap for snap, _, _ in study.extra_outcomes]
+    write("het_anchor_recovery.csv", anchor_recovery(outcomes, universe=universe,
+                                                     prereg9_snapshot=extras[0] if extras else None))
+
+    rows, port = hypotheses(outcomes, data_manifest["bridge_source"], universe=universe, n_boot=n_boot, seed=seed)
     r3 = h3(classes, gaps)
     rows.append(_hrow("H3", "section 6.6", "thesis", True, r3, "prompt bootstrap, B = 200 (replay)"))
-    pd.DataFrame(rows).to_csv(results / "het_hypotheses.csv", index=False)
-    port.to_csv(results / "het_portability.csv", index=False)
+    write("het_hypotheses.csv", pd.DataFrame(rows))
+    write("het_portability.csv", port)
     for r in rows:
         log.info("%s %-10s %-40s %s", r["hypothesis"], r["role"], r["contrast"], str(r["verdict"]).upper())
 
-    extra = {relabel: (args.prereg9_log_dir, source) for _, source, relabel in study.extra_outcomes}
+    p9_logs = replay.LOG_DIR if prereg9_log_dir is None else prereg9_log_dir
+    extra = {relabel: (p9_logs, source) for _, source, relabel in study.extra_outcomes}
     timed = attach_ended_by(outcomes, log_dirs=study.log_dirs, extra_log_dirs=extra)
     sens, rates = timeout_sensitivity(timed, study=study, universe=universe)
-    sens.to_csv(results / "het_timeout_sensitivity.csv", index=False)
-    rates.to_csv(results / "het_timeout_rates.csv", index=False)
+    write("het_timeout_sensitivity.csv", sens)
+    write("het_timeout_rates.csv", rates)
+    (results / "het_provenance.json").write_text(json.dumps({**prov, "reservoir_manifest_sha256": manifest_sha,
+                                                            "calibration_csv": str(calibration_csv)}, indent=2))
     log.info("wrote %s", results)
+    return out
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--tau-flat", type=float, required=True,
+                    help="section 6.5's tau_flat, as fixed in Pre-registration 10 from the calibration "
+                         "(checked against --calibration; a mismatch refuses)")
+    ap.add_argument("--calibration", type=Path, default=DEFAULT_CALIBRATION,
+                    help="the Stage-0 calibration.csv tau_flat is recomputed from")
+    ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR, help="the replay tree (tables/, episodes/)")
+    ap.add_argument("--results-dir", type=Path, default=OUT_DIR)
+    ap.add_argument("--n-boot", type=int, default=N_BOOT,
+                    help="prompt bootstrap for H1, H2, H4 (a non-registered value stamps the outputs unregistered)")
+    ap.add_argument("--seed", type=int, default=VERDICT_SEED,
+                    help="verdict seed base (a non-registered value stamps the outputs unregistered)")
+    ap.add_argument("--prereg9-log-dir", type=Path, default=replay.LOG_DIR,
+                    help="Pre-registration 9's logs, for GMG's timeout flags")
+    args = ap.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    run_verdicts(study=replay.resolve_study(st.HETEROGENEITY.name), out_dir=args.out_dir, results=args.results_dir,
+                 tau_flat=args.tau_flat, calibration_csv=args.calibration, n_boot=args.n_boot, seed=args.seed,
+                 prereg9_log_dir=args.prereg9_log_dir)
 
 
 if __name__ == "__main__":

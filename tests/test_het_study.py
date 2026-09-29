@@ -86,8 +86,27 @@ def test_load_study_outcomes_relabels_extras(tmp_path):
     s = st.Study(name="x", test="x", boot_test="x_boot", pools=("GMG",), data_dir=tmp_path, res_dir=tmp_path,
                  log_dirs=(tmp_path / "none",), seed_base=900_000, table_prefix="x", noise_mode="per_pool",
                  borrowed_noise={}, extra_outcomes=((snap, "G", "GMG"),))
+    with pytest.raises(FileNotFoundError, match="manifest.json"):  # an extra snapshot is sha-checked
+        st.load_study_outcomes(s)
+    _freeze(snap)
     out = st.load_study_outcomes(s)
     assert list(out["pool"]) == ["GMG"] and list(out["arm_id"]) == ["GMG_G_00"]
+    snap.write_text(snap.read_text() + "\n")  # any byte change after the freeze
+    with pytest.raises(ValueError, match="sha256"):
+        st.load_study_outcomes(s)
+
+
+def _freeze(snap: Path) -> None:
+    """The source study's reservoir manifest beside `snap`, as `replay.write_manifest` writes it."""
+    import hashlib
+    import json
+    (snap.parent / "manifest.json").write_text(json.dumps({"outcomes_snapshot": {
+        "file": snap.name, "sha256": hashlib.sha256(snap.read_bytes()).hexdigest()}}))
+
+
+def test_the_real_prereg9_extra_snapshot_matches_its_manifest():
+    for snapshot, _, _ in st.HETEROGENEITY.extra_outcomes:
+        st.check_extra_snapshot(snapshot)
 
 
 # ---- beyond the brief: the study reaches every id, path and pattern -------------------------
@@ -251,6 +270,7 @@ def test_estimate_and_boot_run_end_to_end_on_a_multi_dir_study(tmp_path):
     no_pairs = pool_rows("C", n_reps=0)
     write(tmp_path / "logs" / "two" / "worker_0.jsonl", no_pairs[no_pairs["replicate"] == 0])
     write(tmp_path / "snap.jsonl", pd.concat([pool_rows("G"), pool_rows("F")]), schema=False)
+    _freeze(tmp_path / "snap.jsonl")
     s = st.Study(name="x", test="xt", boot_test="xt_boot", pools=("A", "B", "C"), data_dir=tmp_path,
                  res_dir=tmp_path / "res", log_dirs=(tmp_path / "logs" / "one", tmp_path / "logs" / "two",
                                                      tmp_path / "logs" / "absent"),
@@ -269,3 +289,103 @@ def test_estimate_and_boot_run_end_to_end_on_a_multi_dir_study(tmp_path):
     assert len({c.base_seed for c in cells}) == len(cells)
     import registered_contrast as rc
     assert all(rc.boot_env_pattern(s).match(c.env_id) for c in cells)
+
+
+# ---- final fix wave: strict logs (I5, minors) and the block-A fallback (I1) ------------------------
+
+
+def _tree(tmp_path, **kw):
+    sys.path.insert(0, str(ROOT / "tests"))
+    import het_fake_tree
+    return het_fake_tree.build(tmp_path, **kw)
+
+
+def test_strict_study_loads_a_clean_tree(tmp_path):
+    s, _ = _tree(tmp_path)
+    out = st.load_study_outcomes(s)
+    assert {"GLG", "GLK", "GMK", "GMB", "GMG", "anchor"} == set(out["pool"])
+
+
+def test_strict_study_refuses_a_missing_log_dir(tmp_path):
+    import shutil
+    s, _ = _tree(tmp_path)
+    shutil.rmtree(s.log_dirs[2])
+    with pytest.raises(FileNotFoundError, match="bridge"):
+        st.load_study_outcomes(s)
+    import dataclasses
+    lax = dataclasses.replace(s, strict_logs=False)  # the Pre-reg 9 behaviour: skipped
+    assert "GMB" not in set(st.load_study_outcomes(lax)["pool"])
+
+
+def test_strict_study_refuses_a_record_whose_prompt_sha_is_not_the_pool_files(tmp_path):
+    import json
+    s, _ = _tree(tmp_path)
+    path = s.log_dirs[1] / "worker_0.jsonl"
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    rows[3]["prompt_sha256"] = "f" * 64
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    with pytest.raises(ValueError, match="prompt_sha256"):
+        st.load_study_outcomes(s)
+
+
+def test_estimate_refuses_unfinished_logs_unless_overridden(tmp_path):
+    s, _ = _tree(tmp_path)
+    (s.log_dirs[0] / "STATUS").write_text("running\n")
+    with pytest.raises(RuntimeError, match="STATUS"):
+        replay.run_estimate(None, s.res_dir, tmp_path / "out", study=s)
+    for status in st.ESTIMABLE_STATUSES:
+        (s.log_dirs[0] / "STATUS").write_text(status + "\n")
+        st.check_log_status(s)
+    (s.log_dirs[0] / "STATUS").write_text("provider_down\n")
+    replay.run_estimate(None, s.res_dir, tmp_path / "out", study=s, allow_unfinished=True)
+    args = replay.build_parser().parse_args(["estimate", "--study", "het", "--allow-unfinished-logs"])
+    assert args.allow_unfinished_logs and not replay.build_parser().parse_args(["estimate"]).allow_unfinished_logs
+
+
+def test_task_universe_is_block_a_when_any_gitlab_pool_misses_block_b(tmp_path):
+    s, _ = _tree(tmp_path)
+    full = st.load_study_outcomes(s)
+    assert st.task_universe(full, s) == "subset_60"
+    for arm in ("GLG_03", "GLK_00", "GL_anchor_oracle"):  # any GitLab pool, anchors included
+        sub = tmp_path / arm
+        s2, _ = _tree(sub, drop_block_b=(arm,))
+        out = st.load_study_outcomes(s2)
+        assert st.task_universe(out, s2) == "block_a"
+        kept = st.restrict_to_universe(out, s2, "block_a")
+        gl = kept[kept["arm_id"].isin(st.fallback_arms(s2))]
+        assert set(gl["task_id"]) == set(st.load_data_manifest(s2)["gitlab_block_a"])
+        assert (gl["replicate"] == 1).any()  # block-A replicate pairs survive
+        gm = kept[~kept["arm_id"].isin(st.fallback_arms(s2))]
+        assert len(gm) == len(out[~out["arm_id"].isin(st.fallback_arms(s2))])  # Gmail untouched
+    # a missing (terminal) record still counts as attempted
+    import pandas as pd
+    miss = full.copy()
+    sel = (miss["arm_id"] == "GLG_00") & (miss["task_id"] == "task_e2") & (miss["replicate"] == 0)
+    miss.loc[sel, "status"] = "missing"
+    assert st.task_universe(miss, s) == "subset_60"
+    assert st.task_universe(pd.concat([full[~sel]]), s) == "block_a"
+
+
+def test_estimate_applies_the_fallback_and_records_the_universe(tmp_path):
+    import json
+    s, _ = _tree(tmp_path, drop_block_b=("GLK_01",))
+    replay.run_estimate(None, s.res_dir, tmp_path / "out", study=s)
+    manifest = json.loads((s.res_dir / "manifest.json").read_text())
+    assert manifest["task_universe"] == "block_a"
+    snap = replay.load_snapshot(s.res_dir)
+    gl = snap[snap["arm_id"].isin(st.fallback_arms(s))]
+    assert set(gl["task_id"]) == set(st.load_data_manifest(s)["gitlab_block_a"])
+    s2, _ = _tree(tmp_path / "full")
+    replay.run_estimate(None, s2.res_dir, tmp_path / "out2", study=s2)
+    assert json.loads((s2.res_dir / "manifest.json").read_text())["task_universe"] == "subset_60"
+
+
+def test_prereg9_reservoir_manifest_gains_no_task_universe_key(tmp_path):
+    import json
+    res = tmp_path / "res"
+    res.mkdir()
+    for name in ("outcomes_snapshot.jsonl", "noise.json", "parametric_fits.csv", "G_npmle.json"):
+        (res / name).write_text("x")
+    replay.write_manifest(res, ["G_npmle"])
+    assert set(json.loads((res / "manifest.json").read_text())) == {"outcomes_snapshot", "noise", "parametric_fits",
+                                                                   "reservoirs"}

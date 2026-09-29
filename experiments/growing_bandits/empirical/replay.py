@@ -266,7 +266,9 @@ def write_snapshot(outcomes: pd.DataFrame, res_dir: Path) -> Path:
     return path
 
 
-def write_manifest(res_dir: Path, reservoir_names: Iterable[str]) -> Path:
+def write_manifest(res_dir: Path, reservoir_names: Iterable[str], *, extra: dict | None = None) -> Path:
+    """The reservoir manifest. `extra` (the heterogeneity study's ``task_universe``) adds keys; without it
+    the manifest is byte-for-byte what Pre-registration 9 wrote."""
     res_dir = Path(res_dir)
     manifest = {
         "outcomes_snapshot": {"file": SNAPSHOT_FILE, "sha256": rc.file_sha256(res_dir / SNAPSHOT_FILE)},
@@ -274,6 +276,8 @@ def write_manifest(res_dir: Path, reservoir_names: Iterable[str]) -> Path:
         "parametric_fits": rc.file_sha256(res_dir / "parametric_fits.csv"),
         "reservoirs": {name: rc.file_sha256(res_dir / f"{name}.json") for name in sorted(reservoir_names)},
     }
+    if extra:
+        manifest.update(extra)
     path = res_dir / MANIFEST_FILE
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
     return path
@@ -320,21 +324,33 @@ def stamp_kgrid(frame: pd.DataFrame, shas: dict[str, str]) -> pd.DataFrame:
     return frame.assign(reservoir_sha256=frame["env_id"].map(shas))
 
 
-def run_estimate(log_dir: Path | None, res_dir: Path, out_dir: Path, *, study: st.Study = st.PREREG9) -> dict:
+def run_estimate(log_dir: Path | None, res_dir: Path, out_dir: Path, *, study: st.Study = st.PREREG9,
+                 allow_unfinished: bool = False) -> dict:
     """Read the logs once, freeze them, estimate, and write reservoirs + manifest.
 
     The outcomes are `study.load_study_outcomes`: every log dir of the study (or `log_dir`
-    alone when given) plus its relabelled extra snapshots.
+    alone when given) plus its relabelled extra snapshots. For a `Study.strict_logs` study every log
+    dir's STATUS must be ``done``/``budget``/``through`` (`study.check_log_status`) unless
+    `allow_unfinished` (``--allow-unfinished-logs``). For a study with a `study.BlockFallback` the
+    GitLab task universe is decided here, mechanically (`study.task_universe`); under ``block_a`` the
+    snapshot keeps only block A's GitLab episodes, and the manifest records ``task_universe`` either way.
     """
     source = study if log_dir is None else dataclasses.replace(study, log_dirs=(Path(log_dir),))
+    if source.strict_logs and not allow_unfinished:
+        st.check_log_status(source)
     outcomes = st.load_study_outcomes(source)
+    universe = st.task_universe(outcomes, study)
+    if universe is not None:
+        outcomes = st.restrict_to_universe(outcomes, study, universe)
+        log.info("%s: GitLab task universe %s", study.name, universe)
     write_snapshot(outcomes, res_dir)
     reservoirs, noise, fits = estimate(load_snapshot_unchecked(res_dir), study=study)
     for (pool, variant), res in reservoirs.items():
         save_reservoir(res, Path(res_dir) / f"{pool}_{variant}.json")
     (Path(res_dir) / "noise.json").write_text(json.dumps(noise, indent=2))
     fits.to_csv(Path(res_dir) / "parametric_fits.csv", index=False)
-    write_manifest(res_dir, [f"{p}_{v}" for p, v in reservoirs])
+    write_manifest(res_dir, [f"{p}_{v}" for p, v in reservoirs],
+                   extra=None if universe is None else {"task_universe": universe})
     for (pool, variant), res in reservoirs.items():
         log.info("%s %-10s mean %.4f sd %.4f atoms %d %s", pool, variant, res.mean(), res.sd(),
                  res.atoms.size, res.validation_error or "")
@@ -533,19 +549,28 @@ def purge_stale_emp_comparators(out_dir: str | Path, *, boot_only: bool = False,
     return n
 
 
-def main(argv: list[str] | None = None) -> None:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("stage", choices=["estimate", "point", "kgrid", "boot", "boot_kgrid"])
     ap.add_argument("--workers", type=int, default=12)
     ap.add_argument("--out-dir", type=Path, default=rd.DEFAULT_OUT_DIR)
     ap.add_argument("--study", choices=sorted(st.STUDIES), default=st.PREREG9.name)
-    args = ap.parse_args(argv)
+    ap.add_argument("--allow-unfinished-logs", action="store_true",
+                    help="estimate a strict study (het) even when a log dir's STATUS is not done/budget/through")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     study = resolve_study(args.study)
     res_dir = study.res_dir
 
     if args.stage == "estimate":
-        run_estimate(None, res_dir, args.out_dir, study=study)
+        if args.allow_unfinished_logs:
+            run_estimate(None, res_dir, args.out_dir, study=study, allow_unfinished=True)
+        else:
+            run_estimate(None, res_dir, args.out_dir, study=study)
     elif args.stage == "point":
         _require_cap_constants(args.out_dir, ALL_HORIZONS, "point", study.test)
         verify_reservoirs(res_dir, study=study)

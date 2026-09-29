@@ -28,44 +28,50 @@ COL = "regret_posterior_mean_shrunk"
 # ---- section 6.5 classification ---------------------------------------------------------
 
 
-@pytest.mark.parametrize("rr, lo, tau_hi, expected", [
-    ({50: 0.004, 100: 0.004, 200: 0.004}, 0.001, 0.02, "flat"),
-    ({50: 0.004, 100: 0.004, 200: 0.004}, 0.001, 0.05, "moderate"),
-    # The brief expected "moderate" here; spec section 6.5 (binding) makes it meaningful: >= 0.01 at 2 of 3
-    # horizons (T=50, 100) and the T=200 bootstrap lower bound 0.006 > 0.005. Nothing requires T=200 >= 0.01.
-    ({50: 0.012, 100: 0.011, 200: 0.009}, 0.006, 0.08, "meaningful"),
-    ({50: 0.012, 100: 0.004, 200: 0.009}, 0.006, 0.08, "moderate"),  # only 1 of 3 horizons >= 0.01
-    ({50: 0.012, 100: 0.004, 200: 0.015}, 0.006, 0.08, "meaningful"),
-    ({50: 0.012, 100: 0.011, 200: 0.015}, 0.004, 0.08, "moderate"),
+@pytest.mark.parametrize("rr, lo, hi, expected", [
+    ({50: 0.004, 100: 0.004, 200: 0.004}, 0.001, 0.009, "flat"),
+    ({50: 0.004, 100: 0.004, 200: 0.004}, 0.001, 0.012, "moderate"),  # the CI does not exclude meaningful
+    # spec section 6.5: >= 0.01 at 2 of 3 horizons (T=50, 100) and the T=200 bootstrap lower bound > 0.005;
+    # nothing requires T=200 >= 0.01.
+    ({50: 0.012, 100: 0.011, 200: 0.009}, 0.006, 0.02, "meaningful"),
+    ({50: 0.012, 100: 0.004, 200: 0.009}, 0.006, 0.02, "moderate"),  # only 1 of 3 horizons >= 0.01
+    ({50: 0.012, 100: 0.004, 200: 0.015}, 0.006, 0.02, "meaningful"),
+    ({50: 0.012, 100: 0.011, 200: 0.015}, 0.004, 0.02, "moderate"),
 ])
-def test_classify_cell(rr, lo, tau_hi, expected):
-    # the brief's cases, at the formerly fixed 0.03 (tau_flat is now fixed from the calibration)
-    assert hv.classify_cell(rr, lo, tau_hi, tau_flat=0.03) == expected
+def test_classify_cell(rr, lo, hi, expected):
+    assert hv.classify_cell(rr, lo, hi) == expected
 
 
-def test_classify_cell_tau_flat_matters():
-    rr = {50: 0.004, 100: 0.004, 200: 0.004}
-    assert hv.classify_cell(rr, 0.001, 0.035, tau_flat=0.03) == "moderate"
-    assert hv.classify_cell(rr, 0.001, 0.035, tau_flat=0.04) == "flat"
-    assert hv.classify_cell(rr, 0.001, 0.04, tau_flat=0.04) == "moderate"  # strict: upper bound < tau_flat
+def test_classify_cell_flat_boundaries_are_the_amended_inequalities():
+    # C1 ruling (spec section 6.5, amended before registration): flat = regret range < 0.005 at all three
+    # primary T AND the bootstrap upper bound of the T=200 regret range < 0.01 -- both strict.
+    below = {50: 0.0049, 100: 0.0049, 200: 0.0049}
+    assert hv.classify_cell(below, 0.0, 0.0099) == "flat"
+    assert hv.classify_cell(below, 0.0, 0.01) == "moderate"  # hi == 0.01 is not < 0.01
+    assert hv.classify_cell({50: 0.0049, 100: 0.005, 200: 0.0049}, 0.0, 0.0) == "moderate"  # 0.005 not < 0.005
+    assert hv.classify_cell({50: 0.005, 100: 0.0049, 200: 0.0049}, 0.0, 0.0) == "moderate"
+    assert hv.classify_cell({50: 0.0049, 100: 0.0049, 200: 0.005}, 0.0, 0.0) == "moderate"
+    # meaningful is unchanged: >= 0.01 at >= 2 of 3 (0.01 itself counts), T=200 lower bound strictly > 0.005
+    assert hv.classify_cell({50: 0.01, 100: 0.0, 200: 0.01}, 0.0051, 0.1) == "meaningful"
+    assert hv.classify_cell({50: 0.01, 100: 0.0, 200: 0.01}, 0.005, 0.1) == "moderate"
+    assert hv.classify_cell({50: 0.01, 100: 0.0, 200: 0.0099}, 0.02, 0.1) == "moderate"
 
 
-def test_classify_cell_boundaries_are_the_spec_inequalities():
-    # flat: regret range strictly below 0.005 at all three horizons
-    assert hv.classify_cell({50: 0.004, 100: 0.005, 200: 0.004}, 0.0, 0.0, tau_flat=0.03) == "moderate"
-    # meaningful: >= 0.01 at >= 2 of 3 (0.01 itself counts) and the T=200 lower bound strictly above 0.005
-    assert hv.classify_cell({50: 0.01, 100: 0.0, 200: 0.01}, 0.0051, 0.1, tau_flat=0.03) == "meaningful"
-    assert hv.classify_cell({50: 0.01, 100: 0.0, 200: 0.01}, 0.005, 0.1, tau_flat=0.03) == "moderate"
-    assert hv.classify_cell({50: 0.01, 100: 0.0, 200: 0.0099}, 0.02, 0.1, tau_flat=0.03) == "moderate"
+def test_classify_cell_takes_no_tau_argument():
+    # the tau_set bound is reported (classify_pools' tau_bound_below_flat), never decisive
+    import inspect
+    assert list(inspect.signature(hv.classify_cell).parameters) == ["regret_range", "rr_lo_T200", "rr_hi_T200"]
 
 
 def test_classify_cell_refuses_incomplete_inputs():
     with pytest.raises(KeyError):
-        hv.classify_cell({50: 0.001, 100: 0.001}, 0.0, 0.01, tau_flat=0.03)
+        hv.classify_cell({50: 0.001, 100: 0.001}, 0.0, 0.01)
     with pytest.raises(ValueError):
-        hv.classify_cell({50: 0.001, 100: np.nan, 200: 0.001}, 0.0, 0.01, tau_flat=0.03)
+        hv.classify_cell({50: 0.001, 100: np.nan, 200: 0.001}, 0.0, 0.01)
     with pytest.raises(ValueError):
-        hv.classify_cell({50: 0.001, 100: 0.001, 200: 0.001}, 0.0, np.nan, tau_flat=0.03)
+        hv.classify_cell({50: 0.001, 100: 0.001, 200: 0.001}, 0.0, np.nan)
+    with pytest.raises(ValueError):
+        hv.classify_cell({50: 0.001, 100: 0.001, 200: 0.001}, np.nan, 0.001)
 
 
 # ---- H1 / H2 / H4 decision rule ----------------------------------------------------------
@@ -450,12 +456,29 @@ def test_classify_pools_from_tables():
         assert c.loc["GLK", f"rr_lo_T{T}"] == pytest.approx(np.percentile(ranges, 2.5))
         assert c.loc["GLK", f"rr_hi_T{T}"] == pytest.approx(np.percentile(ranges, 97.5))
     assert set(cls["manifest_sha256"]) == {"m"} and set(cls["tau_flat"]) == {0.03}
+    # the tau_set bound is reported beside the class, never decisive (C1 ruling)
+    assert c.loc["GLG", "tau_set_upper_one_sided"] == 0.02 and bool(c.loc["GLG", "tau_bound_below_flat"])
+    assert not bool(c.loc["GLK", "tau_bound_below_flat"])
     with pytest.raises(ValueError, match="T=50"):  # the CI is needed at every primary T
         hv.classify_pools(comp, kgrid, boot[boot["horizon"] != 50], tau_flat=0.03, expected_n_boot=5,
                           manifest_sha256="m")
 
 
-def test_classification_reads_only_the_T200_lower_bound():
+def test_a_flat_cell_whose_tau_bound_exceeds_tau_flat_is_still_flat():
+    # C1: the regret-range rule decides; tau_set's upper bound above tau_flat is only reported
+    kgrid = pd.DataFrame(_kgrid_rows("GMK", {50: 0.002, 100: 0.003, 200: 0.004}))
+    boot = pd.DataFrame([r for T in (50, 100, 200) for r in _boot_kgrid_rows("GMK", [0.002, 0.004, 0.006, 0.008, 0.009], T=T)])
+    comp = pd.DataFrame([{"pool": "GMK", "tau_set_upper_one_sided": 0.2}])
+    row = hv.classify_pools(comp, kgrid, boot, tau_flat=0.017, expected_n_boot=5, manifest_sha256="m").iloc[0]
+    assert row["class"] == "flat" and not bool(row["tau_bound_below_flat"])
+    assert row["rr_hi_T200"] < 0.01
+    # the same cell with a T=200 upper bound above 0.01 is moderate
+    boot_wide = pd.DataFrame([r for T in (50, 100, 200) for r in _boot_kgrid_rows("GMK", [0.002, 0.004, 0.011, 0.011, 0.011], T=T)])
+    assert hv.classify_pools(comp, kgrid, boot_wide, tau_flat=0.017, expected_n_boot=5,
+                             manifest_sha256="m").iloc[0]["class"] == "moderate"
+
+
+def test_classification_reads_only_the_T200_bounds():
     kgrid = pd.DataFrame(_kgrid_rows("GLK", {50: 0.02, 100: 0.015, 200: 0.012}))
     comp = pd.DataFrame([{"pool": "GLK", "tau_set_upper_one_sided": 0.1}])
     for lo200, want in ((0.006, "meaningful"), (0.004, "moderate")):
@@ -714,7 +737,9 @@ def test_design_universe_comes_from_pool_files_and_the_manifest(tmp_path):
     old = dict(het_verdicts.EXTRA_POOL_FILES)
     het_verdicts.EXTRA_POOL_FILES["GMG"] = g
     try:
-        uni = hv.design_universe(study)
+        with pytest.raises(ValueError, match="task universe"):
+            hv.design_universe(study)  # the GitLab universe is never assumed
+        uni = hv.design_universe(study, task_universe="subset_60")
     finally:
         het_verdicts.EXTRA_POOL_FILES.clear()
         het_verdicts.EXTRA_POOL_FILES.update(old)
@@ -737,15 +762,24 @@ def test_a_never_attempted_arm_or_task_is_missing_not_dropped():
         hv._matrix(out, "GLK", uni)
 
 
-def test_upper_tail_ci_refits_the_npmle_per_prompt_resample():
+def test_upper_tail_is_deconvolved_with_execution_noise_like_the_replay_reservoir():
     out = _study_outcomes()
     Y, _, tasks, n_imp, rcs = hv._matrix(out, "GLK", UNI)
-    point = hv.stage0.analyze_cell(Y, tasks, n_imputed=n_imp, row_counts=rcs)["upper_tail_mass"]
-    assert hv.upper_tail_mass(Y, rcs) == pytest.approx(point)
-    draws = het.prompt_bootstrap(Y, hv.upper_tail_mass, n_boot=6, seed=5, row_counts=rcs)
-    lo, hi = hv.upper_tail_ci(Y, rcs, n_boot=6, seed=5)
+    v, n_pairs = het.noise_from_pairs(out, "GLK")
+    assert n_pairs > 0
+    # the replay reservoir's deconvolution: per-prompt variance v / n (emp.npmle_reservoir)
+    grid, w, _ = hv.emp.npmle(Y.mean(axis=1), v / rcs)
+    want = float(w[grid >= hv.stage0._weighted_median(grid, w) + 0.10].sum())
+    assert hv.upper_tail_mass(Y, rcs, v) == pytest.approx(want)
+    assert np.isnan(hv.upper_tail_mass(Y, rcs, float("nan")))
+    draws = het.prompt_bootstrap(Y, lambda Yb, r: hv.upper_tail_mass(Yb, r, v), n_boot=6, seed=5, row_counts=rcs)
+    lo, hi = hv.upper_tail_ci(Y, rcs, v, n_boot=6, seed=5)
     assert (lo, hi) == (pytest.approx(np.percentile(draws, 2.5)), pytest.approx(np.percentile(draws, 97.5)))
     comp = hv.analyze_pools(out, study=H, universe=UNI, tail_n_boot=6).set_index("pool")
+    assert comp.loc["GLK", "upper_tail_mass"] == pytest.approx(want)
+    assert comp.loc["GLK", "upper_tail_noise_var"] == pytest.approx(v)
+    # GMB has no pairs: it deconvolves with its declared borrow (GMG), as the replay reservoir does
+    assert comp.loc["GMB", "upper_tail_noise_var"] == pytest.approx(het.noise_from_pairs(out, "GMG")[0])
     assert comp.loc["GLK", "upper_tail_seed"] == hv.VERDICT_SEED + hv.TAIL_SEED_OFFSET + H.pools.index("GLK")
     assert (comp["upper_tail_mass_lo"] <= comp["upper_tail_mass_hi"]).all()
 
@@ -832,3 +866,115 @@ def test_cluster_t_path_never_marks_a_het_tuple_registered(tmp_path):
     out = rc.registered_contrast("p3_star", "fixed_K_star", test="emp", horizons=(50, 100, 200), mei=0.002,
                                  out_dir=tmp_path, n_boot=200, rule="noninferiority")
     assert not out["as_registered"].any()
+
+
+# ---- final fix wave: anchor recovery (I2), tau_flat provenance (I3), task universe (I1) -----------
+
+
+def _anchor_outcomes(oracle, explorer, bulk_rates, tasks, gm_rate=0.6):
+    rows = []
+    arms = {**{f"GLG_{i:02d}": r for i, r in enumerate(bulk_rates)},
+            "GL_anchor_oracle": oracle, "GL_anchor_explorer": explorer, "GL_anchor_baseline": 0.5}
+    for arm, rate in arms.items():
+        k = int(round(rate * len(tasks)))
+        for j, t in enumerate(tasks):
+            rows.append({"pool": "GLG" if arm.startswith("GLG") else "anchor", "arm_id": arm, "task_id": t,
+                         "replicate": 0, "status": "ok", "success": int(j < k)})
+    for j, t in enumerate(_tasks(2)):
+        rows.append({"pool": "anchor", "arm_id": "GM_anchor_baseline", "task_id": t, "replicate": 0, "status": "ok",
+                     "success": int(j < round(gm_rate * 6))})
+    return pd.DataFrame(rows)
+
+
+def test_anchor_recovery_rule_and_percentiles(tmp_path):
+    tasks = [f"task_e{i}" for i in range(10)]
+    bulk = [0.2, 0.3, 0.4, 0.5, 0.5, 0.6, 0.7, 0.8]
+    uni = {"GLG": ([f"GLG_{i:02d}" for i in range(8)], tasks), "GLK": ([], tasks), "GMK": ([], _tasks(2))}
+    p10, p90 = np.percentile(bulk, 10), np.percentile(bulk, 90)
+    row = hv.anchor_recovery(_anchor_outcomes(0.9, 0.1, bulk, tasks), universe=uni, prereg9_snapshot=None).iloc[0]
+    assert (row["bulk_p10"], row["bulk_p90"]) == (pytest.approx(p10), pytest.approx(p90))
+    assert row["recovered"] and row["oracle_rate"] == 0.9 and row["explorer_rate"] == 0.1
+    assert row["bulk_n_prompts"] == 8 and row["n_tasks"] == 10
+    # the oracle not above the 90th percentile (0.7 < p90 = 0.73) -> not recovered
+    assert not hv.anchor_recovery(_anchor_outcomes(0.7, 0.1, bulk, tasks), universe=uni,
+                                  prereg9_snapshot=None).iloc[0]["recovered"]
+    # the explorer not below the 10th percentile
+    assert not hv.anchor_recovery(_anchor_outcomes(0.9, 0.3, bulk, tasks), universe=uni,
+                                  prereg9_snapshot=None).iloc[0]["recovered"]
+    # an anchor with no episode is never recovered
+    out = _anchor_outcomes(0.9, 0.1, bulk, tasks)
+    none = hv.anchor_recovery(out[out["arm_id"] != "GL_anchor_oracle"], universe=uni, prereg9_snapshot=None).iloc[0]
+    assert not none["recovered"] and none["oracle_n"] == 0
+    # rates are read on the analysis universe only (block A under the fallback)
+    uni_a = {"GLG": (uni["GLG"][0], tasks[:5]), "GLK": ([], tasks[:5]), "GMK": ([], _tasks(2))}
+    assert hv.anchor_recovery(out, universe=uni_a, prereg9_snapshot=None).iloc[0]["n_tasks"] == 5
+
+
+def test_anchor_recovery_reports_the_gmail_anchor_beside_prereg9s(tmp_path):
+    import hashlib
+    tasks = [f"task_e{i}" for i in range(10)]
+    uni = {"GLG": ([f"GLG_{i:02d}" for i in range(4)], tasks), "GLK": ([], tasks), "GMK": ([], _tasks(2))}
+    snap = tmp_path / "outcomes_snapshot.jsonl"
+    rows = [{"arm_id": "anchor_baseline", "pool": "anchor", "replicate": 0, "status": "ok", "task_id": t,
+             "success": int(j < 3), "attempt": 1} for j, t in enumerate(_tasks(2))]
+    snap.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (tmp_path / "manifest.json").write_text(json.dumps({"outcomes_snapshot": {
+        "file": snap.name, "sha256": hashlib.sha256(snap.read_bytes()).hexdigest()}}))
+    row = hv.anchor_recovery(_anchor_outcomes(0.9, 0.1, [0.4, 0.5, 0.5, 0.6], tasks, gm_rate=4 / 6),
+                             universe=uni, prereg9_snapshot=snap).iloc[0]
+    assert row["prereg9_anchor_baseline_rate"] == pytest.approx(0.5) and row["prereg9_anchor_baseline_n"] == 6
+    assert row["gm_anchor_baseline_rate"] == pytest.approx(4 / 6)
+    assert row["gm_anchor_drift"] == pytest.approx(4 / 6 - 0.5)
+    snap.write_text(snap.read_text() + "\n")
+    with pytest.raises(ValueError, match="sha256"):
+        hv.anchor_recovery(_anchor_outcomes(0.9, 0.1, [0.5] * 4, tasks), universe=uni, prereg9_snapshot=snap)
+
+
+def _calibration(tmp_path):
+    rows = []
+    for sd, rr in ((0.01, 0.001), (0.02, 0.003), (0.035, 0.007), (0.05, 0.012)):
+        rows.append({"pool_id": f"beta_sd{sd}", "family": "beta", "true_sd": sd, "horizon": 200, "regret_range": rr})
+    path = tmp_path / "calibration.csv"
+    pd.DataFrame(rows).to_csv(path, index=False)
+    return path
+
+
+def test_tau_flat_is_recomputed_from_the_calibration_and_a_mismatch_refuses(tmp_path):
+    path = _calibration(tmp_path)
+    tau = 0.02 + (0.005 - 0.003) / (0.007 - 0.003) * 0.015
+    got = hv.registered_tau_flat(tau, path)
+    assert got["tau_flat"] == pytest.approx(tau) and got["calibration_sha256"] == rc.file_sha256(path)
+    with pytest.raises(ValueError, match="tau-flat"):
+        hv.registered_tau_flat(tau + 1e-9, path)
+    with pytest.raises(FileNotFoundError):
+        hv.registered_tau_flat(tau, tmp_path / "absent.csv")
+
+
+def test_provenance_stamps_unregistered_seed_or_n_boot():
+    base = dict(task_universe="block_a", tau_flat=0.02, calibration_sha256="c")
+    assert not hv.provenance(**base, seed=hv.VERDICT_SEED, n_boot=hv.N_BOOT)["unregistered"]
+    assert hv.provenance(**base, seed=hv.VERDICT_SEED + 1, n_boot=hv.N_BOOT)["unregistered"]
+    assert hv.provenance(**base, seed=hv.VERDICT_SEED, n_boot=100)["unregistered"]
+    frame = hv.stamp(pd.DataFrame({"pool": ["GLK"]}), hv.provenance(**base, seed=1, n_boot=2))
+    assert list(frame.columns) == ["pool", *hv.PROVENANCE_COLUMNS]
+    assert frame.iloc[0]["task_universe"] == "block_a" and frame.iloc[0]["calibration_sha256"] == "c"
+    with pytest.raises(ValueError, match="tau_flat"):
+        hv.stamp(pd.DataFrame({"tau_flat": [0.03]}), hv.provenance(**base, seed=1, n_boot=2))
+
+
+def test_design_universe_detects_the_block_a_fallback(tmp_path):
+    sys.path.insert(0, str(ROOT / "tests"))
+    import het_fake_tree
+    s, pool_g = het_fake_tree.build(tmp_path, drop_block_b=("GL_anchor_explorer",))
+    old = dict(hv.EXTRA_POOL_FILES)
+    hv.EXTRA_POOL_FILES["GMG"] = pool_g
+    try:
+        out = st.load_study_outcomes(s)
+        uni = hv.design_universe(s, outcomes=out)
+        forced = hv.design_universe(s, task_universe="subset_60")
+    finally:
+        hv.EXTRA_POOL_FILES.clear()
+        hv.EXTRA_POOL_FILES.update(old)
+    assert uni["GLG"][1] == het_fake_tree.GL_BLOCK_A and uni["GLK"][1] == het_fake_tree.GL_BLOCK_A
+    assert uni["GMK"][1] == het_fake_tree.GM_TASKS  # Gmail cells never fall back
+    assert forced["GLG"][1] == het_fake_tree.GL_BLOCK_A + het_fake_tree.GL_BLOCK_B

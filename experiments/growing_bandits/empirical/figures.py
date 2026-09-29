@@ -8,30 +8,34 @@ Seven figures (spec section 7), one PNG + PDF each under `out_dir` (``fig{n}_<sl
 
 1. Variance decomposition per cell (task / prompt / prompt x task / noise), from ``het_components.csv``
    (``tau_main`` squared for the prompt component; ``task_var`` / ``interaction_var`` / ``noise_var``).
-2. ``tau_main`` with its 95% MLS interval per cell, over the flat / moderate / meaningful bands. The
-   flat edge is the ``tau_flat`` keyword (Pre-registration 10 fixes its *value* from the Stage-0
-   calibration elsewhere -- this module never invents one; ``None`` omits the band, annotated). The
-   moderate/meaningful edges come from the calibration curve's own regret-range -> true_sd mapping at
-   the spec's section 6.5 rr thresholds (0.005, 0.01) when ``calibration_csv`` is given; omitted
-   (annotated) otherwise. Nothing here hard-codes a tau threshold -- only the spec's own rr thresholds.
+2. ``tau_set`` with its 95% MLS interval (``tau_set_lo``/``tau_set_hi``) per cell -- the quantity on the
+   calibration's true-SD scale (what a replay reservoir built from the cell represents) -- over the
+   flat / moderate / meaningful bands; a cell without ``tau_set`` falls back to ``tau_main`` (``tau_lo``/
+   ``tau_hi``), drawn hollow and labelled (I4 ruling). The flat edge is the ``tau_flat`` keyword
+   (Pre-registration 10 fixes its *value* from the Stage-0 calibration elsewhere -- this module never
+   invents one; ``None`` omits the band, annotated). The moderate/meaningful edges come from the
+   calibration curve's own regret-range -> true_sd mapping at the spec's section 6.5 rr thresholds (0.005,
+   0.01) when ``calibration_csv`` is given; omitted (annotated) otherwise. Nothing here hard-codes a tau
+   threshold -- only the spec's own rr thresholds.
 3. Value of search vs heterogeneity: the Stage-0 calibration curve (true sd on x, regret range at
    T = 200 on y; tail mixtures as a second marker set), the empirical cells as labelled points with
-   their tau_main interval as horizontal error bars (y from ``het_classification.csv``'s
-   ``regret_range_T200``), and the historical Stage-0 points (Pre-reg 9 Gmail G/F, the old GitLab
-   paired subsets). Fix round 1 (controller ruling): Gmail's G/F *do* have a measured regret range --
+   their tau_set interval as horizontal error bars (tau_main, labelled, only where tau_set is absent; y
+   from ``het_classification.csv``'s ``regret_range_T200``), and the historical Stage-0 points (Pre-reg 9
+   Gmail G/F on their tau_set, the old GitLab paired subsets -- no replicates, so no tau_set -- on their
+   tau_main, labelled). Fix round 1 (controller ruling): Gmail's G/F *do* have a measured regret range --
    Pre-registration 9's own K-grid, ``emp_flatness.csv`` (``prereg9_flatness_csv``, default
    ``results/growing_bandits/deploy/tables/emp_flatness.csv``) -- so they plot at that measured value
    (npmle, T=200) and are labelled ``"<pool> (historical)"``. The old GitLab paired subsets
    (``stage0_gitlab_paired.csv``) never had a K-grid at all, and Gmail's G/F fall back the same way if
    ``emp_flatness.csv`` or that pool's row is missing: their y is the calibration curve's own value
-   interpolated at their tau_main -- an interpolated *placement*, never a measurement -- labelled
+   interpolated at their tau -- an interpolated *placement*, never a measurement -- labelled
    ``"<name> (historical, interpolated)"`` with a distinct hollow marker and its own legend entry.
    Historical points are only drawn when a calibration curve is given (needed for the interpolation
    fallback and the shared axes).
 4. Regret-vs-K curves per empirical pool at T in {50, 100, 200}, from ``het_kgrid.csv`` (variant
    ``npmle``).
-5. Policy gaps to the ceiling (``het_policy_gaps.csv``'s delta with its lo/hi interval), restricted to
-   the per-cell rows of pools ``het_classification.csv`` classifies "meaningful".
+5. Policy contrasts, policy - reference (``het_policy_gaps.csv``'s delta with its lo/hi interval),
+   restricted to the per-cell rows of pools ``het_classification.csv`` classifies "meaningful".
 6. Portability scatter: the G prompts' effects, Gmail vs GitLab (``het_portability.csv``).
 7. Supplement, built from tables only (no raw episodes/reservoirs), with these documented stand-ins:
    (a) upper-tail mass per cell with its bootstrap CI, standing in for NPMLE densities -- no producer
@@ -39,10 +43,10 @@ Seven figures (spec section 7), one PNG + PDF each under `out_dir` (``fig{n}_<sl
    (b) split-half reliability (``r_sb``) per cell; no producer computes a bootstrap interval for it, so
        its split-half p-value is annotated per point instead of an interval;
    (c) per-prompt timeout rates per cell, one strip per pool, from ``het_timeout_rates.csv``;
-   (d) anchor recovery (``GL_anchor_*``/``GM_anchor_*`` rates), read from whichever of
-       ``het_components.csv`` / ``het_timeout_rates.csv`` carries matching columns -- an annotated
-       empty panel ("anchor rates: see gates output") when neither does, which is the case for every
-       producer as of this task.
+   (d) anchor recovery from ``het_anchor_recovery.csv`` (`het_verdicts.anchor_recovery`, section 8 as
+       amended): the GitLab anchors' rates against the GLG + GLK 10th / 90th percentile band, the
+       ``recovered`` verdict, and the Gmail anchor beside Pre-registration 9's; an annotated empty panel
+       when the table is absent.
 
 Every optional table that is missing or empty draws an annotated empty panel instead of raising; only a
 missing ``het_components.csv`` (the one required table) raises `FileNotFoundError`. Agg backend, dark
@@ -52,7 +56,6 @@ style (surface ``#0f1115``, light text, no top/right spines), one fixed accent c
 
 from __future__ import annotations
 
-import re
 import sys
 from pathlib import Path
 
@@ -141,9 +144,6 @@ RC = {
     "savefig.dpi": 200,
 }
 
-_ANCHOR_RE = re.compile(r"^(GL|GM)_anchor_")
-
-
 # ---- small pure helpers (unit-tested directly) ---------------------------------------------------
 
 
@@ -214,28 +214,46 @@ def _interp_regret_range(beta_sorted: pd.DataFrame, x: float) -> float:
     return float(np.interp(x, xs, ys))
 
 
-def _anchor_columns(df: pd.DataFrame | None) -> list[str]:
-    """Every column of `df` matching ``GL_anchor_*`` / ``GM_anchor_*``, in column order."""
-    if df is None:
-        return []
-    return [c for c in df.columns if _ANCHOR_RE.match(str(c))]
+def _finite(v) -> bool:
+    try:
+        return bool(np.isfinite(float(v)))
+    except (TypeError, ValueError):
+        return False
+
+
+def _tau_for_axis(row) -> dict | None:
+    """The heterogeneity point a figure puts on the calibration's true-SD axis (I4 ruling): ``tau_set``
+    with its MLS interval (``tau_set_lo``/``tau_set_hi``) when ``tau_set`` is finite, else ``tau_main``
+    with ``tau_lo``/``tau_hi``; ``{tau, lo, hi, measure}`` (``measure`` names which), ``None`` when neither
+    is finite. A missing bound collapses to the point."""
+    get = row.get if hasattr(row, "get") else (lambda k, d=None: d)
+    for measure, lo_key, hi_key in (("tau_set", "tau_set_lo", "tau_set_hi"), ("tau_main", "tau_lo", "tau_hi")):
+        v = get(measure)
+        if _finite(v):
+            v = float(v)
+            lo = float(get(lo_key)) if _finite(get(lo_key)) else v
+            hi = float(get(hi_key)) if _finite(get(hi_key)) else v
+            return {"tau": v, "lo": lo, "hi": hi, "measure": measure}
+    return None
 
 
 def _historical_points(stage0_gmail: pd.DataFrame | None, stage0_gitlab: pd.DataFrame | None) -> list[dict]:
-    """``[{name, tau_main, tau_lo, tau_hi, source}]`` from Stage 0's tables (figure 3's historical
+    """``[{name, tau, tau_lo, tau_hi, measure, source}]`` from Stage 0's tables (figure 3's historical
     points, before resolving a y): ``stage0_gmail.csv``'s ``pool`` rows (G, F; ``source="gmail"``, a
     candidate for a *measured* y off `emp_flatness.csv`) and ``stage0_gitlab_paired.csv``'s ``subset``
     rows (``source="gitlab"``, always interpolated -- Stage 0 never ran a K-grid on the old paired
-    run)."""
+    run). The x is `_tau_for_axis`: tau_set where Stage 0 has it (Gmail), tau_main otherwise (the old GitLab
+    run has no replicates, hence no tau_set)."""
     rows: list[dict] = []
-    if stage0_gmail is not None and not stage0_gmail.empty and "pool" in stage0_gmail.columns:
-        for _, r in stage0_gmail.iterrows():
-            rows.append({"name": str(r["pool"]), "tau_main": float(r["tau_main"]),
-                        "tau_lo": float(r["tau_lo"]), "tau_hi": float(r["tau_hi"]), "source": "gmail"})
-    if stage0_gitlab is not None and not stage0_gitlab.empty and "subset" in stage0_gitlab.columns:
-        for _, r in stage0_gitlab.iterrows():
-            rows.append({"name": str(r["subset"]), "tau_main": float(r["tau_main"]),
-                        "tau_lo": float(r["tau_lo"]), "tau_hi": float(r["tau_hi"]), "source": "gitlab"})
+    for frame, key, source in ((stage0_gmail, "pool", "gmail"), (stage0_gitlab, "subset", "gitlab")):
+        if frame is None or frame.empty or key not in frame.columns:
+            continue
+        for _, r in frame.iterrows():
+            x = _tau_for_axis(r)
+            if x is None:
+                continue
+            rows.append({"name": str(r[key]), "tau": x["tau"], "tau_lo": x["lo"], "tau_hi": x["hi"],
+                         "measure": x["measure"], "source": source})
     return rows
 
 
@@ -263,17 +281,18 @@ def _historical_figure_points(beta_sorted: pd.DataFrame, stage0_gmail: pd.DataFr
     when `_measured_regret_range` finds one; otherwise (table missing, that pool's row missing, or
     non-finite) they fall back to `_interp_regret_range` on the calibration curve, exactly like the old
     GitLab paired subsets, which are always interpolated (Stage 0 never ran a K-grid for them).
-    ``[{name, tau_main, tau_lo, tau_hi, source, y, kind, label}]``, ``kind`` one of
-    ``"measured"``/``"interpolated"``."""
+    ``[{name, tau, tau_lo, tau_hi, measure, source, y, kind, label}]``, ``kind`` one of
+    ``"measured"``/``"interpolated"``; a point on tau_main (no tau_set) says so in its label."""
     points: list[dict] = []
     for h in _historical_points(stage0_gmail, stage0_gitlab):
         measured = _measured_regret_range(prereg9_flatness, h["name"]) if h["source"] == "gmail" else None
         if measured is not None:
             y, kind = measured, "measured"
         else:
-            y, kind = _interp_regret_range(beta_sorted, h["tau_main"]), "interpolated"
-        label = f"{h['name']} (historical)" if kind == "measured" else f"{h['name']} (historical, interpolated)"
-        points.append({**h, "y": y, "kind": kind, "label": label})
+            y, kind = _interp_regret_range(beta_sorted, h["tau"]), "interpolated"
+        tags = ["historical"] + (["interpolated"] if kind == "interpolated" else []) \
+            + (["tau_main"] if h["measure"] == "tau_main" else [])
+        points.append({**h, "y": y, "kind": kind, "label": f"{h['name']} ({', '.join(tags)})"})
     return points
 
 
@@ -334,20 +353,26 @@ def _fig2_tau_bands(components: pd.DataFrame, calibration: pd.DataFrame | None, 
                     out_dir: Path) -> list[Path]:
     stem = "fig2_tau_bands"
     fig, ax = plt.subplots(figsize=(6.4, 4.4))
-    if components.empty or not {"pool", "tau_main"} <= set(components.columns):
-        _empty_panel(ax, "no cells in het_components.csv")
+    points = [] if components.empty or "pool" not in components.columns else \
+        [(str(r["pool"]), _tau_for_axis(r)) for _, r in components.iterrows()]
+    points = [(p, x) for p, x in points if x is not None]
+    if not points:
+        _empty_panel(ax, "no cells with tau_set or tau_main in het_components.csv")
         return _save(fig, out_dir, stem)
-    pools = [str(p) for p in components["pool"]]
-    x = np.arange(len(pools))
-    tau = components["tau_main"].to_numpy(dtype=float)
-    lo = components.get("tau_lo", components["tau_main"]).astype(float).to_numpy(dtype=float)
-    hi = components.get("tau_hi", components["tau_main"]).astype(float).to_numpy(dtype=float)
-    for xi, ti, li, hi_ in zip(x, tau, lo, hi, strict=True):
-        color = FAMILY_COLORS.get(_pool_family(pools[xi]), MUTED)
-        ax.errorbar([xi], [ti], yerr=[[max(ti - li, 0.0)], [max(hi_ - ti, 0.0)]], fmt="o", color=color,
-                    markersize=7, markeredgecolor=SURFACE, ecolor=color, elinewidth=1.5, capsize=3)
+    pools = [p if x["measure"] == "tau_set" else f"{p} (tau_main)" for p, x in points]
+    xs = np.arange(len(points))
+    his = []
+    for xi, (pool, x) in zip(xs, points, strict=True):
+        color = FAMILY_COLORS.get(_pool_family(pool), MUTED)
+        hollow = x["measure"] != "tau_set"
+        ax.errorbar([xi], [x["tau"]], yerr=[[max(x["tau"] - x["lo"], 0.0)], [max(x["hi"] - x["tau"], 0.0)]], fmt="o",
+                    color=color, markersize=7, markeredgecolor=color if hollow else SURFACE,
+                    markerfacecolor="none" if hollow else color, ecolor=color, elinewidth=1.5, capsize=3)
+        his.append(x["hi"])
     notes: list[str] = []
-    top = float(np.nanmax(hi)) if np.isfinite(hi).any() else float(np.nanmax(tau))
+    if any(x["measure"] != "tau_set" for _, x in points):
+        notes.append("hollow: tau_main (no tau_set for that cell)")
+    top = max(his)
     if tau_flat is not None:
         ax.axhspan(0.0, float(tau_flat), color=BAND_COLORS["flat"], alpha=0.06, lw=0, zorder=0)
         ax.axhline(float(tau_flat), color=AXIS, lw=0.9, ls=(0, (4, 3)))
@@ -363,10 +388,10 @@ def _fig2_tau_bands(components: pd.DataFrame, calibration: pd.DataFrame | None, 
     else:
         notes.append("no calibration curve given: moderate/meaningful bands omitted")
     ax.set_ylim(0.0, top * 1.2 + 1e-9)
-    ax.set_xticks(x)
-    ax.set_xticklabels(pools)
-    ax.set_ylabel("tau_main (95% MLS interval)")
-    ax.set_title("tau_main per cell over flat / moderate / meaningful bands")
+    ax.set_xticks(xs)
+    ax.set_xticklabels(pools, fontsize=7.5)
+    ax.set_ylabel("tau_set (95% MLS interval)")
+    ax.set_title("tau_set per cell over flat / moderate / meaningful bands")
     if notes:
         ax.text(0.02, 0.98, "; ".join(notes), transform=ax.transAxes, ha="left", va="top", fontsize=7, color=MUTED)
     return _save(fig, out_dir, stem)
@@ -402,20 +427,20 @@ def _fig3_value_of_search(components: pd.DataFrame, classification: pd.DataFrame
         for i, (_, r) in enumerate(classification.iterrows()):
             pool = str(r["pool"])
             crow = comp_by_pool.get(pool)
-            if crow is None or "tau_main" not in crow.index or not np.isfinite(float(r["regret_range_T200"])):
+            x = None if crow is None else _tau_for_axis(crow)
+            if x is None or not np.isfinite(float(r["regret_range_T200"])):
                 continue
-            tau_m = float(crow["tau_main"])
-            tau_lo = float(crow["tau_lo"]) if "tau_lo" in crow.index and np.isfinite(crow["tau_lo"]) else tau_m
-            tau_hi = float(crow["tau_hi"]) if "tau_hi" in crow.index and np.isfinite(crow["tau_hi"]) else tau_m
             y = float(r["regret_range_T200"])
             color = FAMILY_COLORS.get(_pool_family(pool), MUTED)
-            ax.errorbar([tau_m], [y], xerr=[[max(tau_m - tau_lo, 0.0)], [max(tau_hi - tau_m, 0.0)]], fmt="o",
-                        color=color, markersize=7, markeredgecolor=SURFACE, ecolor=color, elinewidth=1.5,
+            hollow = x["measure"] != "tau_set"
+            ax.errorbar([x["tau"]], [y], xerr=[[max(x["tau"] - x["lo"], 0.0)], [max(x["hi"] - x["tau"], 0.0)]],
+                        fmt="o", color=color, markersize=7, markeredgecolor=color if hollow else SURFACE,
+                        markerfacecolor="none" if hollow else color, ecolor=color, elinewidth=1.5,
                         capsize=3, zorder=3)
             # Points at close (tau, y) crowd their labels; stagger the vertical offset by index so
             # nearby empirical cells (a common case at small synthetic/pilot spreads) stay legible.
-            ax.annotate(pool, (tau_m, y), textcoords="offset points", xytext=(6, 6 + 11 * (i % 3)),
-                        fontsize=7.5, color=INK_2)
+            ax.annotate(pool if not hollow else f"{pool} (tau_main)", (x["tau"], y), textcoords="offset points",
+                        xytext=(6, 6 + 11 * (i % 3)), fontsize=7.5, color=INK_2)
     else:
         ax.text(0.02, 0.02, "no het_classification.csv: empirical cells omitted", transform=ax.transAxes,
                 ha="left", va="bottom", fontsize=7, color=MUTED)
@@ -431,14 +456,14 @@ def _fig3_value_of_search(components: pd.DataFrame, classification: pd.DataFrame
             continue
         first = p["kind"] not in kinds_seen
         kinds_seen.add(p["kind"])
-        ax.errorbar([p["tau_main"]], [y], xerr=[[max(p["tau_main"] - p["tau_lo"], 0.0)],
-                    [max(p["tau_hi"] - p["tau_main"], 0.0)]], fmt=marker_of[p["kind"]], color=HIST_COLOR,
+        ax.errorbar([p["tau"]], [y], xerr=[[max(p["tau"] - p["tau_lo"], 0.0)],
+                    [max(p["tau_hi"] - p["tau"], 0.0)]], fmt=marker_of[p["kind"]], color=HIST_COLOR,
                     markersize=6, markerfacecolor="none", markeredgecolor=HIST_COLOR, ecolor=HIST_COLOR,
                     elinewidth=1.2, capsize=2, zorder=1,
                     label=f"historical ({p['kind']})" if first else None)
-        ax.annotate(p["label"], (p["tau_main"], y), textcoords="offset points",
+        ax.annotate(p["label"], (p["tau"], y), textcoords="offset points",
                     xytext=(6, -10 - 11 * (i % 3)), fontsize=7, color=MUTED)
-    ax.set_xlabel("true SD of the prompt pool")
+    ax.set_xlabel("true SD of the prompt pool (empirical: tau_set; tau_main where labelled)")
     ax.set_ylabel("regret range at T = 200")
     ax.set_title("Value of search vs heterogeneity")
     ax.legend(loc="upper left", fontsize=7.5)
@@ -503,8 +528,8 @@ def _fig5_policy_gaps(policy_gaps: pd.DataFrame | None, classification: pd.DataF
     ax.axhline(0.0, color=AXIS, lw=1.0)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=7.5)
-    ax.set_ylabel("policy gap to the ceiling (delta)")
-    ax.set_title("Policy gaps in meaningful cells")
+    ax.set_ylabel("policy \u2212 reference (delta, 95% CI)")
+    ax.set_title("Policy \u2212 reference in meaningful cells")
     return _save(fig, out_dir, stem)
 
 
@@ -595,34 +620,45 @@ def _fig7c_timeout_strip(ax: plt.Axes, timeout_rates: pd.DataFrame | None) -> No
     ax.set_title("(c) per-prompt timeout rates", fontsize=9)
 
 
-def _fig7d_anchor_recovery(ax: plt.Axes, components: pd.DataFrame, timeout_rates: pd.DataFrame | None) -> None:
-    comp_cols = _anchor_columns(components)
-    rate_cols = _anchor_columns(timeout_rates)
-    source, cols = (components, comp_cols) if comp_cols else (timeout_rates, rate_cols)
-    if not cols or source is None or source.empty:
-        _empty_panel(ax, "anchor rates: see gates output")
+def _fig7d_anchor_recovery(ax: plt.Axes, anchor_recovery: pd.DataFrame | None) -> None:
+    need = {"oracle_rate", "explorer_rate", "bulk_p10", "bulk_p90", "recovered"}
+    if anchor_recovery is None or anchor_recovery.empty or not need <= set(anchor_recovery.columns):
+        _empty_panel(ax, "no het_anchor_recovery.csv")
         return
-    labels = [str(v) for v in source["pool"]] if "pool" in source.columns else [str(i) for i in range(len(source))]
-    x = np.arange(len(cols))
-    n = len(labels)
-    width = 0.8 / max(n, 1)
-    for i, (_, row) in enumerate(source.iterrows()):
-        vals = [float(row[c]) for c in cols]
-        ax.bar(x + i * width, vals, width=width, label=labels[i])
-    ax.set_xticks(x + width * (n - 1) / 2)
-    ax.set_xticklabels(cols, rotation=30, ha="right", fontsize=7)
-    ax.set_ylabel("anchor recovery rate")
-    ax.set_title("(d) anchor recovery", fontsize=9)
-    ax.legend(fontsize=6.5, ncol=2)
+    r = anchor_recovery.iloc[0]
+    bars = [("GL oracle", r["oracle_rate"], BAND_COLORS["flat"]), ("GL explorer", r["explorer_rate"], BAND_COLORS["meaningful"])]
+    if "gl_baseline_rate" in anchor_recovery.columns:
+        bars.append(("GL baseline", r["gl_baseline_rate"], MUTED))
+    for label, key in (("GM baseline", "gm_anchor_baseline_rate"), ("Pre-reg 9 baseline", "prereg9_anchor_baseline_rate")):
+        if key in anchor_recovery.columns:
+            bars.append((label, r[key], FAMILY_COLORS["G"]))
+    x = np.arange(len(bars))
+    vals = [float(v) if _finite(v) else 0.0 for _, v, _ in bars]
+    ax.bar(x, vals, width=0.6, color=[c for _, _, c in bars], edgecolor=SURFACE, linewidth=1.0)
+    p10, p90 = float(r["bulk_p10"]), float(r["bulk_p90"])
+    if np.isfinite(p10) and np.isfinite(p90):
+        ax.axhspan(p10, p90, xmin=0.0, xmax=3.0 / max(len(bars), 3), color=INK_2, alpha=0.08, lw=0, zorder=0)
+        for yv in (p10, p90):
+            ax.axhline(yv, xmin=0.0, xmax=3.0 / max(len(bars), 3), color=AXIS, lw=0.9, ls=(0, (4, 3)))
+    ax.set_xticks(x)
+    ax.set_xticklabels([b[0] for b in bars], rotation=30, ha="right", fontsize=7)
+    ax.set_ylabel("success rate")
+    ax.set_ylim(0.0, 1.05)
+    verdict = "recovered" if bool(r["recovered"]) else "NOT recovered"
+    ax.set_title(f"(d) anchor recovery: {verdict}", fontsize=9)
+    ax.text(0.02, 0.98, "dashed: GLG+GLK 10th / 90th percentile" +
+            (f"; universe {r['task_universe']}" if "task_universe" in anchor_recovery.columns else ""),
+            transform=ax.transAxes, ha="left", va="top", fontsize=6.5, color=MUTED)
 
 
-def _fig7_supplement(components: pd.DataFrame, timeout_rates: pd.DataFrame | None, out_dir: Path) -> list[Path]:
+def _fig7_supplement(components: pd.DataFrame, timeout_rates: pd.DataFrame | None,
+                     anchor_recovery: pd.DataFrame | None, out_dir: Path) -> list[Path]:
     stem = "fig7_supplement"
     fig, axes = plt.subplots(2, 2, figsize=(9.6, 8.0))
     _fig7a_tail_mass(axes[0][0], components)
     _fig7b_split_half(axes[0][1], components)
     _fig7c_timeout_strip(axes[1][0], timeout_rates)
-    _fig7d_anchor_recovery(axes[1][1], components, timeout_rates)
+    _fig7d_anchor_recovery(axes[1][1], anchor_recovery)
     fig.suptitle("Supplement: tail mass, split-half reliability, timeout rates, anchor recovery",
                 color=INK, fontsize=11, y=1.0)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
@@ -661,6 +697,7 @@ def make_figures(tables_dir: Path, out_dir: Path, *, calibration_csv: Path | Non
     policy_gaps = _read_optional(tables_dir / "het_policy_gaps.csv")
     portability = _read_optional(tables_dir / "het_portability.csv")
     timeout_rates = _read_optional(tables_dir / "het_timeout_rates.csv")
+    anchor_recovery = _read_optional(tables_dir / "het_anchor_recovery.csv")
     calibration = _read_optional(Path(calibration_csv) if calibration_csv is not None else tables_dir / "calibration.csv")
     stage0_root = Path(stage0_dir) if stage0_dir is not None else tables_dir
     stage0_gmail = _read_optional(stage0_root / "stage0_gmail.csv")
@@ -678,5 +715,5 @@ def make_figures(tables_dir: Path, out_dir: Path, *, calibration_csv: Path | Non
         paths += _fig4_regret_vs_k(kgrid, out_dir)
         paths += _fig5_policy_gaps(policy_gaps, classification, out_dir)
         paths += _fig6_portability(portability, out_dir)
-        paths += _fig7_supplement(components, timeout_rates, out_dir)
+        paths += _fig7_supplement(components, timeout_rates, anchor_recovery, out_dir)
     return paths

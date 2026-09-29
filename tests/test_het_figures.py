@@ -28,7 +28,8 @@ def _components_df(pools: tuple[str, ...] = POOLS) -> pd.DataFrame:
         tau = 0.02 + 0.01 * i
         rows.append({
             "pool": p, "tau_main": tau, "tau_lo": max(tau - 0.01, 0.0), "tau_hi": tau + 0.015,
-            "tau_set": tau + 0.005, "tau_set_upper_one_sided": tau + 0.02,
+            "tau_set": tau + 0.005, "tau_set_lo": tau - 0.002, "tau_set_hi": tau + 0.012,
+            "tau_set_upper_one_sided": tau + 0.02,
             "task_var": 0.01 + 0.002 * i, "interaction_var": 0.005, "noise_var": 0.02,
             "r_sb": 0.3 + 0.05 * i, "split_half_p": 0.04,
             "upper_tail_mass": 0.1 + 0.02 * i, "upper_tail_mass_lo": 0.05 + 0.02 * i,
@@ -163,6 +164,7 @@ def _write_all_tables(tables_dir: Path) -> None:
     _policy_gaps_df().to_csv(tables_dir / "het_policy_gaps.csv", index=False)
     _portability_df().to_csv(tables_dir / "het_portability.csv", index=False)
     _timeout_rates_df().to_csv(tables_dir / "het_timeout_rates.csv", index=False)
+    _anchor_recovery_df().to_csv(tables_dir / "het_anchor_recovery.csv", index=False)
     _calibration_df().to_csv(tables_dir / "calibration.csv", index=False)
     _stage0_gmail_df().to_csv(tables_dir / "stage0_gmail.csv", index=False)
     _stage0_gitlab_df().to_csv(tables_dir / "stage0_gitlab_paired.csv", index=False)
@@ -225,39 +227,116 @@ def test_calibration_edge_none_when_never_crossed_or_missing():
     assert fg._calibration_edge(cal, target=0.5, horizon=200) is None
 
 
-def test_anchor_columns_finds_gl_gm_anchor_prefixes():
-    df = pd.DataFrame({"pool": ["GLG"], "GL_anchor_oracle": [0.9], "other": [1]})
-    assert fg._anchor_columns(df) == ["GL_anchor_oracle"]
-    assert fg._anchor_columns(pd.DataFrame({"pool": ["GLG"]})) == []
-    assert fg._anchor_columns(None) == []
+def _anchor_recovery_df(recovered: bool = True) -> pd.DataFrame:
+    """`het_verdicts.anchor_recovery`'s columns (read from the producer, plus its provenance stamp)."""
+    return pd.DataFrame([{
+        "oracle_arm": "GL_anchor_oracle", "oracle_rate": 0.9 if recovered else 0.6, "oracle_n": 60,
+        "explorer_arm": "GL_anchor_explorer", "explorer_rate": 0.1, "explorer_n": 60,
+        "gl_baseline_rate": 0.5, "gl_baseline_n": 60, "bulk_pools": "GLG+GLK", "bulk_n_prompts": 90,
+        "bulk_p10": 0.3, "bulk_p90": 0.7, "n_tasks": 60, "oracle_above_p90": recovered,
+        "explorer_below_p10": True, "recovered": recovered, "gm_anchor_baseline_rate": 0.63,
+        "gm_anchor_baseline_n": 30, "prereg9_anchor_baseline_rate": 0.66, "prereg9_anchor_baseline_n": 30,
+        "gm_anchor_drift": -0.03, "note": "", "task_universe": "subset_60",
+    }])
 
 
-def test_fig7d_anchor_recovery_panel_draws_bars_when_columns_are_present():
-    """Neither producer currently writes anchor columns (spec 7d's stand-in), but the panel must still
-    draw real bars, not the annotated-empty fallback, if a future producer adds them."""
+def test_fig7d_anchor_recovery_panel_reads_the_anchor_recovery_table():
     import matplotlib.pyplot as plt
 
-    components = pd.DataFrame({"pool": ["GLG", "GLK"], "GL_anchor_oracle": [0.9, 0.7],
-                                "GM_anchor_explorer": [0.1, 0.2]})
-    fig, ax = plt.subplots()
-    try:
-        fg._fig7d_anchor_recovery(ax, components, None)
-        assert len(ax.patches) > 0
-        assert not any("see gates output" in t.get_text() for t in ax.texts)
-    finally:
-        plt.close(fig)
+    for recovered in (True, False):
+        fig, ax = plt.subplots()
+        try:
+            fg._fig7d_anchor_recovery(ax, _anchor_recovery_df(recovered))
+            heights = [round(b.get_height(), 6) for b in ax.containers[0]]
+            assert heights == [0.9 if recovered else 0.6, 0.1, 0.5, 0.63, 0.66]
+            assert ax.get_title().endswith("recovered" if recovered else "NOT recovered")
+            assert (ax.get_title() == "(d) anchor recovery: recovered") == recovered
+        finally:
+            plt.close(fig)
 
 
-def test_fig7d_anchor_recovery_panel_is_annotated_empty_without_anchor_columns():
+def test_fig7d_anchor_recovery_panel_is_annotated_empty_without_the_table():
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots()
+    for table in (None, pd.DataFrame(), _components_df()):
+        fig, ax = plt.subplots()
+        try:
+            fg._fig7d_anchor_recovery(ax, table)
+            assert len(ax.patches) == 0
+            assert any("het_anchor_recovery.csv" in t.get_text() for t in ax.texts)
+        finally:
+            plt.close(fig)
+
+
+def test_tau_for_axis_prefers_tau_set_and_falls_back_to_tau_main():
+    row = {"tau_set": 0.05, "tau_set_lo": 0.03, "tau_set_hi": 0.08, "tau_main": 0.04, "tau_lo": 0.0, "tau_hi": 0.09}
+    assert fg._tau_for_axis(row) == {"tau": 0.05, "lo": 0.03, "hi": 0.08, "measure": "tau_set"}
+    no_set = {**row, "tau_set": float("nan")}
+    assert fg._tau_for_axis(no_set) == {"tau": 0.04, "lo": 0.0, "hi": 0.09, "measure": "tau_main"}
+    assert fg._tau_for_axis({"tau_main": 0.04}) == {"tau": 0.04, "lo": 0.04, "hi": 0.04, "measure": "tau_main"}
+    assert fg._tau_for_axis({"tau_set": float("nan"), "tau_main": float("nan")}) is None
+
+
+def _capture(monkeypatch):
+    """Keep the figure `_save` would close, so a test can read its axes."""
+    kept = []
+
+    def save(fig, out_dir, stem):
+        kept.append(fig)
+        return []
+
+    monkeypatch.setattr(fg, "_save", save)
+    return kept
+
+
+def test_fig2_plots_tau_set_with_its_mls_interval_and_labels_a_tau_main_fallback(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    comp = _components_df()
+    comp.loc[comp["pool"] == "GMB", ["tau_set", "tau_set_lo", "tau_set_hi"]] = float("nan")
+    kept = _capture(monkeypatch)
+    with plt.rc_context(fg.RC):
+        fg._fig2_tau_bands(comp, _calibration_df(), 0.03, tmp_path)
+    ax = kept[0].axes[0]
     try:
-        fg._fig7d_anchor_recovery(ax, _components_df(), _timeout_rates_df())
-        assert len(ax.patches) == 0
-        assert any("see gates output" in t.get_text() for t in ax.texts)
+        ys = [line.get_ydata()[0] for line in ax.lines if len(line.get_ydata()) == 1 and line.get_marker() == "o"]
+        want = [float(r["tau_set"]) if np.isfinite(r["tau_set"]) else float(r["tau_main"]) for _, r in comp.iterrows()]
+        assert ys == pytest.approx(want)
+        labels = [t.get_text() for t in ax.get_xticklabels()]
+        assert "GMB (tau_main)" in labels and "GLK" in labels
+        assert ax.get_ylabel().startswith("tau_set")
     finally:
-        plt.close(fig)
+        plt.close(kept[0])
+
+
+def test_fig3_empirical_points_sit_on_tau_set(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    comp = _components_df()
+    kept = _capture(monkeypatch)
+    with plt.rc_context(fg.RC):
+        fg._fig3_value_of_search(comp, _classification_df(), _calibration_df(), None, None, None, tmp_path)
+    ax = kept[0].axes[0]
+    try:
+        texts = {t.get_text(): t.xy for t in ax.texts if hasattr(t, "xy")}
+        for _, r in comp.iterrows():
+            assert texts[str(r["pool"])][0] == pytest.approx(float(r["tau_set"]))
+    finally:
+        plt.close(kept[0])
+
+
+def test_fig5_axis_is_policy_minus_reference(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    kept = _capture(monkeypatch)
+    with plt.rc_context(fg.RC):
+        fg._fig5_policy_gaps(_policy_gaps_df(), _classification_df(), tmp_path)
+    ax = kept[0].axes[0]
+    try:
+        assert ax.get_ylabel().startswith("policy \u2212 reference")
+        assert "ceiling" not in ax.get_ylabel() and "ceiling" not in ax.get_title()
+    finally:
+        plt.close(kept[0])
 
 
 def test_historical_points_combines_gmail_and_gitlab_stage0():
@@ -272,7 +351,9 @@ def test_historical_points_combines_gmail_and_gitlab_stage0():
     assert source_of["F"] == "gmail"
     assert source_of["all_18_arms"] == "gitlab"
     for p in pts:
-        assert p["tau_lo"] <= p["tau_main"] <= p["tau_hi"]
+        assert p["tau_lo"] <= p["tau"] <= p["tau_hi"]
+    measure = {p["name"]: p["measure"] for p in pts}
+    assert measure["G"] == "tau_set" and measure["all_18_arms"] == "tau_main"  # the old run has no tau_set
 
 
 def test_historical_points_empty_when_no_stage0_tables():
@@ -317,8 +398,8 @@ def test_historical_figure_points_uses_measured_for_gmail_and_interpolates_gitla
     for name in ("all_18_arms", "without_oracle_and_explorer", "generic_12_arms"):
         p = by_name[name]
         assert p["kind"] == "interpolated"
-        assert p["label"] == f"{name} (historical, interpolated)"
-        assert p["y"] == pytest.approx(fg._interp_regret_range(beta, p["tau_main"]))
+        assert p["label"] == f"{name} (historical, interpolated, tau_main)"
+        assert p["y"] == pytest.approx(fg._interp_regret_range(beta, p["tau"]))
 
 
 def test_historical_figure_points_all_interpolated_without_flatness_table():
@@ -326,9 +407,10 @@ def test_historical_figure_points_all_interpolated_without_flatness_table():
     pts = fg._historical_figure_points(beta, _stage0_gmail_df(), _stage0_gitlab_df(), None)
     assert len(pts) == 5
     assert all(p["kind"] == "interpolated" for p in pts)
-    assert all(p["label"].endswith("(historical, interpolated)") for p in pts)
+    assert all("(historical, interpolated" in p["label"] for p in pts)
     by_name = {p["name"]: p for p in pts}
-    assert by_name["G"]["y"] == pytest.approx(fg._interp_regret_range(beta, by_name["G"]["tau_main"]))
+    assert by_name["G"]["label"] == "G (historical, interpolated)"
+    assert by_name["G"]["y"] == pytest.approx(fg._interp_regret_range(beta, by_name["G"]["tau"]))
 
 
 def test_historical_figure_points_falls_back_when_pools_row_is_missing():
@@ -341,7 +423,7 @@ def test_historical_figure_points_falls_back_when_pools_row_is_missing():
     by_name = {p["name"]: p for p in pts}
     assert by_name["G"]["kind"] == "measured"
     assert by_name["F"]["kind"] == "interpolated"
-    assert by_name["F"]["y"] == pytest.approx(fg._interp_regret_range(beta, by_name["F"]["tau_main"]))
+    assert by_name["F"]["y"] == pytest.approx(fg._interp_regret_range(beta, by_name["F"]["tau"]))
 
 
 # ---- integration: make_figures --------------------------------------------------------------------

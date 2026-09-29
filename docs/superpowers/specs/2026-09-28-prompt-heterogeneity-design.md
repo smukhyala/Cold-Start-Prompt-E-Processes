@@ -164,9 +164,13 @@ y_ijr = μ + a_i + b_j + (ab)_ij + e_ijr
 
 Estimator: the method-of-moments (ANOVA / expected-mean-squares) estimator for the balanced crossed design,
 with Var(e) from the replicate pairs; negative variance estimates are truncated at 0 and reported as such.
-Sensitivity: REML linear mixed model and a logistic GLMM with crossed prompt and task effects. Intervals:
-**two-way bootstrap** resampling prompts and tasks (B = 2,000; percentile). τ is reported in success-rate
-units.
+Sensitivity: REML linear mixed model and a logistic GLMM with crossed prompt and task effects. **Interval for
+τ:** the Graybill–Wang modified-large-sample (MLS) interval for σ²_A = (MS_prompt − MS_resid)/J (two-sided
+95%, and the one-sided 95% upper bound used by §6.5), validated by a simulation coverage test. *Amended before
+registration:* the two-way (prompt × task) bootstrap first specified here inflates τ² by about MS_resid/J —
+duplicated task columns enter every prompt mean — covering τ = 0 only ~20% of the time, so it is not used.
+Missing cells are filled additively with the residual degrees of freedom and the prompt-mean residual term
+corrected for the fill; more than 5% missing cells in a cell is an error. τ is reported in success-rate units.
 
 ### 6.2 Split-half reliability (model-free)
 
@@ -176,6 +180,10 @@ permuting prompt labels within one half (10,000 permutations). A significantly p
 differences generalize across tasks; it needs no noise model and no NPMLE.
 
 ### 6.3 Contrasts for H1, H2, H4
+
+Intervals for the contrasts come from a **prompt-only bootstrap** (B = 2,000; percentile) with each cell's
+task set held fixed — τ is defined over the study's fixed task mix. H1 resamples the 20 bridge prompts
+jointly in both apps; H2 resamples each pool's prompts independently.
 
 - **H1:** Δ₁ = τ(GitLab, G) − τ(Gmail, G). Primary: GitLab at 600 s vs the bridge (Gmail at 600 s, the
   same 20 prompts are a subset of the 50) — computed on the 20 bridge prompts in both apps, paired by prompt,
@@ -198,9 +206,14 @@ Per cell:
 
 | class | rule |
 |---|---|
-| **flat** | regret range < 0.005 at all three primary T **and** the upper 95% bound of τ < 0.03 |
+| **flat** | regret range < 0.005 at all three primary T **and** the one-sided upper 95% MLS bound of τ < τ_flat |
 | **practically meaningful** | regret range ≥ 0.01 at ≥ 2 of 3 primary T (Pre-reg 9's guard) **and** the bootstrap lower bound of the regret range at T = 200 > 0.005 |
 | **moderate** | otherwise |
+
+τ_flat is fixed in Pre-registration 10, before any data, from the Stage-0 calibration: the true spread of a
+level-0.6 Beta pool whose regret range at T = 200 equals 0.005. *(Amended before registration: a fixed 0.03 is
+unreachable at J = 30 even when τ = 0 — the mean upper bound there is about 0.04 — which would make "flat"
+structurally impossible for Gmail cells.)*
 
 ### 6.6 H3 — the thesis
 

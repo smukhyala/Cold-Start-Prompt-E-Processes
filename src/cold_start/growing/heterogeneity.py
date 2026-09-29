@@ -13,6 +13,13 @@ duplicates a task's residual into the row means used for MS_prompt without reduc
 of freedom for those duplicates -- the interval it produced was not a valid percentile CI for tau
 (measured 95%-nominal coverage as low as 0.20-0.23 at tau=0; see task-2-report.md fix round 1). It has
 been removed and replaced by `prompt_bootstrap` (rows only) plus the closed-form `tau_interval` (MLS).
+
+Fix round 2 (2026-09-28 review): `success_matrix` now raises when any single arm or task has zero
+observed cells (not just when the overall missing-cell percentage exceeds the 5% ceiling), since a
+fully-missing row/column produced a degenerate `row_counts` entry of 0 that downstream `J / row_counts`
+consumers would divide by zero on. `prompt_bootstrap` gained an optional `row_counts` parameter so the
+imputation row-count correction is resampled consistently with `Y` inside a bootstrap contrast instead
+of silently dropping out. See task-2-report.md fix round 2.
 """
 
 from __future__ import annotations
@@ -42,7 +49,12 @@ def success_matrix(
     `expected_arms` / `expected_tasks`, when given, reindex the pivot to that full universe of ids
     so an arm or task with zero ``ok`` rows becomes an explicit (imputed) missing cell instead of
     silently disappearing from the matrix. Raises if more than 5% of the resulting cells are missing
-    (imputation is a smoothing device for a handful of dropouts, not a substitute for real data).
+    (imputation is a smoothing device for a handful of dropouts, not a substitute for real data), and
+    -- regardless of that overall percentage -- raises if any single arm or task has *zero* observed
+    cells: a fully-missing row/column has no real data to impute from (its row/col mean falls back to
+    the grand mean only) and silently produces a degenerate ``row_counts`` entry of 0, which callers
+    computing ``J / row_counts`` (fix round 2, finding N1) would divide by zero on. A caller that wants
+    a dropped arm/task included anyway must supply real data for it, not rely on imputation.
 
     Returns ``(Y, arm_ids, task_ids, n_imputed, row_counts)`` where ``row_counts[i]`` is the number of
     genuinely observed (non-imputed) cells in row ``i``.
@@ -56,26 +68,36 @@ def success_matrix(
         wide = wide.reindex(columns=[str(t) for t in expected_tasks])
     Y = wide.to_numpy(dtype=float)
     I, J = Y.shape
+    arm_ids = [str(a) for a in wide.index]
+    task_ids = [str(t) for t in wide.columns]
     observed = np.isfinite(Y)
     missing = ~observed
     n_imp = int(missing.sum())
     total = I * J
+    row_counts = observed.sum(axis=1).astype(int)
+    col_counts = observed.sum(axis=0).astype(int)
+    zero_arms = [arm_ids[i] for i in range(I) if row_counts[i] == 0]
+    zero_tasks = [task_ids[j] for j in range(J) if col_counts[j] == 0]
+    if zero_arms or zero_tasks:
+        raise ValueError(
+            f"success_matrix: pool {pool!r} has zero observed cells for "
+            f"arm(s) {zero_arms} and task(s) {zero_tasks} -- imputation cannot fill a row/column with "
+            f"no real data; supply observations for these ids or drop them from expected_arms/expected_tasks"
+        )
     if total and n_imp / total > 0.05:
         raise ValueError(
             f"success_matrix: {n_imp}/{total} cells missing for pool {pool!r} "
             f"({n_imp / total:.1%} > the 5% imputation ceiling)"
         )
-    row_counts = observed.sum(axis=1).astype(int)
     if n_imp:
         grand = float(Y[observed].mean()) if observed.any() else 0.0
-        col_counts = observed.sum(axis=0)
         row_sum = np.where(observed, Y, 0.0).sum(axis=1)
         col_sum = np.where(observed, Y, 0.0).sum(axis=0)
         row_mean = np.divide(row_sum, row_counts, out=np.full(I, grand), where=row_counts > 0)
         col_mean = np.divide(col_sum, col_counts, out=np.full(J, grand), where=col_counts > 0)
         fill = np.clip(row_mean[:, None] + col_mean[None, :] - grand, 0.0, 1.0)
         Y = np.where(missing, fill, Y)
-    return Y, [str(a) for a in wide.index], [str(t) for t in wide.columns], n_imp, row_counts
+    return Y, arm_ids, task_ids, n_imp, row_counts
 
 
 def variance_components(
@@ -190,11 +212,12 @@ def tau_interval(
 
 def prompt_bootstrap(
     Y: np.ndarray,
-    stat: Callable[[np.ndarray], float],
+    stat: Callable[..., float],
     *,
     n_boot: int = 2000,
     seed: int = 0,
     rows: np.ndarray | None = None,
+    row_counts: np.ndarray | None = None,
 ) -> np.ndarray:
     """Resample prompts (rows) with replacement; tasks (columns) are held fixed.
 
@@ -207,11 +230,23 @@ def prompt_bootstrap(
 
     `rows` lets a caller share resampling indices across cells (paired contrasts): pass an (n_boot, I)
     index array; otherwise indices are drawn here.
+
+    `row_counts` (per-row observed-cell count from `success_matrix`), when given, is resampled with the
+    *same* row indices as `Y` and passed to `stat` as a second positional argument --
+    ``stat(Y[R[b]], row_counts[R[b]])`` -- instead of ``stat(Y[R[b]])``. Without this, a `stat` closure
+    over `variance_components`'s ``n_imputed``/``row_counts`` correction would silently be evaluated
+    against the *original* (pre-resample) row counts, or not at all, so the imputation row-count
+    correction would drop out of any bootstrap contrast built on this function (fix round 2 Gap
+    finding). Omit `row_counts` to keep the old single-argument call, e.g. for a `stat` that does not
+    need it.
     """
     Y = np.asarray(Y, dtype=float)
     I, J = Y.shape
     rng = np.random.default_rng(seed)
     R = rows if rows is not None else rng.integers(0, I, (n_boot, I))
+    if row_counts is not None:
+        rc = np.asarray(row_counts, dtype=float)
+        return np.array([stat(Y[R[b]], rc[R[b]]) for b in range(len(R))])
     return np.array([stat(Y[R[b]]) for b in range(len(R))])
 
 

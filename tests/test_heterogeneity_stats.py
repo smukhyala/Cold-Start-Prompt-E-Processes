@@ -89,40 +89,90 @@ def test_missing_cells_are_imputed_and_counted():
     assert row_counts.tolist() == [6, 6, 5, 6, 6]
 
 
-def test_success_matrix_reindexes_dropped_arms_as_missing_and_returns_row_counts():
+def test_success_matrix_raises_for_a_fully_missing_arm():
+    """N1 (fix round 2): a reindexed arm with zero `ok` rows is under the 5% overall missing-cell
+    ceiling here (1/25 arms, 20/500 = 4% of cells) but must still be rejected -- its `row_counts` entry
+    would be 0, and downstream `mean(J / row_counts)` (`variance_components`, `tau_interval`) would
+    divide by zero, silently producing `tau2=0`/`tau2_truncated=True`/`tau_hi=NaN` instead of failing
+    loudly. The error must name the missing arm."""
     arms = [f"p{i}" for i in range(24)]
     tasks = [f"t{j}" for j in range(20)]
     rows = [{"pool": "P", "arm_id": a, "task_id": t, "replicate": 0, "status": "ok", "success": 1.0}
             for a in arms for t in tasks]
     outcomes = pd.DataFrame(rows)
-    # "p24" has zero ok rows: a bare pivot would silently drop it; expected_arms forces it to appear
-    # as an explicit (imputed) missing row instead.
-    Y, out_arms, out_tasks, n_imp, row_counts = het.success_matrix(
-        outcomes, "P", expected_arms=arms + ["p24"], expected_tasks=tasks)
-    assert Y.shape == (25, 20)
-    assert out_arms[-1] == "p24" and n_imp == 20
-    assert row_counts.tolist() == [20] * 24 + [0]
-    assert np.isfinite(Y).all()  # the fully-missing row still gets a finite (grand/column) fallback
+    with pytest.raises(ValueError, match=r"arm\(s\) \['p24'\]"):
+        het.success_matrix(outcomes, "P", expected_arms=arms + ["p24"], expected_tasks=tasks)
+
+
+def test_success_matrix_raises_for_a_fully_missing_task():
+    """N1 (fix round 2): same failure mode as the fully-missing-arm case, but for a task with zero
+    `ok` rows (a fully-missing column)."""
+    arms = [f"p{i}" for i in range(20)]
+    tasks = [f"t{j}" for j in range(24)]
+    rows = [{"pool": "P", "arm_id": a, "task_id": t, "replicate": 0, "status": "ok", "success": 1.0}
+            for a in arms for t in tasks]
+    outcomes = pd.DataFrame(rows)
+    with pytest.raises(ValueError, match=r"task\(s\) \['t24'\]"):
+        het.success_matrix(outcomes, "P", expected_arms=arms, expected_tasks=tasks + ["t24"])
 
 
 def test_success_matrix_raises_when_missing_exceeds_five_percent():
+    # Every row and every column keeps at least one observed cell (the missing diagonal cell (i, i)),
+    # so this exercises the overall-percentage ceiling, not the fully-missing-row/column check above.
     rows = [{"pool": "P", "arm_id": f"p{i}", "task_id": f"t{j}", "replicate": 0, "status": "ok",
-             "success": 1.0} for i in range(5) for j in range(4)]
+             "success": 1.0} for i in range(10) for j in range(10) if i != j]
     outcomes = pd.DataFrame(rows)
     with pytest.raises(ValueError, match="imputation ceiling"):
-        het.success_matrix(outcomes, "P", expected_tasks=[f"t{j}" for j in range(6)])
+        het.success_matrix(outcomes, "P")
+
+
+def test_variance_components_and_tau_interval_are_finite_with_partial_missingness_after_reindex():
+    """N1 (fix round 2), positive case: a reindexed matrix with scattered (not fully-row/column)
+    missingness under the 5% ceiling should succeed and feed finite outputs through both
+    `variance_components` and `tau_interval` -- confirming the fully-missing-row/column guard doesn't
+    also reject ordinary partial missingness."""
+    I, J = 30, 20
+    arms = [f"p{i}" for i in range(I)]
+    tasks = [f"t{j}" for j in range(J)]
+    Y_full, _ = _simulate(I=I, J=J, tau=0.05, seed=0)
+    # one missing cell per even-indexed row, scattered across columns: no row or column ends up fully
+    # missing (15/600 = 2.5%, comfortably under the 5% ceiling).
+    missing_cells = {(i, (i * 3 + 1) % J) for i in range(0, I, 2)}
+    rows = [{"pool": "P", "arm_id": arms[i], "task_id": tasks[j], "replicate": 0, "status": "ok",
+             "success": float(Y_full[i, j])}
+            for i in range(I) for j in range(J) if (i, j) not in missing_cells]
+    outcomes = pd.DataFrame(rows)
+    Y, out_arms, out_tasks, n_imp, row_counts = het.success_matrix(
+        outcomes, "P", expected_arms=arms, expected_tasks=tasks)
+    assert Y.shape == (I, J)
+    assert n_imp == len(missing_cells)
+    assert np.isfinite(Y).all()
+    assert (row_counts > 0).all()
+    vc = het.variance_components(Y, n_imputed=n_imp, row_counts=row_counts)
+    iv = het.tau_interval(Y, n_imputed=n_imp, row_counts=row_counts)
+    assert np.isfinite(vc["tau2"]) and np.isfinite(vc["ms_resid"])
+    assert np.isfinite(iv["tau_lo"]) and np.isfinite(iv["tau_hi"]) and np.isfinite(iv["tau_upper_one_sided"])
 
 
 def test_imputation_bias_is_small_after_the_row_count_correction():
-    """5% missing, additive-imputed: mean tau2_raw with the n_imputed/row_counts correction should
-    stay close to the full-data value (Important finding, fix round 1: uncorrected, MS_resid shrinks
-    ~x0.948 and tau2 inflates ~+0.00052 at 5% missing)."""
+    """5% missing, additive-imputed: compares the mean bias of the CORRECTED tau2 estimate
+    (`variance_components(..., n_imputed=..., row_counts=...)`) against the mean bias of the
+    UNCORRECTED estimate (`variance_components(...)` on the same imputed matrices, no correction
+    applied) relative to the full-data tau2 -- both computed on the identical draws, so a regression
+    that silently drops the correction is caught rather than passing because the uncorrected bias
+    happens to already be small at these settings (N2, fix round 2: the old version of this test
+    compared only the corrected bias to a fixed absolute bound of 3e-4, which the uncorrected estimate
+    also satisfies at +0.00023 here -- so the test could not tell whether the correction was doing
+    anything). Reported SE at 300 reps is ~1.3e-5 (fix round 2 measurement), so 300 reps keeps both the
+    absolute-bound and the relative-improvement assertions stable while keeping the file well under the
+    ~60s budget."""
     I, J = 50, 60
     arms = [f"p{i}" for i in range(I)]
     tasks = [f"t{j}" for j in range(J)]
     n_missing = int(0.05 * I * J) - 5  # comfortably under the 5% ceiling for every repeat
-    diffs = []
-    for s in range(60):
+    corrected_diffs = []
+    uncorrected_diffs = []
+    for s in range(300):
         Y, _ = _simulate(I=I, J=J, tau=0.05, seed=30_000 + s)
         full = het.variance_components(Y)["tau2"]
         rng = np.random.default_rng(40_000 + s)
@@ -136,11 +186,15 @@ def test_imputation_bias_is_small_after_the_row_count_correction():
         outcomes = pd.DataFrame(rows)
         Yimp, _, _, n_imp, row_counts = het.success_matrix(
             outcomes, "P", expected_arms=arms, expected_tasks=tasks)
-        vc = het.variance_components(Yimp, n_imputed=n_imp, row_counts=row_counts)
-        diffs.append(vc["tau2"] - full)
-    mean_diff = float(np.mean(diffs))
-    print(f"imputation-bias mean(tau2_raw_corrected - tau2_full) = {mean_diff:.6f}")
-    assert abs(mean_diff) < 3e-4
+        corrected = het.variance_components(Yimp, n_imputed=n_imp, row_counts=row_counts)["tau2"]
+        uncorrected = het.variance_components(Yimp)["tau2"]
+        corrected_diffs.append(corrected - full)
+        uncorrected_diffs.append(uncorrected - full)
+    mean_corrected = float(np.mean(corrected_diffs))
+    mean_uncorrected = float(np.mean(uncorrected_diffs))
+    print(f"imputation-bias mean corrected={mean_corrected:.6f} uncorrected={mean_uncorrected:.6f}")
+    assert abs(mean_corrected) < 1.5e-4
+    assert abs(mean_corrected) < 0.5 * abs(mean_uncorrected)
 
 
 # ---- tau_interval (Graybill-Wang MLS) -- replaces two_way_bootstrap ------------------------------
@@ -211,6 +265,40 @@ def test_prompt_bootstrap_brackets_the_truth():
     draws = het.prompt_bootstrap(Y, lambda m: het.variance_components(m)["tau"], n_boot=300, seed=1)
     lo, hi = np.percentile(draws, [2.5, 97.5])
     assert lo < _realized_tau(p) < hi
+
+
+def test_prompt_bootstrap_passes_resampled_row_counts_to_stat():
+    """Gap (fix round 2): when `row_counts` is supplied, `stat` must receive the row counts resampled
+    with the SAME row indices as `Y`, not the original (pre-resample) counts -- otherwise a `stat`
+    closure using `variance_components`'s `n_imputed`/`row_counts` correction would silently evaluate
+    against the wrong counts (or the correction would be unreachable at all) inside a bootstrap
+    contrast."""
+    Y, _ = _simulate(I=10, J=8, seed=2)
+    row_counts = np.arange(1, 11, dtype=float)  # distinct per-row values so misalignment is detectable
+    seen: list[np.ndarray] = []
+
+    def stat(Y_sub, rc_sub):
+        seen.append(np.array(rc_sub))
+        return 0.0
+
+    rng = np.random.default_rng(3)
+    R = rng.integers(0, 10, (5, 10))
+    het.prompt_bootstrap(Y, stat, rows=R, row_counts=row_counts)
+    assert len(seen) == 5
+    for b in range(5):
+        assert np.array_equal(seen[b], row_counts[R[b]])
+
+
+def test_prompt_bootstrap_without_row_counts_calls_stat_with_one_argument():
+    Y, _ = _simulate(I=10, J=8, seed=2)
+    calls: list[tuple] = []
+
+    def stat(*args):
+        calls.append(args)
+        return 0.0
+
+    het.prompt_bootstrap(Y, stat, n_boot=3, seed=1)
+    assert all(len(c) == 1 for c in calls)
 
 
 def test_prompt_bootstrap_percentile_coverage_of_the_realized_tau():

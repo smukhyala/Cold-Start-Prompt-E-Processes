@@ -260,11 +260,14 @@ def registered_contrast(
     horizons = tuple(int(h) for h in horizons)
     if rule not in RULES:
         raise KeyError(f"unknown rule {rule!r}; rules={RULES}")
+    # Only the registrations this path computes (Pre-registrations 2-8: no prompt-bootstrap interval, no
+    # study) can match: a Pre-reg 9/10 tuple run here is a different interval, so never "registered".
     as_registered = any(
         (policy, reference, test, horizons, float(mei), rule) == (
             r["policy"], r["reference"], r["test"], tuple(r["horizons"]), float(r["mei"]),
             r.get("rule", "superiority"))
         for r in REGISTRATIONS.values()
+        if r.get("interval") != "prompt_bootstrap" and "study" not in r
     )
     if not as_registered:
         log.warning("NOT the registered contrast: %s vs %s on %s at %s, mei %s",

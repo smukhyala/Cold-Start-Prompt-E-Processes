@@ -10,8 +10,9 @@ episodes, and writes under ``results/growing_bandits/heterogeneity/``:
 * ``het_components.csv`` -- per cell, `stage0.analyze_cell`: variance components, tau_main and its MLS
   interval, tau_set and its MLS interval (execution noise from the cell's replicate pairs, or the
   study's declared borrow: GMB uses GMG's), split-half reliability, discriminating-task tau,
-  upper-tail NPMLE mass.
-* ``het_classification.csv`` -- section 6.5 per cell (`classify_cell`), stamped with the reservoir
+  upper-tail NPMLE mass with its prompt-bootstrap 95% CI (B = 200, NPMLE re-fit per resample).
+* ``het_classification.csv`` -- section 6.5 per cell (`classify_cell`), with the regret range's bootstrap
+  CI at every primary T (section 6.4; classification reads only T = 200's lower bound), stamped with the reservoir
   manifest's sha256 so the H3 contrasts can refuse a classification from another snapshot.
 * ``het_policy_gaps.csv`` -- every ``het_*`` registration (`registered_contrast.REGISTRATIONS`), on its
   class's cells pooled (the registered row) and on each of those cells alone (section 6.6 reads the
@@ -23,6 +24,11 @@ episodes, and writes under ``results/growing_bandits/heterogeneity/``:
 * ``het_timeout_sensitivity.csv`` / ``het_timeout_rates.csv`` -- section 6.8: the per-cell analysis
   with clock-ended episodes set to missing (imputed, counted, beyond the 5% ceiling of the primary
   analysis), and per-prompt timeout rates.
+
+Every cell's matrix is built on the design universe (`design_universe`): the pool file's arms and the
+app's task subset from ``data/heterogeneity/manifest.json`` -- a never-attempted arm or task is a missing
+cell (counted toward the 5% ceiling), never a silently smaller matrix. Seeds: ``VERDICT_SEED`` plus a
+fixed offset per bootstrap.
 
 Heterogeneity quantities (section 2): tau_main = sqrt((MS_prompt - MS_resid)/J) for H1, H2, H4;
 tau_set's one-sided upper 95% MLS bound for the section 6.5 flat rule. Contrast intervals for H1/H2/H4
@@ -41,6 +47,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 from scipy import stats as sps
 
 HERE = Path(__file__).resolve().parent
@@ -70,13 +77,24 @@ MEANINGFUL_MIN_HORIZONS = 2
 RR_LO_HORIZON = 200
 RR_LO_MIN = 0.005
 RR_LO_PERCENTILE = 2.5
+RR_HI_PERCENTILE = 97.5
 #: Sections 6.3 / 6.6.
 MEI = 0.002
 H_REFUTE_BELOW = 0.01
 N_BOOT = 2_000
-#: This study's seed base (global constraints); each bootstrap uses base + a fixed offset.
-VERDICT_SEED = 600_000_000
+#: The verdicts' seed base (fix round 1 ruling); each bootstrap uses base + a fixed offset.
+VERDICT_SEED = 60_000_000_000
 SPLIT_HALF_SEED = 0  # stage0's
+#: Section 6.4: the upper-tail mass's prompt-bootstrap CI (NPMLE re-fit per resample), seeded
+#: ``VERDICT_SEED + TAIL_SEED_OFFSET + <pool index in the study>``.
+TAIL_N_BOOT = 200
+TAIL_SEED_OFFSET = 100
+UPPER_TAIL_DELTA = 0.10
+#: Each pool's app, and the manifest key of that app's task set (``data/heterogeneity/manifest.json``).
+POOL_APP: dict[str, str] = {"GMG": "gmail", "GMK": "gmail", "GMB": "gmail", "GLG": "gitlab", "GLK": "gitlab"}
+TASK_SUBSET_KEY: dict[str, str] = {"gitlab": "gitlab_task_subset_60", "gmail": "gmail_task_subset_30"}
+#: A relabelled pool's arms come from its source study's pool file (``study.extra_outcomes``' relabel).
+EXTRA_POOL_FILES: dict[str, Path] = {"GMG": ROOT / "data" / "empirical_pool" / "pool_G.yaml"}
 H3_SCALE, H3_SPREAD = "het_scale", "het_spread"
 HET_REGISTRATIONS: tuple[str, ...] = tuple(k for k, r in rc.REGISTRATIONS.items() if r.get("study") == "het")
 
@@ -105,53 +123,76 @@ def classify_cell(regret_range: Mapping[int, float], rr_lo_T200: float, tau_set_
     return "moderate"
 
 
-def boot_regret_range_lo(boot_kgrid: pd.DataFrame, *, expected_n_boot: int, horizon: int = RR_LO_HORIZON,
-                         percentile: float = RR_LO_PERCENTILE) -> dict[str, float]:
-    """``{pool: 2.5th percentile over bootstrap replicates of the regret range (max - min over K)}``
-    at `horizon`. Every pool must hold exactly replicates ``0 .. expected_n_boot - 1``, each on the
-    same K-grid, one row per (replicate, K)."""
+def boot_regret_ranges(boot_kgrid: pd.DataFrame, *, expected_n_boot: int, horizon: int) -> dict[str, np.ndarray]:
+    """``{pool: per-replicate regret range (max - min over K), replicates 0 .. B-1}`` at `horizon`.
+    Every pool must hold exactly replicates ``0 .. expected_n_boot - 1``, each on the same K-grid, one
+    row per (replicate, K)."""
     sub = boot_kgrid[boot_kgrid["horizon"] == horizon]
     if "variant" in sub.columns:
         sub = sub[sub["variant"] == "npmle"]
     if sub.empty:
         raise ValueError(f"boot K-grid has no rows at T={horizon}")
-    out: dict[str, float] = {}
+    out: dict[str, np.ndarray] = {}
     for pool, g in sub.groupby("pool"):
         present, want = {int(b) for b in g["boot"]}, set(range(expected_n_boot))
         if present != want:
-            raise ValueError(f"boot K-grid, pool {pool}: missing {[f'b{b:03d}' for b in sorted(want - present)]}, "
+            raise ValueError(f"boot K-grid, pool {pool}, T={horizon}: missing "
+                             f"{[f'b{b:03d}' for b in sorted(want - present)]}, "
                              f"unexpected {[f'b{b:03d}' for b in sorted(present - want)]}")
         if g.duplicated(["boot", "K"]).any():
-            raise ValueError(f"boot K-grid, pool {pool}: duplicate (replicate, K) rows")
+            raise ValueError(f"boot K-grid, pool {pool}, T={horizon}: duplicate (replicate, K) rows")
         grids = {b: frozenset(int(k) for k in gb["K"]) for b, gb in g.groupby("boot")}
         if len(set(grids.values())) != 1:
             short = sorted(f"b{int(b):03d}" for b, ks in grids.items() if ks != max(grids.values(), key=len))
-            raise ValueError(f"boot K-grid, pool {pool}: replicates {short} do not share one K grid")
-        ranges = g.groupby("boot")["regret"].agg(lambda r: float(r.max() - r.min()))
-        out[str(pool)] = float(np.percentile(ranges.to_numpy(dtype=float), percentile))
+            raise ValueError(f"boot K-grid, pool {pool}, T={horizon}: replicates {short} do not share one K grid")
+        ranges = g.groupby("boot")["regret"].agg(lambda r: float(r.max() - r.min())).sort_index()
+        out[str(pool)] = ranges.to_numpy(dtype=float)
     return out
+
+
+def boot_regret_range_ci(boot_kgrid: pd.DataFrame, *, expected_n_boot: int,
+                         horizons: tuple[int, ...] = PRIMARY_HORIZONS) -> dict[tuple[str, int], tuple[float, float]]:
+    """``{(pool, T): (2.5th, 97.5th percentile of the per-replicate regret range)}`` at every T (section 6.4)."""
+    out: dict[tuple[str, int], tuple[float, float]] = {}
+    for T in horizons:
+        for pool, r in boot_regret_ranges(boot_kgrid, expected_n_boot=expected_n_boot, horizon=T).items():
+            out[(pool, int(T))] = (float(np.percentile(r, RR_LO_PERCENTILE)), float(np.percentile(r, RR_HI_PERCENTILE)))
+    return out
+
+
+def boot_regret_range_lo(boot_kgrid: pd.DataFrame, *, expected_n_boot: int, horizon: int = RR_LO_HORIZON,
+                         percentile: float = RR_LO_PERCENTILE) -> dict[str, float]:
+    """``{pool: 2.5th percentile over bootstrap replicates of the regret range}`` at `horizon` (section 6.5
+    classifies on T = 200's)."""
+    return {pool: float(np.percentile(r, percentile))
+            for pool, r in boot_regret_ranges(boot_kgrid, expected_n_boot=expected_n_boot, horizon=horizon).items()}
 
 
 def classify_pools(components: pd.DataFrame, kgrid: pd.DataFrame, boot_kgrid: pd.DataFrame, *, tau_flat: float,
                    expected_n_boot: int, manifest_sha256: str) -> pd.DataFrame:
     """One section 6.5 row per pool of `components`: the point regret range at each primary T (the npmle
-    K-grid, `describe.k_star_table`'s max - min over K), the bootstrap lower bound at T = 200, tau_set's
-    upper bound, the class."""
+    K-grid, `describe.k_star_table`'s max - min over K) with its prompt-bootstrap 95% interval
+    (``rr_lo_T<T>`` / ``rr_hi_T<T>``, section 6.4), tau_set's upper bound, the class. Classification
+    reads only ``rr_lo_T200``."""
     table = describe.k_star_table(kgrid[kgrid["variant"] == "npmle"])
     rr_of = {(str(r.pool), int(r.horizon)): float(r.regret_range) for r in table.itertuples()}
-    lo = boot_regret_range_lo(boot_kgrid, expected_n_boot=expected_n_boot)
+    ci = boot_regret_range_ci(boot_kgrid, expected_n_boot=expected_n_boot)
     rows = []
     for r in components.itertuples():
         pool = str(r.pool)
         missing = [T for T in PRIMARY_HORIZONS if (pool, T) not in rr_of]
-        if missing or pool not in lo:
-            raise ValueError(f"classify {pool}: K-grid lacks T={missing}; boot K-grid has it: {pool in lo}")
+        missing_boot = [T for T in PRIMARY_HORIZONS if (pool, T) not in ci]
+        if missing or missing_boot:
+            raise ValueError(f"classify {pool}: K-grid lacks T={missing}; boot K-grid lacks T={missing_boot}")
         rr = {T: rr_of[(pool, T)] for T in PRIMARY_HORIZONS}
         up = float(r.tau_set_upper_one_sided)
-        rows.append({"pool": pool, **{f"regret_range_T{T}": rr[T] for T in PRIMARY_HORIZONS},
-                     "rr_lo_T200": lo[pool], "tau_set_upper_one_sided": up, "tau_flat": float(tau_flat),
-                     "class": classify_cell(rr, lo[pool], up, tau_flat), "n_boot": int(expected_n_boot),
-                     "manifest_sha256": manifest_sha256})
+        row = {"pool": pool}
+        for T in PRIMARY_HORIZONS:
+            row.update({f"regret_range_T{T}": rr[T], f"rr_lo_T{T}": ci[(pool, T)][0], f"rr_hi_T{T}": ci[(pool, T)][1]})
+        row.update({"tau_set_upper_one_sided": up, "tau_flat": float(tau_flat),
+                    "class": classify_cell(rr, ci[(pool, RR_LO_HORIZON)][0], up, tau_flat),
+                    "n_boot": int(expected_n_boot), "manifest_sha256": manifest_sha256})
+        rows.append(row)
     return pd.DataFrame(rows)
 
 
@@ -161,8 +202,9 @@ def classify_pools(components: pd.DataFrame, kgrid: pd.DataFrame, boot_kgrid: pd
 def h_verdict(delta_draws: np.ndarray, *, refute_below: float, estimate: float | None = None) -> dict:
     """Section 6.3's rule on bootstrap draws of a contrast: one-sided 95% lower bound = 5th percentile,
     upper bound = 95th; ``supported`` iff lo > 0, else ``refuted`` iff hi < `refute_below`, else
-    ``inconclusive``. Both conditions can hold (a positive difference smaller than `refute_below`);
-    supported is checked first, and ``refute_condition_met`` reports the other."""
+    ``inconclusive``. Both conditions can hold (a positive difference smaller than `refute_below`): the
+    verdict is then ``supported`` (controller ruling) and ``effect_below_threshold`` is True -- the flag is
+    True exactly when lo > 0 and hi < `refute_below`."""
     d = np.asarray(delta_draws, dtype=float)
     if d.size == 0 or not np.all(np.isfinite(d)):
         raise ValueError("h_verdict needs finite bootstrap draws")
@@ -170,7 +212,7 @@ def h_verdict(delta_draws: np.ndarray, *, refute_below: float, estimate: float |
     refute = hi < refute_below
     verdict = "supported" if lo > 0.0 else ("refuted" if refute else "inconclusive")
     return {"estimate": float(np.median(d)) if estimate is None else float(estimate), "lo": lo, "hi": hi,
-            "verdict": verdict, "refute_condition_met": bool(refute), "n_boot": int(d.size)}
+            "verdict": verdict, "effect_below_threshold": bool(lo > 0.0 and refute), "n_boot": int(d.size)}
 
 
 def _tau(Y: np.ndarray, row_counts: np.ndarray) -> float:
@@ -180,14 +222,50 @@ def _tau(Y: np.ndarray, row_counts: np.ndarray) -> float:
     return het.variance_components(Y, n_imputed=int(round(float(np.sum(J - rcs)))), row_counts=rcs)["tau"]
 
 
-def _matrix(outcomes: pd.DataFrame, pool: str, **kw):
-    """`het.success_matrix` over every arm/task the pool has a replicate-0 row for (any status), so a
-    ``missing`` episode is an explicit imputed cell."""
-    sub = outcomes[(outcomes["pool"] == pool) & (outcomes["replicate"] == 0)]
-    if sub.empty:
-        raise ValueError(f"no replicate-0 outcomes for pool {pool}")
-    return het.success_matrix(outcomes, pool, expected_arms=sorted(str(a) for a in sub["arm_id"].unique()),
-                              expected_tasks=sorted(str(t) for t in sub["task_id"].unique()), **kw)
+Universe = Mapping[str, tuple[list[str], list[str]]]
+
+
+def pool_arm_ids(pool: str, *, study: st.Study, pool_file: Path | None = None) -> list[str]:
+    """Every arm id of `pool`'s pool file: ``<data_dir>/pools/<pool>.yaml``, or -- for a relabelled pool
+    (``study.extra_outcomes``) -- its source file (`EXTRA_POOL_FILES`) with ids relabelled exactly as
+    `study.load_study_outcomes` relabels them (``<relabel>_<arm_id>``)."""
+    relabels = {relabel: source for _, source, relabel in study.extra_outcomes}
+    if pool_file is None:
+        pool_file = EXTRA_POOL_FILES[pool] if pool in relabels else study.data_dir / "pools" / f"{pool}.yaml"
+    with open(pool_file, encoding="utf-8") as fh:
+        doc = yaml.safe_load(fh)
+    ids = [str(a["arm_id"]) for a in doc["arms"]]
+    if pool in relabels:
+        ids = [f"{pool}_{a}" for a in ids]
+    if not ids or len(set(ids)) != len(ids):
+        raise ValueError(f"{pool_file}: {len(ids)} arm ids, {len(set(ids))} distinct")
+    return ids
+
+
+def design_universe(study: st.Study = st.HETEROGENEITY, *, manifest: Mapping | None = None) -> dict[str, tuple[list[str], list[str]]]:
+    """``{pool: (arm ids, task ids)}``: the design each cell's matrix is built on -- every arm of the pool
+    file and the app's task subset from ``<data_dir>/manifest.json`` (`TASK_SUBSET_KEY`), independent of
+    what the outcomes happen to contain."""
+    if manifest is None:
+        manifest = json.loads((study.data_dir / "manifest.json").read_text())
+    out = {}
+    for pool in study.pools:
+        tasks = [str(t) for t in manifest[TASK_SUBSET_KEY[POOL_APP[pool]]]]
+        if not tasks or len(set(tasks)) != len(tasks):
+            raise ValueError(f"manifest {TASK_SUBSET_KEY[POOL_APP[pool]]}: {len(tasks)} ids, {len(set(tasks))} distinct")
+        out[pool] = (pool_arm_ids(pool, study=study), tasks)
+    return out
+
+
+def _matrix(outcomes: pd.DataFrame, pool: str, universe: Universe, **kw):
+    """`het.success_matrix` on the design's full (arm x task) universe (`design_universe`: the pool file's
+    arms, the app's task subset from the manifest), so an arm or task with no ``ok`` episode -- never
+    attempted, or ``missing`` -- is a missing cell that counts toward the 5% ceiling (and a fully
+    missing arm or task raises) instead of silently shrinking the matrix."""
+    if pool not in universe:
+        raise KeyError(f"no design universe for pool {pool}")
+    arms, tasks = universe[pool]
+    return het.success_matrix(outcomes, pool, expected_arms=list(arms), expected_tasks=list(tasks), **kw)
 
 
 def _paired(Ya, rca, Yb, rcb, *, n_boot: int, seed: int, refute_below: float) -> dict:
@@ -204,12 +282,12 @@ def _paired(Ya, rca, Yb, rcb, *, n_boot: int, seed: int, refute_below: float) ->
 
 
 def h1(outcomes_gitlab_GLG: pd.DataFrame, outcomes_bridge: pd.DataFrame, bridge_arm_map: Mapping[str, str], *,
-       n_boot: int, seed: int, gitlab_pool: str = "GLG", bridge_pool: str = "GMB") -> dict:
+       n_boot: int, seed: int, universe: Universe, gitlab_pool: str = "GLG", bridge_pool: str = "GMB") -> dict:
     """H1 primary: tau_main(GitLab, the 20 bridge prompts) - tau_main(Gmail at 600 s, the same 20), paired by
     prompt through `bridge_arm_map` (``manifest.json["bridge_source"]``: GMB id -> GLG id); the 20 prompts
     are resampled jointly in both apps, each app's task set held fixed."""
-    Ygl, arms_gl, _, _, rc_gl = _matrix(outcomes_gitlab_GLG, gitlab_pool)
-    Ygm, arms_gm, _, _, rc_gm = _matrix(outcomes_bridge, bridge_pool)
+    Ygl, arms_gl, _, _, rc_gl = _matrix(outcomes_gitlab_GLG, gitlab_pool, universe)
+    Ygm, arms_gm, _, _, rc_gm = _matrix(outcomes_bridge, bridge_pool, universe)
     if set(bridge_arm_map) != set(arms_gm):
         raise ValueError(f"bridge map keys do not match the bridge arms: missing "
                          f"{sorted(set(arms_gm) - set(bridge_arm_map))}, extra {sorted(set(bridge_arm_map) - set(arms_gm))}")
@@ -241,10 +319,10 @@ def pair_by_g_index(gmg_arms: Iterable[str], glg_arms: Iterable[str]) -> list[tu
 
 
 def h1_secondary(outcomes_gitlab: pd.DataFrame, outcomes_gmail: pd.DataFrame, *, n_boot: int, seed: int,
-                 gitlab_pool: str = "GLG", gmail_pool: str = "GMG") -> dict:
+                 universe: Universe, gitlab_pool: str = "GLG", gmail_pool: str = "GMG") -> dict:
     """H1 secondary: all 50 G prompts, tau_main(GitLab) - tau_main(Gmail at 180 s), paired by G index."""
-    Ygl, arms_gl, _, _, rc_gl = _matrix(outcomes_gitlab, gitlab_pool)
-    Ygm, arms_gm, _, _, rc_gm = _matrix(outcomes_gmail, gmail_pool)
+    Ygl, arms_gl, _, _, rc_gl = _matrix(outcomes_gitlab, gitlab_pool, universe)
+    Ygm, arms_gm, _, _, rc_gm = _matrix(outcomes_gmail, gmail_pool, universe)
     pairs = pair_by_g_index(arms_gm, arms_gl)
     ogl = [arms_gl.index(b) for _, b in pairs]
     ogm = [arms_gm.index(a) for a, _ in pairs]
@@ -313,48 +391,54 @@ def _shows_difference(row: Mapping, mei: float) -> bool:
 
 
 def h3(classes: Mapping[str, str], contrasts: pd.DataFrame, mei: float = MEI) -> dict:
-    """Section 6.6. `contrasts` rows: ``cells`` (a class -- the pooled registered row -- or one pool),
+    """Section 6.6. `contrasts` rows: ``cells`` (one pool, or a class -- the pooled registered row),
     ``registration`` (``het_scale``, ``het_spread``, ... with or without ``_flat``), ``verdict`` and,
     when available, ``delta``/``lo``/``hi``.
 
-    * untestable iff no cell is meaningful (takes precedence; flat-cell differences are still listed);
-    * refuted iff a flat cell (or the pooled flat row) shows a policy difference > MEI with an interval
-      excluding 0, or a meaningful cell (or the pooled meaningful row) shows contrast 1 or 2 ``reversed``;
-    * supported iff some meaningful cell has contrasts 1 and 2 both ``supported`` -- from that cell's own
-      rows, or from the pooled rows when it is the only meaningful cell. Condition (a), flat cells'
-      regret range < 0.005 at every primary T, holds by the section 6.5 definition of flat;
-    * inconclusive otherwise.
+    Only per-cell rows (``cells`` = a pool) decide -- the spec reads "a flat cell" / "a meaningful cell";
+    pooled class rows are listed under ``supplementary`` and never enter the verdict (fix round 1).
+
+    * **refuted** iff a flat cell shows a policy difference > MEI with an interval excluding 0 (any
+      registration), or a meaningful cell shows contrast 1 or 2 ``reversed``. Refuted takes precedence
+      over everything, including untestable (controller ruling);
+    * **untestable** iff no cell is meaningful (and nothing refutes);
+    * **supported** iff some meaningful cell has contrasts 1 and 2 both ``supported`` in its own rows.
+      Condition (a), flat cells' regret range < 0.005 at every primary T, holds by the section 6.5
+      definition of flat;
+    * **inconclusive** otherwise.
     """
     meaningful = sorted(p for p, c in classes.items() if c == "meaningful")
     flat = sorted(p for p, c in classes.items() if c == "flat")
     records = contrasts.to_dict("records")
     refuting: list[str] = []
+    supplementary: list[str] = []
     for r in records:
         sel = str(r["cells"])
-        if (sel == "flat" or sel in flat) and _shows_difference(r, mei):
-            refuting.append(f"flat {sel}: {r['registration']} differs beyond MEI ({r['verdict']})")
-        if ((sel == "meaningful" or sel in meaningful) and _contrast_name(r["registration"]) in (H3_SCALE, H3_SPREAD)
-                and r["verdict"] == "reversed"):
-            refuting.append(f"meaningful {sel}: {r['registration']} reversed")
+        flat_hit = (sel == "flat" or sel in flat) and _shows_difference(r, mei)
+        reversed_hit = ((sel == "meaningful" or sel in meaningful)
+                        and _contrast_name(r["registration"]) in (H3_SCALE, H3_SPREAD) and r["verdict"] == "reversed")
+        if not (flat_hit or reversed_hit):
+            continue
+        what = (f"flat {sel}: {r['registration']} differs beyond MEI ({r['verdict']})" if flat_hit
+                else f"meaningful {sel}: {r['registration']} reversed")
+        (supplementary if sel in rc.CELL_CLASSES else refuting).append(what)
     supporting: list[str] = []
     for p in meaningful:
-        rows = [r for r in records if str(r["cells"]) == p]
-        if not rows and len(meaningful) == 1:
-            rows = [r for r in records if str(r["cells"]) == "meaningful"]
-        v = {_contrast_name(r["registration"]): r["verdict"] for r in rows}
+        v = {_contrast_name(r["registration"]): r["verdict"] for r in records if str(r["cells"]) == p}
         if v.get(H3_SCALE) == "supported" and v.get(H3_SPREAD) == "supported":
             supporting.append(p)
-    if not meaningful:
-        verdict = "untestable"
-    elif refuting:
+    if refuting:
         verdict = "refuted"
+    elif not meaningful:
+        verdict = "untestable"
     elif supporting:
         verdict = "supported"
     else:
         verdict = "inconclusive"
-    detail = (f"meaningful={meaningful}; flat={flat}; supporting={supporting}; refuting={refuting}")
+    detail = (f"meaningful={meaningful}; flat={flat}; supporting={supporting}; refuting={refuting}; "
+              f"supplementary (pooled rows, not decisive)={supplementary}")
     return {"verdict": verdict, "meaningful_cells": meaningful, "flat_cells": flat, "supporting_cells": supporting,
-            "refuting": refuting, "detail": detail}
+            "refuting": refuting, "supplementary": supplementary, "detail": detail}
 
 
 def policy_gaps(out_dir: Path, classes: Mapping[str, str], classification_path: Path, *,
@@ -398,15 +482,40 @@ def _analyze(Y, tasks, n_imp, row_counts, noise, seed) -> dict:
                                n_imputed=n_imp, row_counts=row_counts, seed=seed)
 
 
-def analyze_pools(outcomes: pd.DataFrame, *, study: st.Study, seed: int = SPLIT_HALF_SEED) -> pd.DataFrame:
-    """`stage0.analyze_cell` on every pool of `study`, with its noise (or declared borrow)."""
+def upper_tail_mass(Y: np.ndarray, row_counts: np.ndarray) -> float:
+    """Section 6.4's upper-tail mass, exactly as `stage0.analyze_cell` computes it: an NPMLE on the prompt
+    means with per-prompt variance MS_resid / J, and its mass at or above (weighted median + 0.10)."""
+    Y = np.asarray(Y, dtype=float)
+    J = Y.shape[1]
+    rcs = np.asarray(row_counts, dtype=float)
+    vc = het.variance_components(Y, n_imputed=int(round(float(np.sum(J - rcs)))), row_counts=rcs)
+    grid, weights, _ = emp.npmle(Y.mean(axis=1), np.full(Y.shape[0], vc["ms_resid"] / J))
+    median = stage0._weighted_median(grid, weights)
+    return float(weights[grid >= median + UPPER_TAIL_DELTA].sum())
+
+
+def upper_tail_ci(Y: np.ndarray, row_counts: np.ndarray, *, n_boot: int = TAIL_N_BOOT, seed: int) -> tuple[float, float]:
+    """95% percentile interval of the upper-tail mass over a prompt bootstrap (tasks fixed, NPMLE re-fit
+    on every resample)."""
+    draws = het.prompt_bootstrap(Y, upper_tail_mass, n_boot=n_boot, seed=seed, row_counts=row_counts)
+    return float(np.percentile(draws, 2.5)), float(np.percentile(draws, 97.5))
+
+
+def analyze_pools(outcomes: pd.DataFrame, *, study: st.Study, universe: Universe, seed: int = SPLIT_HALF_SEED,
+                  tail_n_boot: int = TAIL_N_BOOT, tail_seed: int = VERDICT_SEED) -> pd.DataFrame:
+    """`stage0.analyze_cell` on every pool of `study` (its design universe; its noise or declared borrow), plus
+    the upper-tail mass's prompt-bootstrap CI (``upper_tail_mass_lo``/``_hi``; seed ``tail_seed +
+    TAIL_SEED_OFFSET + pool index``)."""
     rows = []
-    for pool in study.pools:
-        Y, _, tasks, n_imp, row_counts = _matrix(outcomes, pool)
+    for k, pool in enumerate(study.pools):
+        Y, _, tasks, n_imp, row_counts = _matrix(outcomes, pool, universe)
         noise = cell_noise(outcomes, pool, study=study)
         out = _analyze(Y, tasks, n_imp, row_counts, noise, seed)
-        rows.append({"pool": pool, **out, "n_imputed": int(n_imp), "missing_frac": n_imp / Y.size,
-                     "noise_df": int(noise[1]), "noise_from": noise[2]})
+        tseed = int(tail_seed) + TAIL_SEED_OFFSET + k
+        lo, hi = upper_tail_ci(Y, row_counts, n_boot=tail_n_boot, seed=tseed)
+        rows.append({"pool": pool, **out, "upper_tail_mass_lo": lo, "upper_tail_mass_hi": hi,
+                     "upper_tail_n_boot": int(tail_n_boot), "upper_tail_seed": tseed, "n_imputed": int(n_imp),
+                     "missing_frac": n_imp / Y.size, "noise_df": int(noise[1]), "noise_from": noise[2]})
     return pd.DataFrame(rows)
 
 
@@ -450,12 +559,18 @@ def attach_ended_by(snapshot: pd.DataFrame, *, log_dirs: Iterable[Path],
     return merged.drop(columns=["_log_attempt"])
 
 
-def timeout_sensitivity(outcomes: pd.DataFrame, *, study: st.Study,
+def timeout_sensitivity(outcomes: pd.DataFrame, *, study: st.Study, universe: Universe,
                         seed: int = SPLIT_HALF_SEED) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Section 6.8: per cell, the analysis with clock-ended episodes set to missing (every pool's, so a
-    borrowed noise estimate drops them too), imputed additively and counted -- the primary analysis's
-    5% ceiling does not apply here -- beside the primary tau; plus per-prompt timeout rates on the
-    replicate-0 episodes. A cell with any replicate-0 ``ok`` episode lacking ``ended_by`` is unavailable."""
+    borrowed noise estimate drops them too), imputed additively and counted beside the primary tau; plus
+    per-prompt timeout rates on the replicate-0 ``ok`` episodes.
+
+    A prompt whose replicate-0 episodes are all clock-ended has no observation left: it is dropped from the
+    sensitivity matrix and counted in ``n_prompts_dropped`` (fix round 1). The primary analysis's 5%
+    ceiling does not apply to this declared sensitivity (clock-ended cells are missing by construction);
+    `het.success_matrix`'s structural rule does -- if the matrix still has a task with no observed cell,
+    the cell is NA with the reason in ``note``. A cell with any replicate-0 ``ok`` episode whose
+    ``ended_by`` (or Pre-reg 9 ``timed_out``) is unknown is NA, never imputed."""
     has = "ended_by" in outcomes.columns
     dropped = outcomes[outcomes["ended_by"].ne("clock")] if has else outcomes
     rows, rates = [], []
@@ -463,26 +578,33 @@ def timeout_sensitivity(outcomes: pd.DataFrame, *, study: st.Study,
         sub0 = outcomes[(outcomes["pool"] == pool) & (outcomes["replicate"] == 0) & (outcomes["status"] == het.STATUS_OK)]
         n_unknown = int(sub0["ended_by"].isna().sum()) if has else len(sub0)
         if n_unknown:
-            rows.append({"pool": pool, "available": False,
-                         "note": f"ended_by missing for {n_unknown} of {len(sub0)} replicate-0 ok episodes"})
+            rows.append({"pool": pool, "available": False, "n_episodes": len(sub0),
+                         "note": f"no ended_by / timed_out in the logs for {n_unknown} of {len(sub0)} replicate-0 "
+                                 "ok episodes (logs or field absent); not imputed"})
             continue
         clock = sub0["ended_by"] == "clock"
+        all_clock = []
         for arm, g in sub0.assign(clock=clock).groupby("arm_id"):
             rates.append({"pool": pool, "arm_id": str(arm), "n_episodes": len(g), "n_clock": int(g["clock"].sum()),
                           "timeout_rate": float(g["clock"].mean())})
-        Y, arms, tasks, n_imp, row_counts = _matrix(outcomes, pool)
+            if bool(g["clock"].all()):
+                all_clock.append(str(arm))
+        Y, arms, tasks, n_imp, row_counts = _matrix(outcomes, pool, universe)
         base = _analyze(Y, tasks, n_imp, row_counts, cell_noise(outcomes, pool, study=study), seed)
+        kept = [a for a in arms if a not in set(all_clock)]
+        common = {"pool": pool, "n_episodes": len(sub0), "n_clock": int(clock.sum()),
+                  "clock_rate": float(clock.mean()), "n_prompts_dropped": len(all_clock),
+                  "dropped_prompts": ";".join(sorted(all_clock))}
         try:
-            Ys, _, _, n_imp_s, rc_s = het.success_matrix(dropped, pool, expected_arms=arms, expected_tasks=tasks,
+            Ys, _, _, n_imp_s, rc_s = het.success_matrix(dropped, pool, expected_arms=kept, expected_tasks=tasks,
                                                          max_missing=None)
         except ValueError as exc:
-            rows.append({"pool": pool, "available": False, "n_episodes": len(sub0), "n_clock": int(clock.sum()),
-                         "clock_rate": float(clock.mean()), "note": str(exc)})
+            rows.append({**common, "available": False, "note": str(exc)})
             continue
         noise = cell_noise(dropped, pool, study=study)
         sens = _analyze(Ys, tasks, n_imp_s, rc_s, noise, seed)
-        rows.append({"pool": pool, "available": True, "n_episodes": len(sub0), "n_clock": int(clock.sum()),
-                     "clock_rate": float(clock.mean()), "n_imputed": int(n_imp_s), "missing_frac": n_imp_s / Ys.size,
+        rows.append({**common, "available": True, "n_prompts": int(Ys.shape[0]), "n_imputed": int(n_imp_s),
+                     "missing_frac": n_imp_s / Ys.size,
                      "tau_main": sens["tau_main"], "tau_lo": sens["tau_lo"], "tau_hi": sens["tau_hi"],
                      "tau_set": sens["tau_set"], "tau_set_upper_one_sided": sens["tau_set_upper_one_sided"],
                      "r_sb": sens["r_sb"], "tau_main_baseline": base["tau_main"], "tau_set_baseline": base["tau_set"],
@@ -496,32 +618,32 @@ def timeout_sensitivity(outcomes: pd.DataFrame, *, study: st.Study,
 def _hrow(hypothesis, contrast, role, decides, res, interval) -> dict:
     return {"hypothesis": hypothesis, "contrast": contrast, "role": role, "decides": decides,
             "estimate": res.get("estimate"), "lo": res.get("lo"), "hi": res.get("hi"), "interval": interval,
-            "verdict": res.get("verdict"), "refute_condition_met": res.get("refute_condition_met"),
+            "verdict": res.get("verdict"), "effect_below_threshold": res.get("effect_below_threshold"),
             "n_prompts": res.get("n_prompts"), "n_boot": res.get("n_boot"), "seed": res.get("seed"),
             "detail": res.get("detail", "")}
 
 
-def hypotheses(outcomes: pd.DataFrame, bridge_arm_map: Mapping[str, str], *, n_boot: int = N_BOOT,
-               seed: int = VERDICT_SEED) -> tuple[list[dict], pd.DataFrame]:
+def hypotheses(outcomes: pd.DataFrame, bridge_arm_map: Mapping[str, str], *, universe: Universe,
+               n_boot: int = N_BOOT, seed: int = VERDICT_SEED) -> tuple[list[dict], pd.DataFrame]:
     """H1 (primary + secondary), H2 (Gmail, GitLab) and H4 rows, and the H4 portability table."""
     one = "one-sided 95% (5th / 95th percentile)"
     rows = []
-    r = h1(outcomes, outcomes, bridge_arm_map, n_boot=n_boot, seed=seed + 1)
+    r = h1(outcomes, outcomes, bridge_arm_map, n_boot=n_boot, seed=seed + 1, universe=universe)
     r["detail"] = f"tau GLG(bridge 20)={r['tau_gitlab']:.4f}, tau GMB={r['tau_gmail']:.4f}"
     rows.append(_hrow("H1", "tau(GLG, bridge prompts) - tau(GMB)", "primary", True, r, one))
-    r = h1_secondary(outcomes, outcomes, n_boot=n_boot, seed=seed + 2)
+    r = h1_secondary(outcomes, outcomes, n_boot=n_boot, seed=seed + 2, universe=universe)
     r["detail"] = f"tau GLG={r['tau_gitlab']:.4f}, tau GMG={r['tau_gmail']:.4f}; secondary, not decided"
     rows.append(_hrow("H1", "tau(GLG) - tau(GMG, 180 s)", "secondary", False, r, one))
     for k, (pk, pg, env) in enumerate((("GMK", "GMG", "Gmail"), ("GLK", "GLG", "GitLab"))):
-        YK, _, tK, _, rcK = _matrix(outcomes, pk)
-        YG, _, tG, _, rcG = _matrix(outcomes, pg)
+        YK, _, tK, _, rcK = _matrix(outcomes, pk, universe)
+        YG, _, tG, _, rcG = _matrix(outcomes, pg, universe)
         r = h2(YK, YG, n_boot=n_boot, seed=seed + 3 + k, row_counts_K=rcK, row_counts_G=rcG,
                task_ids_K=tK, task_ids_G=tG)
         r["n_prompts"] = f"{YK.shape[0]}+{YG.shape[0]}"
         r["detail"] = f"tau {pk}={r['tau_K']:.4f}, tau {pg}={r['tau_G']:.4f}"
         rows.append(_hrow("H2", f"tau({pk}) - tau({pg})", env, True, r, one))
-    Ygm, arms_gm, _, _, _ = _matrix(outcomes, "GMG")
-    Ygl, arms_gl, _, _, _ = _matrix(outcomes, "GLG")
+    Ygm, arms_gm, _, _, _ = _matrix(outcomes, "GMG", universe)
+    Ygl, arms_gl, _, _, _ = _matrix(outcomes, "GLG", universe)
     pairs = pair_by_g_index(arms_gm, arms_gl)
     # Spearman is invariant to the BLUPs' common positive shrinkage factor, so rho on the unshrunk main
     # effects (row mean - grand mean) equals rho on the BLUPs whenever tau2 > 0, and stays defined when a
@@ -570,7 +692,8 @@ def main(argv: list[str] | None = None) -> None:
         raise ValueError(f"{study.table('boot_kgrid')} was not computed on {manifest}; re-run replay.py boot_kgrid")
     results.mkdir(parents=True, exist_ok=True)
 
-    components = analyze_pools(outcomes, study=study)
+    universe = design_universe(study)
+    components = analyze_pools(outcomes, study=study, universe=universe, tail_seed=args.seed)
     components.to_csv(results / "het_components.csv", index=False)
     classification = classify_pools(components, kgrid, boot_kgrid, tau_flat=args.tau_flat,
                                     expected_n_boot=replay.N_BOOT, manifest_sha256=manifest_sha)
@@ -583,7 +706,7 @@ def main(argv: list[str] | None = None) -> None:
     gaps.to_csv(results / "het_policy_gaps.csv", index=False)
 
     bridge = json.loads((study.data_dir / "manifest.json").read_text())["bridge_source"]
-    rows, port = hypotheses(outcomes, bridge, n_boot=args.n_boot, seed=args.seed)
+    rows, port = hypotheses(outcomes, bridge, universe=universe, n_boot=args.n_boot, seed=args.seed)
     r3 = h3(classes, gaps)
     rows.append(_hrow("H3", "section 6.6", "thesis", True, r3, "prompt bootstrap, B = 200 (replay)"))
     pd.DataFrame(rows).to_csv(results / "het_hypotheses.csv", index=False)
@@ -593,7 +716,7 @@ def main(argv: list[str] | None = None) -> None:
 
     extra = {relabel: (args.prereg9_log_dir, source) for _, source, relabel in study.extra_outcomes}
     timed = attach_ended_by(outcomes, log_dirs=study.log_dirs, extra_log_dirs=extra)
-    sens, rates = timeout_sensitivity(timed, study=study)
+    sens, rates = timeout_sensitivity(timed, study=study, universe=universe)
     sens.to_csv(results / "het_timeout_sensitivity.csv", index=False)
     rates.to_csv(results / "het_timeout_rates.csv", index=False)
     log.info("wrote %s", results)

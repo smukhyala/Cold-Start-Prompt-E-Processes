@@ -156,6 +156,8 @@ POLICIES: dict[str, dict[str, Any]] = {
     },
     "uniform": {"kind": "uniform", "params": {}, "group": "baseline", "requires": []},
     "fixed_K16": {"kind": "fixed_K", "params": {"K": 16}, "group": "baseline", "requires": []},
+    # Pre-registration 10's fixed scale reference: recruit 8 prompts at once, then refine.
+    "fixed_K8": {"kind": "fixed_K", "params": {"K": 8}, "group": "baseline", "requires": []},
     # Pre-registration 3's null model: recruit to K(T) immediately, then refine; K(T) the
     # validation argmin per horizon (`select_fixed_k.py`, `baseline_params.json["fixed_K_star"]`).
     "fixed_K_star": {
@@ -298,6 +300,12 @@ TEST_POLICIES: dict[str, tuple[str, ...]] = {
     # Pre-registration 9: the real prompt pools, uncapped; cap-T constants selected on the corpus only.
     "emp": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4"),
     "emp_boot": ("p3_star", "fixed_K_star", "level_star", "phi_k4"),
+    # Pre-registration 10: the prompt-heterogeneity cells, uncapped; Pre-registration 9's five
+    # plus the fixed K = 8 scale reference (its bootstrap deploys all six).
+    "het": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4", "fixed_K8"),
+    "het_boot": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4", "fixed_K8"),
+    # The calibration family: the three references of the scale / spread contrasts.
+    "cal": ("always_search", "p3_star", "fixed_K8"),
 }
 
 

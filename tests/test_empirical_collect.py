@@ -1107,3 +1107,108 @@ def test_main_becomes_leader_before_any_lock_acquisition_on_the_normal_path(tmp_
 
     assert code == collect.EXIT_CODES["done"]
     assert events == ["setpgid", "acquire_lock"]
+
+
+# ---- --pools: work only the chosen pools' queue items (composes with --through-index) -------------
+
+_GL_TASKS = ["task_e1", "task_m1", "task_h1"]
+_GL_ARMS = [("GLG", "GLG_00"), ("GLK", "GLK_00"), ("anchor", "GL_anchor_baseline")]
+
+
+def _het_data(tmp_path):
+    """What make_het_pools writes for the gitlab profile: pools/, gitlab/queue.jsonl, manifest.json
+    (GLG and GLK items interleave in the queue: index 0..2 GLG, 3..5 GLK, 6..8 anchor)."""
+    data = tmp_path / "heterogeneity"
+    vec = mp.PromptVector(**mp.BASELINE_VECTOR)
+    mp.write_pool(data / "pools" / "GLG.yaml", "GLG", [mp.grid_arm("GLG_00", vec)], mp.GRID_TEMPLATE, mp.AXES_PATH,
+                  meta={})
+    mp.write_pool(data / "pools" / "GLK.yaml", "GLK", [mp.freeform_arm("GLK_00", "Open the board first. " * 10)],
+                  mp.FREEFORM_TEMPLATE, mp.AXES_PATH, meta={})
+    mp.write_pool(data / "pools" / "anchors_gitlab.yaml", "anchor", [mp.grid_arm("GL_anchor_baseline", vec)],
+                  ROOT / "configs" / "template_gitlab.jinja", mp.AXES_PATH, meta={})
+    queue, k = [], 0
+    for pool, arm in _GL_ARMS:
+        for task in _GL_TASKS:
+            queue.append(mp.QueueItem(index=k, pool=pool, arm_id=arm, task_id=task, replicate=0, pilot=False))
+            k += 1
+    (data / "gitlab").mkdir(parents=True)
+    mp.write_queue(data / "gitlab" / "queue.jsonl", queue)
+    files = ["pools/GLG.yaml", "pools/GLK.yaml", "pools/anchors_gitlab.yaml", "gitlab/queue.jsonl"]
+    (data / "manifest.json").write_text(json.dumps({"files": {f: mp.file_sha256(data / f) for f in files}}))
+    return data
+
+
+def test_partition_remaining_keeps_only_the_chosen_pools_and_composes_with_the_through_index(tmp_path):
+    pools = ("GLG", "GLK")
+    q = [mp.QueueItem(index=i, pool=pools[i % 2], arm_id=f"{pools[i % 2]}_00", task_id=f"task_e{i}", replicate=0,
+                      pilot=False) for i in range(10)]
+    assert collect.partition_remaining(q, tmp_path, 2, pilot=False, pools=("GLK",)) == [(1, 5, 9), (3, 7)]
+    assert collect.partition_remaining(q, tmp_path, 2, pilot=False, pools=("GLK",), through_index=6) == [(1, 5), (3,)]
+    assert collect.partition_remaining(q, tmp_path, 2, pilot=False, pools=("GLG", "GLK")) == \
+        collect.partition_remaining(q, tmp_path, 2, pilot=False) == [(0, 2, 4, 6, 8), (1, 3, 5, 7, 9)]
+    (tmp_path / "worker_0.jsonl").write_text(_line("task_e1", arm="GLK_00") + "\n")  # item 1 is terminal
+    assert collect.partition_remaining(q, tmp_path, 2, pilot=False, pools=("GLK",)) == [(3, 7), (5, 9)]
+
+
+def test_parse_args_pools_rejects_an_unknown_pool_and_prereg9(tmp_path):
+    data = _het_data(tmp_path)
+    base = ["--profile", "gitlab", "--budget", "1", "--data", str(data)]
+    with pytest.raises(SystemExit):
+        collect.parse_args(base + ["--pools", "GLX"])  # not a pool in gitlab/queue.jsonl
+    with pytest.raises(SystemExit):
+        collect.parse_args(base + ["--pools", "GLK,GLX"])
+    with pytest.raises(SystemExit):
+        collect.parse_args(base + ["--pools", ","])
+    with pytest.raises(SystemExit):
+        collect.parse_args(["--pools", "F"])  # prereg9 never stages
+    assert collect.parse_args(base + ["--pools", "GLK"]).pools == ("GLK",)
+    assert collect.parse_args(base + ["--pools", "GLK, GLG"]).pools == ("GLG", "GLK")  # sorted, whitespace-tolerant
+    assert collect.parse_args(base).pools is None
+    assert collect.parse_args([]).pools is None  # prereg9 unchanged
+
+
+def test_main_with_pools_runs_only_those_items_and_writes_status_through(tmp_path, monkeypatch):
+    data, logs = _het_data(tmp_path), tmp_path / "logs"
+    monkeypatch.setattr(collect, "HET_LOCK_PATH", tmp_path / "het.lock")
+    seen = {}
+
+    def fake_worker(worker, n_workers, data_dir, log_dir, budget, pilot, assigned, profile="MISSING"):
+        seen[worker] = (profile, assigned)
+        return "done"
+
+    monkeypatch.setattr(collect.cf, "ProcessPoolExecutor", _thread_pool)
+    monkeypatch.setattr(collect, "_worker_main", fake_worker)
+    base = ["--profile", "gitlab", "--workers", "2", "--budget", "5", "--data", str(data), "--log-dir", str(logs)]
+    code = collect.main(base + ["--pools", "GLK"])
+    assert code == collect.EXIT_CODES["through"] == 0
+    assert (logs / "STATUS").read_text().strip() == "through"  # the queue is not exhausted: never `done`
+    assert seen == {0: ("gitlab", (3, 5)), 1: ("gitlab", (4,))}  # GLK is queue items 3..5
+    seen.clear()
+    logs2 = tmp_path / "logs2"
+    base2 = [*base[:-1], str(logs2)]
+    assert collect.main(base2 + ["--pools", "GLK", "--through-index", "4"]) == 0
+    assert (logs2 / "STATUS").read_text().strip() == "through"
+    assert seen == {0: ("gitlab", (3,)), 1: ("gitlab", (4,))}
+    assert not (tmp_path / "het.lock").exists()
+
+
+def test_a_relaunch_with_another_stage_refuses_before_touching_status(tmp_path, monkeypatch):
+    data, logs = _het_data(tmp_path), tmp_path / "logs"
+    monkeypatch.setattr(collect, "HET_LOCK_PATH", tmp_path / "het.lock")
+    seen = {}
+
+    def fake_worker(worker, n_workers, data_dir, log_dir, budget, pilot, assigned, profile="MISSING"):
+        seen[worker] = assigned
+        return "done"
+
+    monkeypatch.setattr(collect.cf, "ProcessPoolExecutor", _thread_pool)
+    monkeypatch.setattr(collect, "_worker_main", fake_worker)
+    base = ["--profile", "gitlab", "--workers", "2", "--budget", "5", "--data", str(data), "--log-dir", str(logs)]
+    assert collect.main(base + ["--pools", "GLK", "--through-index", "5"]) == 0
+    assert json.loads((logs / collect.STAGE_FILE).read_text()) == {"pools": ["GLK"], "through_index": 5, "pilot": False}
+    assert collect.main(base + ["--pools", "GLK", "--through-index", "5"]) == 0  # the same stage resumes
+    for other in (["--through-index", "5"], [], ["--pools", "GLG"], ["--pools", "GLK"]):
+        seen.clear()
+        (logs / "STATUS").write_text("sentinel\n")
+        assert collect.main(base + other) == collect.EXIT_STAGE_MISMATCH
+        assert seen == {} and (logs / "STATUS").read_text() == "sentinel\n" and not (logs / "collect.lock").exists()

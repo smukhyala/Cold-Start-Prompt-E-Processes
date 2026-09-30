@@ -757,19 +757,50 @@ def check_queue_arms(queue: list[make_pools.QueueItem], prompts: dict[str, make_
 
 
 def partition_remaining(queue: list[make_pools.QueueItem], log_dir: Path, n_workers: int,
-                        pilot: bool, through_index: int | None = None) -> list[tuple[int, ...]]:
+                        pilot: bool, through_index: int | None = None,
+                        pools: tuple[str, ...] | None = None) -> list[tuple[int, ...]]:
     """Deal the items still without a terminal record round-robin (in queue order) to the workers.
 
     Each remaining item goes to exactly one worker for this launch, and every worker gets an
     equal share of what is actually left -- a static ``index % n`` split would leave a worker
     that died early with a long tail of its own items for the resumed run. `through_index`
-    (``--through-index``) drops every item whose index is above it.
+    (``--through-index``) drops every item whose index is above it; `pools` (``--pools``) keeps
+    only the items of those pools.
     """
     done, _ = _progress(log_dir)
     remaining = [q.index for q in queue
                  if (q.pilot or not pilot) and (through_index is None or q.index <= through_index)
+                 and (pools is None or q.pool in pools)
                  and (q.arm_id, q.task_id, q.replicate) not in done]
     return [tuple(remaining[w::n_workers]) for w in range(n_workers)]
+
+
+#: A staged run's filter, recorded in its log dir (Pre-registration 11, review finding 7): a later launch into
+#: the same log dir with a different ``--pools`` / ``--through-index`` / ``--pilot`` -- or none -- refuses
+#: before touching STATUS or any lock, so a hand relaunch can never spend the budget on withdrawn cells.
+STAGE_FILE = "STAGE.json"
+EXIT_STAGE_MISMATCH = 3
+
+
+def stage_of(args: argparse.Namespace) -> dict:
+    return {"pools": None if args.pools is None else list(args.pools), "through_index": args.through_index,
+            "pilot": bool(args.pilot)}
+
+
+def write_stage(log_dir: Path, stage: dict) -> None:
+    (Path(log_dir) / STAGE_FILE).write_text(json.dumps(stage, sort_keys=True) + "\n")
+
+
+def check_stage(log_dir: Path, stage: dict) -> str | None:
+    """``None`` when this launch may run; otherwise the refusal message. No stage file: any launch runs."""
+    path = Path(log_dir) / STAGE_FILE
+    if not path.exists():
+        return None
+    recorded = json.loads(path.read_text())
+    if recorded == stage:
+        return None
+    return (f"refusing to launch: {path} records the stage {recorded}, this launch is {stage}. Relaunch with the "
+            "recorded --pools / --through-index / --pilot, or delete the file deliberately to start a new stage.")
 
 
 def final_status(outcomes: list[str], through: bool = False) -> str:
@@ -779,7 +810,7 @@ def final_status(outcomes: list[str], through: bool = False) -> str:
     relaunch (what the watchdog does on ``failed``) would only turn more items into ``missing``;
     a person decides when to resume. ``failed`` then wins over ``budget``/``done``: a crash
     means an unknown slice of the queue was never safely attempted. With `through` (a
-    ``--through-index`` run) a clean finish is ``through`` rather than ``done``.
+    ``--through-index`` or ``--pools`` run) a clean finish is ``through`` rather than ``done``.
     """
     for status in (OUTCOME_PROVIDER_DOWN, OUTCOME_FAILED, OUTCOME_BUDGET):
         if status in outcomes:
@@ -906,6 +937,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--through-index", type=int, default=None,
                     help="heterogeneity profiles only: work only the queue items with index <= N, then write "
                          "STATUS through and exit 0 (make_het_pools.py --print-stages names gitlab's stage ends)")
+    ap.add_argument("--pools", type=str, default=None,
+                    help="heterogeneity profiles only: comma-separated pool names (e.g. GLK); work only those "
+                         "pools' queue items (composes with --through-index), then write STATUS through and exit 0")
     ap.add_argument("--archive-out-of-queue", action="store_true",
                     help="amendment 1 (prereg9 only): archive already-collected records outside the current "
                          "queue.jsonl, write STATUS paused, and exit -- never launches a worker")
@@ -923,6 +957,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ap.error("--through-index stages the heterogeneity collection (not --profile prereg9)")
     if args.through_index is not None and args.through_index < 0:
         ap.error(f"--through-index must be >= 0, got {args.through_index}")
+    if args.pools is not None:
+        if args.profile == DEFAULT_PROFILE:
+            ap.error("--pools stages the heterogeneity collection (not --profile prereg9)")
+        args.pools = tuple(sorted({p.strip() for p in args.pools.split(",") if p.strip()}))
+        if not args.pools:
+            ap.error("--pools needs at least one pool name")
+        queue_path = args.data / spec["queue"]
+        present = sorted({q.pool for q in make_pools.read_queue(queue_path)})
+        unknown = [p for p in args.pools if p not in present]
+        if unknown:
+            ap.error(f"--pools {','.join(unknown)}: not a pool in {queue_path} (its pools: {', '.join(present)})")
     if args.budget is None and not args.archive_out_of_queue:
         ap.error(f"--profile {args.profile} has no default budget: pass --budget USD (the hard stop)")
     return args
@@ -949,6 +994,10 @@ def main(argv: list[str] | None = None) -> int:
     status_path = args.log_dir / "STATUS"
     lock_path = args.log_dir / "collect.lock"
     het = args.profile != DEFAULT_PROFILE
+    refused = check_stage(args.log_dir, stage_of(args))
+    if refused is not None:
+        log.error(refused)
+        return EXIT_STAGE_MISMATCH
     _acquire_lock(lock_path)
     if het:
         try:
@@ -965,13 +1014,20 @@ def main(argv: list[str] | None = None) -> int:
             check_existing_records(args.log_dir, prompts)
         queue = make_pools.read_queue(args.data / spec["queue"])
         check_queue_arms(queue, prompts)
-        if args.through_index is None:
+        staged = args.through_index is not None or args.pools is not None  # a --through-index / --pools run
+        if staged:
+            write_stage(args.log_dir, stage_of(args))
+        if not staged:
             shares = partition_remaining(queue, args.log_dir, args.workers, args.pilot)
         else:
             shares = partition_remaining(queue, args.log_dir, args.workers, args.pilot,
-                                         through_index=args.through_index)
-            log.info("--through-index %d: only queue items 0..%d this run", args.through_index, args.through_index)
-        log.info("%d items left; shares %s", sum(len(x) for x in shares), [len(x) for x in shares])
+                                         through_index=args.through_index, pools=args.pools)
+            if args.through_index is not None:
+                log.info("--through-index %d: only queue items 0..%d this run", args.through_index, args.through_index)
+            if args.pools is not None:
+                log.info("--pools %s: only those pools' queue items this run", ",".join(args.pools))
+        log.info("%d items left; pools=%s; shares %s", sum(len(x) for x in shares),
+                 "all" if args.pools is None else list(args.pools), [len(x) for x in shares])
         clear_exit_markers(args.log_dir)
         ctx = mp_.get_context("spawn")
         outcomes: list[str] = []
@@ -994,7 +1050,7 @@ def main(argv: list[str] | None = None) -> int:
                     outcome = OUTCOME_FAILED
                 outcomes.append(outcome)
                 exit_marker(args.log_dir, w).write_text(outcome + "\n")
-        final = final_status(outcomes) if args.through_index is None else final_status(outcomes, through=True)
+        final = final_status(outcomes, through=staged)
         return EXIT_CODES[final]
     finally:
         status_path.write_text(final + "\n")

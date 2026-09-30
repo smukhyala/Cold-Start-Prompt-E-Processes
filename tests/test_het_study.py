@@ -122,7 +122,7 @@ def test_het_study_config_is_as_planned():
     assert h.extra_outcomes == ((ROOT / "data" / "empirical_pool" / "reservoirs" / "outcomes_snapshot.jsonl",
                                  "G", "GMG"),)
     assert dict(h.borrowed_noise) == {"GMB": "GMG"}
-    assert st.STUDIES == {"prereg9": st.PREREG9, "het": st.HETEROGENEITY}
+    assert st.STUDIES == {"prereg9": st.PREREG9, "het": st.HETEROGENEITY, "glk30": st.GLK30, "glk": st.GLK}  # Pre-reg 11
 
 
 def test_prereg9_study_paths_are_the_module_constants():

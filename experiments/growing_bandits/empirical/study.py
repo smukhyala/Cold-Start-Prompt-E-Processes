@@ -84,6 +84,9 @@ class Study:
     #: ``replay estimate`` needs every log dir's STATUS in `ESTIMABLE_STATUSES`.
     strict_logs: bool = False
     block_fallback: BlockFallback | None = None
+    #: Pre-registration 11: re-score every ``ok`` record as a success iff it succeeded within this
+    #: many agent steps without the clock ending it (`rescore`); ``None`` keeps the recorded success.
+    score_cap: int | None = None
 
     def __post_init__(self) -> None:
         if self.noise_mode not in NOISE_MODES:
@@ -124,7 +127,25 @@ HETEROGENEITY = Study(
                                  block_b_key="gitlab_block_b"),
 )
 
-STUDIES: dict[str, Study] = {s.name: s for s in (PREREG9, HETEROGENEITY)}
+#: Pre-registration 11: the one GLK cell on the GitLab log dir only. `GLK30` is the primary outcome,
+#: every ``ok`` record re-scored at the originally registered 30-step budget; `GLK` is the same cell
+#: as collected (secondary). Same data, fallback and noise model as `HETEROGENEITY`'s GLK; own test
+#: ids, reservoir dirs, table prefixes and seed bases (1e10-wide, disjoint from het's and calibration's).
+_GLK_FALLBACK = HETEROGENEITY.block_fallback
+GLK30 = Study(
+    name="glk30", test="glk30", boot_test="glk30_boot", pools=("GLK",),
+    data_dir=_HET_DATA, res_dir=_HET_DATA / "reservoirs_glk30", log_dirs=(_HET_LOGS / "gitlab",),
+    seed_base=70_000_000_000, table_prefix="glk30", noise_mode="per_pool", borrowed_noise={},
+    extra_outcomes=(), strict_logs=True, block_fallback=_GLK_FALLBACK, score_cap=30,
+)
+GLK = Study(
+    name="glk", test="glk", boot_test="glk_boot", pools=("GLK",),
+    data_dir=_HET_DATA, res_dir=_HET_DATA / "reservoirs_glk", log_dirs=(_HET_LOGS / "gitlab",),
+    seed_base=80_000_000_000, table_prefix="glk", noise_mode="per_pool", borrowed_noise={},
+    extra_outcomes=(), strict_logs=True, block_fallback=_GLK_FALLBACK, score_cap=None,
+)
+
+STUDIES: dict[str, Study] = {s.name: s for s in (PREREG9, HETEROGENEITY, GLK30, GLK)}
 
 
 def get_study(name: str) -> Study:
@@ -200,6 +221,24 @@ def check_log_status(study: Study) -> None:
                            "(pass --allow-unfinished-logs to estimate anyway)")
 
 
+def rescore(outcomes: pd.DataFrame, score_cap: int) -> pd.DataFrame:
+    """Pre-registration 11's primary outcome: every ``ok`` row's ``success`` becomes
+    ``success == 1 and not timed_out and steps <= score_cap`` (main and replicate rows alike);
+    ``missing`` rows are untouched. The cap only truncates a trajectory, so an episode that succeeded
+    after step `score_cap` is a failure under the budget. A missing ``steps`` / ``timed_out`` on an
+    ``ok`` row raises (the budget cannot be applied to it)."""
+    out = outcomes.copy()
+    ok = out["status"] == emp.STATUS_OK
+    for col in ("steps", "timed_out"):
+        if col not in out.columns or out.loc[ok, col].isna().any():
+            raise ValueError(f"rescore: ok records without {col!r}; the {score_cap}-step budget cannot be applied")
+    within = (out.loc[ok, "success"].astype(int) == 1) & ~out.loc[ok, "timed_out"].astype(bool) \
+        & (out.loc[ok, "steps"].astype(int) <= int(score_cap))
+    out["success"] = out["success"].astype(object)
+    out.loc[ok, "success"] = within.astype(int).to_numpy()
+    return out
+
+
 def load_study_outcomes(study: Study) -> pd.DataFrame:
     """Terminal outcomes of every log dir of `study`, plus its relabelled extra snapshots.
 
@@ -223,7 +262,10 @@ def load_study_outcomes(study: Study) -> pd.DataFrame:
         attempts = emp.load_attempts(sorted(log_dir.glob("worker_*.jsonl")))
         if shas is not None:
             check_prompt_shas(attempts, shas, where=str(log_dir))
-        parts.append(emp.terminal_outcomes(attempts))
+        terminal = emp.terminal_outcomes(attempts)
+        if study.score_cap is not None:
+            terminal = rescore(terminal, study.score_cap)
+        parts.append(terminal)
     for snapshot, source, relabel in study.extra_outcomes:
         check_extra_snapshot(snapshot)
         rows = [json.loads(line) for line in Path(snapshot).read_text().splitlines() if line.strip()]

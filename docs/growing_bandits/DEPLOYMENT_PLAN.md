@@ -1210,3 +1210,42 @@ scripts/run_empirical_pool.sh --profile gitlab --budget 260 --through-index 3059
 .venv/bin/python experiments/growing_bandits/empirical/describe.py --study glk30
 .venv/bin/python experiments/growing_bandits/empirical/glk_gate.py --study glk30 --tau-flat 0.019165515325428883
 ```
+
+### Pre-registration 11 — Amendment 1 (2026-09-30, after code review, before any Pre-reg 11 episode)
+
+An independent review of the implementation found places where the registered text was ambiguous or the code
+did not implement it. These rulings are made **before any of the 1,170 episodes runs and before any analysis
+of GLK data**; the only data seen remains the audit aggregates disclosed above.
+
+- **S1's split-half.** S1 re-weights the same 40 prompts on the same 30 tasks, so its split-half r_SB and p are
+  the primary mix's. (As first written, S1 carried no split-half and so could never be decision-relevant,
+  which made the gate's second branch unreachable.) The ANOVA spread estimates are unweighted and are reported
+  as not defined for S1.
+- **Diagnostic 1.** "Top four removed" means the four highest-rate prompts (not two top and two bottom). On the
+  primary mix the tier is recomputed in full on each drop variant — regret range at T = 50 / 100 / 200, its
+  T = 200 bootstrap interval, the two gaps and the split-half on the remaining prompts — and reported
+  (`drop2_tier`, `drop4_tier`). The decision-relevance condition is unchanged: the drop-2 range at T = 200 ≥ 0.015.
+- **Noise per mix.** A mix's within-cell variance is v_mix = Σ w_t² s_p / Σ w_t² over the replicate pairs on
+  tasks the mix weights (s_p = (x₀ − x₁)² / 2). Equal weights on all 30 tasks reproduce the registered v; S2
+  uses only its discriminating tasks' pairs, whose noise is higher than the floor and ceiling tasks'. Using the
+  all-task v would have understated S2's noise and biased it toward heterogeneity.
+- **S2's cap.** S2 may move a verdict from flat to moderate only, so both its class and its tier are capped at
+  moderate.
+- **Stage B precedence and the gap branch.** A horizon at which C3 holds, including through its small-gap branch,
+  never counts toward "captured < 0.5". "Reversed beyond MEI" is Pre-reg 10's rule: for C1 the bootstrap lower
+  bound above +MEI, for C2 the upper bound below −MEI. Contradicted takes precedence over supported. When no
+  registered pattern holds at two horizons the verdict is `inconclusive`.
+- **Gaps on S1 / S2.** The always-search gap is fixed K = T on the K-grid, the same policy as `always_search` at
+  cap T. The fixed-K8 gap is K = 8. The primary mix keeps the policy episodes.
+- **Matrix replay (T = 40).** A prompt's rate is its replicate-0 rate. A pull draws a task among the prompt's
+  observed cells, so a missing cell is never scored as a failure. Refinement is round-robin with a Beta(1, 1)
+  pick, not the harness's rule; this is disclosed beside C1.
+- **Reported, not decided.** The Stage B table carries each of `fixed_K4`, `fixed_K8`, `p3_star` and
+  `always_search`'s gap to the K-grid minimum per T. The leave-one-out diagnostics use τ_set without the
+  imputed-cell correction (≤ 5% imputation). Mean recorded errors are capped at 3 per episode by the collector.
+- **Stale inputs raise.** The gate refuses replay tables whose reservoir or manifest sha differs from the frozen
+  manifest, a bootstrap K-grid missing any replicate at any T, and any missing bootstrap episode file.
+- **Collection guard.** A staged launch records its filter in `logs/heterogeneity/gitlab/STAGE.json`. Any later
+  launch into that log dir with a different `--pools` / `--through-index` / `--pilot`, or none, refuses before
+  touching STATUS or any lock, and the watchdog does not relaunch it. A hand relaunch after `provider_down`
+  therefore cannot spend the budget on withdrawn GLG cells.

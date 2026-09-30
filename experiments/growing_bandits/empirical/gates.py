@@ -252,6 +252,20 @@ def rehearsal_gate(results: dict) -> GateResult:
     return g
 
 
+def restrict_queue(queue: list[make_pools.QueueItem], attempts: pd.DataFrame, pools: tuple[str, ...] | None,
+                   through_index: int | None) -> tuple[list[make_pools.QueueItem], pd.DataFrame]:
+    """``collection --pools/--through-index``: the queue restricted to `pools` and to indices
+    <= `through_index`, and `attempts` without the records of the queue items dropped -- those are
+    another stage's, not records outside the queue -- so G3's denominator is the restricted queue
+    while ``records_in_queue`` still catches a record that is in no queue item at all."""
+    kept = [q for q in queue if (pools is None or q.pool in pools)
+            and (through_index is None or q.index <= through_index)]
+    if len(kept) == len(queue) or attempts.empty:
+        return kept, attempts
+    dropped = {(q.arm_id, q.task_id, q.replicate) for q in queue} - {(q.arm_id, q.task_id, q.replicate) for q in kept}
+    return kept, attempts[[k not in dropped for k in _keys(attempts)]]
+
+
 def cli_paths(profile: str, log_dir: Path | None, queue: Path | None) -> tuple[Path, Path]:
     """(log dir, queue path) for `profile`, unless given explicitly."""
     spec = collect.PROFILES[profile]
@@ -268,8 +282,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--relaunch-log", type=Path, default=None, help="default: <log-dir>/relaunches.log")
     ap.add_argument("--workers", type=int, default=N_WORKERS,
                     help="the worker count the pilot ran with (every one must produce an ok episode)")
+    ap.add_argument("--pools", type=str, default=None,
+                    help="collection only: judge coverage on these comma-separated pools' queue items only")
+    ap.add_argument("--through-index", type=int, default=None,
+                    help="collection only: judge coverage on the queue items with index <= N only")
     args = ap.parse_args(argv)
     cfg = GATE_PROFILES[args.profile]
+    if args.gate == "pilot" and (args.pools is not None or args.through_index is not None):
+        ap.error("--pools / --through-index restrict the collection gate only")
     if args.gate == "pilot" and cfg["pilot"] is None:
         print(f"profile {args.profile} has no pilot items (the pilot is GitLab only); run the collection gate")
         return 2
@@ -280,6 +300,11 @@ def main(argv: list[str] | None = None) -> int:
         relaunches = count_relaunches(args.relaunch_log or log_dir / RELAUNCH_LOG, mode="pilot")
         g = pilot_gate(attempts, queue, n_workers=args.workers, relaunches=relaunches, **cfg["pilot"])
     else:
+        pools = None if args.pools is None else tuple(sorted({p.strip() for p in args.pools.split(",") if p.strip()}))
+        unknown = [p for p in (pools or ()) if p not in {q.pool for q in queue}]
+        if unknown:
+            ap.error(f"--pools {','.join(unknown)}: not a pool in {queue_path}")
+        queue, attempts = restrict_queue(queue, attempts, pools, args.through_index)
         g = collection_gate(attempts, queue, **cfg["collection"])
     print(g.report())
     return 0 if g.passed else 1

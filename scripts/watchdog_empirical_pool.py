@@ -3,6 +3,7 @@
     .venv/bin/python scripts/watchdog_empirical_pool.py [--pilot] [--workers 8] [--budget 40]
     .venv/bin/python scripts/watchdog_empirical_pool.py --profile gitlab --budget USD [--pilot]
     .venv/bin/python scripts/watchdog_empirical_pool.py --profile gitlab --budget USD --through-index N
+    .venv/bin/python scripts/watchdog_empirical_pool.py --profile gitlab --budget USD --through-index N --pools GLK
 
 ``--profile`` (default ``prereg9``) is forwarded to the collector, and the watchdog's own
 LOG_DIR -- STATUS, ``collect.lock``, the worker files, RELAUNCH_LOG -- follows it:
@@ -11,7 +12,9 @@ to the collector as ``--log-dir`` too, so the two can never watch different dire
 A heterogeneity profile needs an explicit ``--budget``. ``--print-log-dir`` prints that
 directory and exits without touching anything (the launcher uses it). ``--through-index N``
 (heterogeneity profiles) is forwarded to the collector, which stops cleanly after queue item N
-with STATUS ``through`` -- a finished state, never relaunched. The heterogeneity profiles are
+with STATUS ``through`` -- a finished state, never relaunched. ``--pools A,B`` (heterogeneity
+profiles) is forwarded the same way: the collector works only those pools' queue items (composes
+with ``--through-index``) and also ends with STATUS ``through``. The heterogeneity profiles are
 mutually exclusive (collect.py's shared ``logs/heterogeneity/het.lock``): a watchdog refuses to
 launch, or relaunch, while another heterogeneity profile's live process group holds that lock
 (exit `EXIT_HET_LOCKED`).
@@ -71,6 +74,8 @@ FINISHED = ("done", "budget", "provider_down", "through")
 WORKER_FINISHED = ("done", "budget", "provider_down")
 #: Exit code when another heterogeneity profile holds the shared lock (nothing launched).
 EXIT_HET_LOCKED = 5
+#: collect.py's `EXIT_STAGE_MISMATCH`: the log dir's STAGE.json records another stage; never relaunched.
+EXIT_STAGE_MISMATCH = 3
 HET_LOCK_NAME = "het.lock"
 
 
@@ -269,10 +274,11 @@ def profile_log_dir(profile: str) -> Path:
 
 
 def collector_args(workers: int, pilot: bool, budget: float | None, profile: str = DEFAULT_PROFILE,
-                   log_dir: Path | None = None, through_index: int | None = None) -> list[str]:
+                   log_dir: Path | None = None, through_index: int | None = None,
+                   pools: str | None = None) -> list[str]:
     """collect.py's arguments. ``prereg9`` forwards exactly what it always did; any other
     profile adds ``--profile`` and ``--log-dir`` (the directory this watchdog watches), and
-    ``--through-index`` when given."""
+    ``--through-index`` / ``--pools`` when given."""
     extra = ["--workers", str(workers)]
     if budget is not None:
         extra += ["--budget", str(budget)]
@@ -282,6 +288,8 @@ def collector_args(workers: int, pilot: bool, budget: float | None, profile: str
         extra += ["--profile", profile, "--log-dir", str(log_dir if log_dir is not None else profile_log_dir(profile))]
         if through_index is not None:
             extra += ["--through-index", str(through_index)]
+        if pools is not None:
+            extra += ["--pools", pools]
     return extra
 
 
@@ -330,11 +338,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--print-log-dir", action="store_true", help="print this profile's log dir and exit")
     ap.add_argument("--through-index", type=int, default=None,
                     help="heterogeneity profiles: forwarded to collect.py (stop cleanly after queue item N)")
+    ap.add_argument("--pools", type=str, default=None,
+                    help="heterogeneity profiles: forwarded to collect.py (work only these comma-separated pools)")
     args = ap.parse_args(argv)
     if args.profile != DEFAULT_PROFILE and args.budget is None:
         ap.error(f"--profile {args.profile} needs an explicit --budget USD (the collector has no default for it)")
     if args.through_index is not None and args.profile == DEFAULT_PROFILE:
         ap.error("--through-index stages the heterogeneity collection (not --profile prereg9)")
+    if args.pools is not None and args.profile == DEFAULT_PROFILE:
+        ap.error("--pools stages the heterogeneity collection (not --profile prereg9)")
     log_dir = profile_log_dir(args.profile)
     if args.print_log_dir:
         print(log_dir)
@@ -345,11 +357,11 @@ def main(argv: list[str] | None = None) -> int:
     log_dir.mkdir(parents=True, exist_ok=True)
     (log_dir / RELAUNCH_LOG).touch()  # its existence is how gate G2 knows a watchdog supervised the run
     mode = "pilot" if args.pilot else "full"
-    if args.through_index is None:
+    if args.through_index is None and args.pools is None:
         extra = collector_args(args.workers, args.pilot, args.budget, args.profile, log_dir)
     else:
         extra = collector_args(args.workers, args.pilot, args.budget, args.profile, log_dir,
-                               through_index=args.through_index)
+                               through_index=args.through_index, pools=args.pools)
     proc: subprocess.Popen | None = None
     _kill_orphaned_lock_holder(log_dir)  # orphans of a PREVIOUS watchdog session/process
     _ensure_previous_dead(proc)  # a no-op here (no `proc` yet): kept for the "every launch" invariant
@@ -367,6 +379,10 @@ def main(argv: list[str] | None = None) -> int:
         clocks.observe(worker_sizes(log_dir, args.workers), now)
         status = _status(log_dir)
         alive = proc.poll() is None
+        if not alive and getattr(proc, "returncode", None) == EXIT_STAGE_MISMATCH:
+            print("collector refused: this launch's --pools / --through-index / --pilot differ from the stage "
+                  f"recorded in {log_dir / 'STAGE.json'}; NOT relaunching (see collect.out).", flush=True)
+            return EXIT_STAGE_MISMATCH
         stale = clocks.stale(now, finished_workers(log_dir)) if alive and status == "running" else ()
         action = decide(status, alive, (now - last_progress) / 60.0, stale)
         if action == "finished":

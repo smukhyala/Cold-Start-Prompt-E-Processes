@@ -156,6 +156,10 @@ POLICIES: dict[str, dict[str, Any]] = {
     },
     "uniform": {"kind": "uniform", "params": {}, "group": "baseline", "requires": []},
     "fixed_K16": {"kind": "fixed_K", "params": {"K": 16}, "group": "baseline", "requires": []},
+    # Pre-registration 10's fixed scale reference: recruit 8 prompts at once, then refine.
+    "fixed_K8": {"kind": "fixed_K", "params": {"K": 8}, "group": "baseline", "requires": []},
+    # Pre-registration 11's smaller fixed reference (Stage B): recruit 4 prompts at once, then refine.
+    "fixed_K4": {"kind": "fixed_K", "params": {"K": 4}, "group": "baseline", "requires": []},
     # Pre-registration 3's null model: recruit to K(T) immediately, then refine; K(T) the
     # validation argmin per horizon (`select_fixed_k.py`, `baseline_params.json["fixed_K_star"]`).
     "fixed_K_star": {
@@ -298,6 +302,19 @@ TEST_POLICIES: dict[str, tuple[str, ...]] = {
     # Pre-registration 9: the real prompt pools, uncapped; cap-T constants selected on the corpus only.
     "emp": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4"),
     "emp_boot": ("p3_star", "fixed_K_star", "level_star", "phi_k4"),
+    # Pre-registration 10: the prompt-heterogeneity cells, uncapped; Pre-registration 9's five
+    # plus the fixed K = 8 scale reference (its bootstrap deploys all six).
+    "het": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4", "fixed_K8"),
+    "het_boot": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4", "fixed_K8"),
+    # Pre-registration 11: the GLK cell re-scored at the 30-step budget (glk30) and as collected (glk);
+    # Pre-registration 10's six plus the fixed K = 4 reference of Stage B. Each variant has its own
+    # test ids so its episodes and comparator caches can never mix with another's.
+    "glk30": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4", "fixed_K8", "fixed_K4"),
+    "glk30_boot": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4", "fixed_K8", "fixed_K4"),
+    "glk": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4", "fixed_K8", "fixed_K4"),
+    "glk_boot": ("always_search", "p3_star", "fixed_K_star", "level_star", "phi_k4", "fixed_K8", "fixed_K4"),
+    # The calibration family: the three references of the scale / spread contrasts.
+    "cal": ("always_search", "p3_star", "fixed_K8"),
 }
 
 

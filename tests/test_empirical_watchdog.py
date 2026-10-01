@@ -381,6 +381,22 @@ def test_budget_is_forwarded_to_the_collector(tmp_path, monkeypatch):
     assert wd.collector_args(8, False, None) == ["--workers", "8"]
 
 
+def test_collector_args_forward_the_pool_filter_on_every_launch(tmp_path):
+    extra = wd.collector_args(8, False, 260.0, "gitlab", tmp_path, through_index=3059, pools="GLK")
+    assert extra == ["--workers", "8", "--budget", "260.0", "--profile", "gitlab", "--log-dir", str(tmp_path),
+                     "--through-index", "3059", "--pools", "GLK"]
+
+
+def test_a_stage_mismatch_is_final_never_relaunched(tmp_path, monkeypatch):
+    refused = _proc(False)
+    refused.returncode = wd.EXIT_STAGE_MISMATCH
+    log_dir, clock, launches, kills = _loop_env(tmp_path, monkeypatch, [refused])
+    monkeypatch.setattr(wd, "_status", lambda log_dir_: "launching")
+    monkeypatch.setattr(wd, "line_count", lambda log_dir_: 0)
+    assert wd.main(["--pilot", "--budget", "40", "--workers", "8"]) == wd.EXIT_STAGE_MISMATCH
+    assert len(launches) == 1
+
+
 # ---- amendment 1: relaunch hygiene (a previous browser-use worker can survive its leader) -----
 
 

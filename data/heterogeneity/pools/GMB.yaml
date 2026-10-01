@@ -1,0 +1,226 @@
+pool: GMB
+template: configs/template.jinja
+meta:
+  source: GLG subset (bridge)
+  seed: 20260928
+arms:
+- arm_id: GMB_00
+  name: GMB_00
+  vector:
+    planning: 2
+    verification: 2
+    agency: 1
+    expertise: 2
+    format: 2
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 787e8166af20aa04e885ebe6a4f154dece40153bac21e7cd0625f65cf0c5f87f
+- arm_id: GMB_01
+  name: GMB_01
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 2
+    format: 3
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: c04e36aaaba8546366a31fd73a7abea0a0c33b16e9266e4fa3ff8186d4045341
+- arm_id: GMB_02
+  name: GMB_02
+  vector:
+    planning: 2
+    verification: 1
+    agency: 1
+    expertise: 2
+    format: 3
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 5e1167c14105f5fc654f54ada155e503c5c4275fa75f88f53ca1b5a3d8b3720d
+- arm_id: GMB_03
+  name: GMB_03
+  vector:
+    planning: 2
+    verification: 0
+    agency: 2
+    expertise: 3
+    format: 2
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 0de768a7e90b303e11e19a49895904935e24f396c6722c85f950b4df217c7bd6
+- arm_id: GMB_04
+  name: GMB_04
+  vector:
+    planning: 2
+    verification: 3
+    agency: 0
+    expertise: 2
+    format: 1
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 5fc96ef5df9ed583070644767d097815ed50a9d1753c056cd11ebfcd2b2839bf
+- arm_id: GMB_05
+  name: GMB_05
+  vector:
+    planning: 0
+    verification: 3
+    agency: 0
+    expertise: 2
+    format: 0
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 9102ba3938d1c63a6e772e1b382ca2e4d69f6e791fe60556ff926a6123695534
+- arm_id: GMB_06
+  name: GMB_06
+  vector:
+    planning: 1
+    verification: 3
+    agency: 2
+    expertise: 2
+    format: 1
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: cb36b040cd907e2af392020db5a2a8684fdfaf45fa03754e49430568c6a2af9f
+- arm_id: GMB_07
+  name: GMB_07
+  vector:
+    planning: 2
+    verification: 1
+    agency: 1
+    expertise: 3
+    format: 0
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 29b0cbda721b87b9aa63112ce9199f1bf04bd03009bcb05e9c0ac6eb341a3e84
+- arm_id: GMB_08
+  name: GMB_08
+  vector:
+    planning: 3
+    verification: 0
+    agency: 2
+    expertise: 0
+    format: 2
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 0dd721702509fdd46c884efe6693df21b7b2fc325eb2fa7e5d4bd08c24ea3f20
+- arm_id: GMB_09
+  name: GMB_09
+  vector:
+    planning: 1
+    verification: 3
+    agency: 0
+    expertise: 0
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 299f9a93c2a730ea3c0b508ebc75ee2639bacea160dd8e0d22c35b259b198b4d
+- arm_id: GMB_10
+  name: GMB_10
+  vector:
+    planning: 3
+    verification: 0
+    agency: 2
+    expertise: 3
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: f9eb1bef8dd32295383c863611e042c2657953b4cc4c2736e162bd2ad4e13227
+- arm_id: GMB_11
+  name: GMB_11
+  vector:
+    planning: 0
+    verification: 1
+    agency: 2
+    expertise: 2
+    format: 0
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 210357cca94db780192c48ab14963cb5a6d8a96724acd9445e0b150e31a1cc38
+- arm_id: GMB_12
+  name: GMB_12
+  vector:
+    planning: 1
+    verification: 1
+    agency: 0
+    expertise: 2
+    format: 0
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 6ed8bfab6cada244aca80664e1162946178686b26b6ae8535aaa74f8fcf2e2c8
+- arm_id: GMB_13
+  name: GMB_13
+  vector:
+    planning: 1
+    verification: 2
+    agency: 0
+    expertise: 1
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: 689161ae9a873e994b53f41ba90100cbed71c5846f74599d9233dcf7f2a5072d
+- arm_id: GMB_14
+  name: GMB_14
+  vector:
+    planning: 3
+    verification: 1
+    agency: 0
+    expertise: 1
+    format: 1
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 5311113b0d1e9b8a35e6981691980f7f0e61b23904730cc86c89bd0b2a7969b6
+- arm_id: GMB_15
+  name: GMB_15
+  vector:
+    planning: 2
+    verification: 3
+    agency: 1
+    expertise: 3
+    format: 0
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 721ad02a83c33b445effeea884dae5cfa256effb84e8af64698aaaee9d603d5b
+- arm_id: GMB_16
+  name: GMB_16
+  vector:
+    planning: 2
+    verification: 2
+    agency: 1
+    expertise: 0
+    format: 2
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 5b8390854af08e645db9a5b55ddf129f589ddd586f57cf07a965b719554b9eac
+- arm_id: GMB_17
+  name: GMB_17
+  vector:
+    planning: 3
+    verification: 2
+    agency: 1
+    expertise: 3
+    format: 2
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: d8bc287c190bf6f8df6f321d7df57c690b9275cc164823511a013706cf08d36b
+- arm_id: GMB_18
+  name: GMB_18
+  vector:
+    planning: 3
+    verification: 1
+    agency: 1
+    expertise: 0
+    format: 2
+    goal: 2
+  prompt_guidance: ''
+  prompt_sha256: 1f913908d06fa94406810187a5adfc1424022f976a355ac4eccb12b8b7366540
+- arm_id: GMB_19
+  name: GMB_19
+  vector:
+    planning: 2
+    verification: 3
+    agency: 2
+    expertise: 2
+    format: 0
+    goal: 1
+  prompt_guidance: ''
+  prompt_sha256: b9aeba103acae01ba4eaeedca9ed56b5c599dae126a7fd5fb6b0f1fe813e0b86

@@ -1,0 +1,7 @@
+env_id,pool,variant,horizon,cost,label
+glk_GLK_npmle,GLK,npmle,500,0.0007299993038176996,extrapolation
+glk_GLK_npmle,GLK,npmle,1000,0.0008949991464613999,extrapolation
+glk_GLK_parametric,GLK,parametric,500,0.0005324994921683986,extrapolation
+glk_GLK_parametric,GLK,parametric,1000,0.0005074995160102985,extrapolation
+glk_GLK_raw,GLK,raw,500,0.002633333563804699,extrapolation
+glk_GLK_raw,GLK,raw,1000,0.0027333331108093002,extrapolation

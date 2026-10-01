@@ -861,3 +861,391 @@ chosen by the pool seed, stratified by difficulty, without reference to any outc
 - **Budget:** estimated total ≈ $345; the hard stop stays $260 and is raised by Sanjay when reached.
 - Everything else in Pre-registration 9 — pools, estimator, cells, policies, flatness guard, contrasts,
   MEI, B = 200 — is unchanged.
+
+## Pre-registration 10 — where prompt heterogeneity comes from (registered 2026-09-29, before any paid episode)
+
+Pre-registration 9 found both real Gmail pools flat, so every contrast was uninformative (§13). This
+registers the test of the claim that **prompt heterogeneity is a prerequisite for adaptive prompt search**:
+cells that differ in environment (Gmail, GitLab plan-and-track) and prompt content (stylistic grid prompts G,
+manual-derived knowledge prompts K), anchors that check the instrument, and a calibration curve that places
+every pool. Design: `docs/superpowers/specs/2026-09-28-prompt-heterogeneity-design.md` (as amended before
+registration, last amendment `955c89c`); plan `docs/superpowers/plans/2026-09-28-prompt-heterogeneity.md`.
+Code frozen at `ce6c376`.
+
+### Hypotheses
+
+- **H1 (environment):** τ_main(GitLab, G) − τ_main(Gmail, G) > 0.
+- **H2 (content):** τ_main(env, K) − τ_main(env, G) > 0, per env.
+- **H3 (thesis):** in flat cells all policies tie; in meaningful cells the simulation's ordering reappears.
+- **H4 (portability, reported):** G prompts' main effects in Gmail predict those in GitLab (Spearman ρ).
+
+### Design
+
+- **Agent (identical to Pre-reg 9):** `gpt-5.4-mini`, low effort, 30 steps, no vision, browser-use 0.13.1,
+  webarena-infinity `b3015d79` (working tree dirty in `uv.lock` only).
+- **Cells and episodes (8,070 new):**
+
+  | cell | pool | prompts × tasks | wall clock | episodes |
+  |---|---|---|---|---|
+  | Gmail × G (`GMG`) | Pre-reg 9's G, reused, relabelled `GMG_G_xx` | 50 × 30 | 180 s | 0 new |
+  | Gmail × K (`GMK`) | 40 knowledge prompts | 40 × 30 | 180 s | 1,200 + 120 replicates |
+  | GitLab × G (`GLG`) | the same 50 G prompts, byte-identical | 50 × 60 | 600 s | 3,000 + 300 replicates |
+  | GitLab × K (`GLK`) | 40 knowledge prompts | 40 × 60 | 600 s | 2,400 + 240 replicates |
+  | GitLab anchors | `baseline`, `explorer`, `gitlab_oracle_operator` | 3 × 60 | 600 s | 180 |
+  | Gmail anchor | `baseline` (drift) | 1 × 30 | 180 s | 30 |
+  | Timeout bridge (`GMB`) | 20 of the G prompts in Gmail | 20 × 30 | 600 s | 600 |
+
+- **Tasks:** GitLab 60 of 140 (20 easy / 20 medium / 20 hard, seed 20260928) in two stratified blocks of 30;
+  block A = task_e1, e2, e3, e5, e7, e9, e11, e13, e14, e19, task_m2, m4, m5, m7, m8, m11, m12, m16, m18, m19,
+  task_h8, h12, h18, h19, h26, h72, h77, h84, h89, h100 (block B in the manifest). Gmail: Pre-reg 9's 30-task
+  subset (Amendment 1).
+- **K pools:** written by `claude-opus-4-7` from frozen manual-only bundles (GitLab 23,343 words over labels,
+  boards, milestones, issues, epics, iterations; Gmail 24,999 words over settings, organize, compose), never
+  from task text; 40 kept per app, **0 leak-guard rejections** (8-token overlap with any task instruction,
+  or a task entity). Disclosed after generation, before any episode: `GMK_26` shares a 6-token phrase with
+  Gmail task "Change button labels to show text instead of icons" — it quotes the manual's Button labels
+  procedure. It passes the registered guard and is kept (knowledge content is the treatment); §14 reports
+  the Gmail K analyses with and without that task as a sensitivity.
+- **Frozen files** (`data/heterogeneity/manifest.json`, sha256 `96c51fef470bfa5190786e2c18b01d0308feffcf53fdca151fb3d18df0b5e946`):
+  `pools/GLG.yaml` `f463fc5c…ec00f`, `pools/GLK.yaml` `aa0bd7d8…e75e145`, `pools/GMK.yaml` `5ec8d439…c7a1`,
+  `pools/GMB.yaml` `184600cb…6d79`, `pools/anchors_gitlab.yaml` `3eed1138…864df`,
+  `pools/anchors_gmail.yaml` `9c8a214d…6465d`, `bundles/gitlab.md` `98dc4b9f…8e70e`,
+  `bundles/gmail.md` `dacadc05…1ce3`, `k_generation_gitlab.json` `7297a92a…2a35`,
+  `k_generation_gmail.json` `2f437480…a99`, `gitlab/queue.jsonl` `2b87a9fe…aedbb9`,
+  `gmail/queue.jsonl` `c36e27c3…f9a6`, `bridge/queue.jsonl` `e354a094…eaf` (full hashes in the manifest;
+  every collector start and `replay.py estimate` verifies them). GMG is read from Pre-reg 9's
+  sha-checked outcomes snapshot.
+- **Queues and staging** (mutually exclusive profiles, shared `logs/heterogeneity/het.lock`): (1) GitLab
+  pilot = 5 GLG + 5 GLK + 3 anchors × block A (queue items 0–389); (2) GitLab through block A and its
+  replicates (items ≤ 3059, STATUS `through`); (3) Gmail (GMK + anchor, then 120 GMK replicates); (4) the rest
+  of GitLab (block B, then its replicates, items ≤ 6119); (5) the bridge. GitLab replicates: 150 GLG + 120 GLK
+  from block-A cells after block A, the same from block-B cells after block B.
+- **Block-A fallback (mechanical):** if any GitLab arm lacks a terminal replicate-0 record on a block-B task,
+  every GitLab cell is analysed on block A; every output records `task_universe`.
+- **If the bridge never runs:** the operator creates `logs/heterogeneity/bridge/` with STATUS `budget` and no
+  records so `replay.py estimate` can run; H1's primary is then reported **untestable** and the secondary
+  (all 50 G prompts, Gmail at 180 s) is reported without a verdict.
+- **Scoring:** as Pre-reg 9 — agent timeout = 0; infrastructure error retried twice then `missing`; every
+  record carries `ended_by` (clock / steps / agent) and the prompt's sha256 (asserted against the pool).
+
+### Statistics
+
+- **Variance decomposition (§6.1):** balanced crossed MoM per cell; τ_main = √((MS_prompt − MS_resid·c)/J)
+  with the Graybill–Wang MLS interval; τ_set = √((MS_prompt − c·σ̂²_e)/J), σ̂²_e from the cell's replicate
+  pairs (GMB borrows GMG's), with its MLS interval; ≤ 5% missing cells filled additively (df corrected),
+  more is an error.
+- **Split-half (§6.2):** difficulty-stratified halves, Spearman–Brown r, 10,000 label permutations.
+- **H1/H2 intervals:** prompt-only bootstrap (tasks fixed), B = 2,000, percentile. H1 primary pairs the 20
+  bridge prompts (GLG vs GMB at 600 s, resampled jointly); secondary all 50 (GLG vs GMG at 180 s). H2
+  resamples each pool independently. **Supported** iff the one-sided 95% lower bound > 0; **refuted** iff the
+  upper bound < 0.01; else inconclusive. If both hold, "supported" with `effect_below_threshold`.
+- **H4:** Spearman ρ of unshrunk G main effects, bootstrap CI; reported only.
+- **Pool shape (§6.4):** NPMLE per cell under x̄ᵢ ~ N(μᵢ, σ̂²_e/nᵢ) → replay reservoir; upper-tail mass
+  (share ≥ median + 0.10) with a prompt-bootstrap CI (B = 200, NPMLE re-fit, execution noise held at the
+  cell's estimate). Replay: cap = T, M = 1,000, CRN seeds from 10,000,000,000; T ∈ {50, 100, 200} primary,
+  {500, 1000} secondary; regret range over `DEFAULT_K_GRID`; its prompt-bootstrap CI at every primary T
+  (B = 200, NPMLE re-estimated, M = 250 — the M = 250 range is biased upward by ≈ 0.001).
+- **Classification (§6.5), per cell:**
+  - **flat** — regret range < 0.005 at T = 50, 100 and 200 **and** its T = 200 bootstrap upper bound < 0.01;
+  - **meaningful** — regret range ≥ 0.01 at ≥ 2 of 3 primary T **and** its T = 200 bootstrap lower bound > 0.005;
+  - **moderate** — otherwise.
+  - **τ_flat = 0.019166** (`calibrate.tau_flat_from_calibration`: the level-0.6 Beta pool whose regret range at
+    T = 200 is 0.005; `calibration.csv` sha256 `48b06726c6a1d566347c74602900bc571414dbf1cb2cfe27a26f0df80758c7d5`).
+    Reported beside every class with `tau_bound_below_flat`; **never decisive** (amended: at J = 30–60 a τ = 0
+    pool clears it only 9–21% of the time). The Beta calibration curve sits above NPMLE-shaped pools
+    (at spread 0.035: Beta 0.0147 vs Pre-reg 9's NPMLE G 0.009) — it is a reference, not a threshold.
+- **H3 (§6.6):** in every meaningful cell, prompt-bootstrap contrasts (MEI 0.002):
+  `het_scale` = `p3_star` − `fixed_K8` (supported iff upper bound < −MEI), `het_spread` =
+  `always_search` − `p3_star` (supported iff lower bound > +MEI), and Pre-reg 9's three for continuity
+  (`het_primary`, `het_level`, `het_phi`). **Supported** iff every flat cell has range < 0.005 at every primary T
+  and ≥ 1 meaningful cell has `het_scale` and `het_spread` both supported. **Refuted** iff a flat cell shows a
+  policy difference > MEI with an interval excluding 0, or a meaningful cell shows either contrast reversed
+  beyond MEI — refutation outranks untestable, and only per-cell rows decide (pooled rows are
+  supplementary). **Untestable** iff no cell is meaningful.
+- **Anchor recovery (§8):** recovered iff `GL_anchor_oracle`'s rate > the 90th percentile of GLG ∪ GLK
+  per-prompt rates and `GL_anchor_explorer`'s < the 10th, on the analysis universe. **Not recovered → no
+  heterogeneity claim is made.** Gmail baseline drift vs Pre-reg 9 reported.
+- **Sensitivities (reported, no verdicts):** discriminating tasks (across-prompt rate in [0.2, 0.8]);
+  timeout sensitivity (clock-ended episodes as missing, a prompt that always timed out dropped and counted);
+  per-prompt timeout rates; REML / GLMM.
+- **Seeds:** verdict bootstraps from 60,000,000,000; calibration from 50,000,000,000 — all disjoint from
+  Pre-reg 9. A non-registered `--seed` or `--n-boot` stamps every output `unregistered`.
+
+### Stage 0 (free, run before registration)
+
+| data | τ_main [95%] | τ_set [95%] | note |
+|---|---|---|---|
+| Gmail G (Pre-reg 9) | 0.018 [0, 0.044] | 0.034 [0.012, 0.052] | matches §13's 0.035 |
+| Gmail F (Pre-reg 9) | 0 | 0 | flat |
+| old GitLab, 18 arms | 0.125 [0.086, 0.199] | — (no replicates) | |
+| old GitLab without oracle and explorer | 0.057 [0.016, 0.111] | — | spec expected ≈ 0.02; inside the interval |
+
+### Gates
+
+- **G2 pilot (GitLab):** missing ≤ 5% counting never-attempted items; 0 watchdog relaunches; all 8 workers
+  productive; cost ≤ $0.25 per episode; anchor ordering oracle > explorer on the pilot tasks. Only anchor and
+  aggregate cost/infra metrics are computed during the pilot.
+- **G3 per profile:** missing ≤ 5% per cell counting never-attempted items; `provider_down` breaker as Pre-reg 9.
+- **Budget:** unknown per-episode cost (≈ $810 at $0.10). Hard stop per stage, set by Sanjay; STATUS `budget`
+  resumes after a top-up.
+
+### Run
+
+```
+scripts/run_empirical_pool.sh --profile gitlab --pilot --budget 60
+.venv/bin/python experiments/growing_bandits/empirical/gates.py pilot --profile gitlab
+scripts/run_empirical_pool.sh --profile gitlab --budget <B2> --through-index 3059
+scripts/run_empirical_pool.sh --profile gmail  --budget <B3>
+scripts/run_empirical_pool.sh --profile gitlab --budget <B4>
+scripts/run_empirical_pool.sh --profile bridge --budget <B5>
+.venv/bin/python experiments/growing_bandits/empirical/gates.py collection --profile gitlab   # and gmail, bridge
+.venv/bin/python experiments/growing_bandits/empirical/replay.py estimate --study het
+.venv/bin/python experiments/growing_bandits/empirical/replay.py point --study het --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/replay.py kgrid --study het --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/describe.py --study het
+.venv/bin/python experiments/growing_bandits/empirical/replay.py boot --study het --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/replay.py boot_kgrid --study het --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/het_verdicts.py --tau-flat 0.019165515325428883
+.venv/bin/python -c "import sys; sys.path.insert(0, 'experiments/growing_bandits/empirical'); import figures; from pathlib import Path; figures.make_figures(Path('results/growing_bandits/heterogeneity'), Path('results/growing_bandits/heterogeneity/figures'), tau_flat=0.019165515325428883)"
+```
+
+### Pre-registration 10 — Amendment 1 (2026-09-29, after a paused pilot, before any analysis)
+
+**Why.** The GitLab pilot was paused at 176 of 390 episodes ($21.26, 0 watchdog relaunches, 0 non-ok
+records, $0.12 per episode) because the registered agent step cap has never been enforced.
+`src/cold_start/tasks/webarena.py:156` passes `max_steps` to the `browser_use.Agent(...)` constructor,
+which accepts arbitrary keyword arguments and ignores that one; the cap belongs to `Agent.run(max_steps=)`,
+whose default in browser-use 0.13.1 is 500. The bug dates from the adapter's first commit (`fde1f56`), so
+**Pre-registration 9 ran under the same condition**: its "30 steps" was also never applied. In every
+collected dataset the wall clock is the only bound on an episode.
+
+**Evidence, measured before this amendment.** Pre-reg 9 (Gmail, 180 s): 152 of 3,330 episodes (4.6%)
+exceeded 30 steps without reaching the clock; 53 of them succeeded. GitLab pilot (600 s): 25 of 168
+exceeded 30 steps (14.9%, up to 134); 20 succeeded; the pooled success rate would be ≈ 0.70 instead of
+0.815 had they been cut at 30. `ended_by` therefore never reports `steps`. Secondary: 5 pilot episodes
+ended 10–140 s past the 600 s clock without `timed_out`, because `asyncio.wait_for` cannot cancel a
+coroutine inside a blocking call; they are ordinary agent-ended episodes and are kept.
+
+**Disclosure.** While diagnosing, the controller saw the pilot's aggregate success rate (0.815 over 168
+ok records), success by step bucket (≤ 30 steps vs > 30), cost and clock-ended counts by task tier
+(e/m/h), record counts by pool (GLG 60, GLK 53, anchor 38 at that time), and the same aggregates for
+Pre-reg 9. No per-prompt rate, per-arm success, τ, reservoir, K-grid, anchor ordering or contrast was
+computed. Sanjay chose this amendment over fixing the cap and rerunning.
+
+**What changes.**
+- **Agent:** the "30 steps" clause is struck. The registered agent is `gpt-5.4-mini`, low effort, no vision,
+  browser-use 0.13.1 with its default `max_steps` (500, never reached in any collected episode), bounded
+  only by the profile wall clock (GitLab 600 s, Gmail 180 s, bridge 600 s). This is what Pre-reg 9 actually
+  ran, so H1's "same agent, same 50 G prompts" pairing holds on actual rather than nominal conditions.
+- **Code:** the adapter is left as is for the whole Pre-reg 10 collection (fixing it mid-study would split
+  the data). The fix (`agent.run(max_steps=self.max_steps)`) is filed for after the collection.
+- **Pilot records:** the 176 records collected before the pause count in full; the 8 episodes in flight at
+  the pause were not written and are re-attempted on resume. The run resumes from STATUS `paused` with the
+  same command and budget; gate G2 is unchanged (0 relaunches so far, `relaunches.log` empty).
+- **Timeout sensitivity (§ Statistics):** unchanged — clock-ended episodes are the registered sensitivity;
+  no step-based sensitivity is added.
+- **Write-up:** §13 gains a note that Pre-reg 9's agent had no step cap; §14 states the same for this study.
+
+## Pre-registration 11 — the knowledge pool under the registered per-episode budget (registered 2026-09-30, before any further paid episode)
+
+*Branch `prompt-heterogeneity`. This is the final planned collection leg. It narrows Pre-registration 10 to
+one cell and one question, adds a primary outcome scored at the originally registered 30-step budget, and
+fixes the heterogeneity gate and the Stage B thesis test before any of the 1,170 new episodes runs.
+Results become §15 of `DEPLOYMENT_RESULTS.md`.*
+
+### Question
+
+Does a real, plausible prompt pool exist whose heterogeneity is large enough that candidate search has
+decision value, and if so does the qualitative behaviour the simulation predicts reappear there: too little
+search leaves value on the table, too much prevents refinement, and a simple budget-scaled recruit-then-refine
+schedule captures most of the attainable value?
+
+### Why this cell, and why the budget (audit before registration, aggregates only)
+
+- Under the as-collected regime (600 s wall clock, no step cap — Pre-reg 10 Amendment 1) block A is a
+  degenerate search problem: pooled over the 13 pilot arms, 14 of 30 tasks succeed at ≥ 0.95 for every arm
+  and 4 sit at ≤ 0.05; only 7 are in [0.2, 0.8]. `GL_anchor_oracle` − `GL_anchor_baseline` is +0.10 on easy
+  and medium tasks and 0.00 on hard ones; `GL_anchor_explorer` scores 0.833 where the June run scored 0.20.
+  Given unlimited steps the agent brute-forces what it can solve and the prompt stops mattering.
+- The June GitLab run (same model, 180 s clock, ≤ 40 steps) had 19 of 40 discriminating tasks and a true
+  spread of 0.057 [0.016, 0.111] among its 16 non-anchor hand-written prompts (Stage 0).
+- Re-scoring the pilot at the 30-step budget the original Pre-reg 10 text named (exact from the recorded
+  `steps`: an episode that succeeded after step 30 is a failure under the budget; the cap only truncates a
+  trajectory) gives 11 of 30 discriminating tasks and restores the anchor ordering the instrument check was
+  designed for: oracle 0.867 > baseline 0.733 > explorer 0.633. Pool means: GLG 0.633, GLK 0.647
+  (uncapped 0.793 / 0.793). Hard tasks take a median of 29 steps and a 90th percentile of 55; the mechanism
+  is efficiency — a prompt that knows where things live finishes inside the budget.
+- The 30-step value is not tuned: it is the one the original registration named. Counterfactuals at 20 and
+  15 steps were computed while auditing (reported here for transparency: 7 and 10 discriminating tasks,
+  more floor tasks) and are not used.
+- **Disclosure of what was seen before this registration:** per-task pooled success rates over all 13 pilot
+  arms (uncapped and at 30 / 20 / 15 steps); anchor rates by tier and overall in both regimes; GLG and GLK
+  pool means by tier, timeout counts and mean steps; cost per episode; step quantiles by tier; the 40 GLK
+  prompts' lengths (48–107 words) and feature-area coverage counts (1–5 areas each). **No per-prompt
+  success rate, spread, reservoir, K-grid or contrast was computed for any pool.**
+
+### Design (nothing new is built; the frozen Pre-reg 10 queue serves it)
+
+- **Cell:** GLK, the 40 manual-derived GitLab procedural prompts (`pools/GLK.yaml`, sha in the manifest), on
+  block A (30 tasks, 10 per tier). Anchors are outside the pool and are instrument checks only.
+- **Episodes:** the queue's GLK block-A items with `index ≤ 3059`: 1,200 main cells (150 collected in the
+  pilot, 1,050 new) and the 120 GLK block-A replicate cells (indices 2792–3059) — **1,170 new episodes**.
+  Collected exactly as Pre-reg 10 collects them (uncapped adapter, 600 s), via the collector's `--pools GLK`
+  filter with `--through-index 3059`; the run ends with STATUS `through`.
+- **Withdrawn from collection:** the remaining GLG block-A cells, block B, its replicates, the Gmail K pool
+  and anchor, and the timeout bridge. Pre-reg 10's H1, H2 and H4 are therefore **untestable and reported as
+  not collected**; its H3 is tested on this cell alone. The GLG attribution control (45 prompts × block A) is
+  permitted later only if GLK is decision-relevant and the write-up needs to attribute the effect to
+  procedural knowledge rather than to the budget; it would be registered separately.
+- **Budget:** expected ≈ $163 at the pilot's $0.139 per episode; hard stop `--budget 260` cumulative over the
+  gitlab log dir (which already holds $54.13). Gate G3: missing ≤ 5% of the 1,320 GLK block-A items.
+- **Operator environment:** the Mac stays on AC power with the lid open (the pilot's single watchdog
+  relaunch was host sleep); a relaunch caused by host sleep is reported, not counted against G3.
+
+### Primary outcome and task mixes
+
+- **Primary outcome `success_30`** = `success ∧ steps ≤ 30 ∧ ¬timed_out` on every ok record (main and
+  replicate), applied at load time by a study variant (`--study glk30`). **Secondary outcome:** the
+  as-collected success (`--study glk`). Every table is produced for both; classification, gate and Stage B
+  are read on the primary. Caveat disclosed: browser-use tells an agent when it is on its last permitted
+  step, so a live 30-step run could differ marginally from re-scoring; the re-scoring is the registered
+  quantity.
+- **Primary task mix:** block A, equal weights (the registered stratified block). **Secondary S1:** the
+  bank-weighted mix, tiers weighted 20 : 20 : 100 as in the 140-task bank (prompt score = Σ_j w_j y_ij,
+  effective n_i = 1 / Σ_j w_j² for the noise term). **Secondary S2:** the discriminating subset — tasks whose
+  GLK-pooled `success_30` rate lies in [0.2, 0.8] (spec §6.7). S2 may move a verdict from flat to moderate
+  only, never to decision-relevant.
+- **Noise:** GLK's own 120 block-A replicate pairs, scored the same way. **Estimation:** Pre-reg 10 §6.1–6.4
+  unchanged (ANOVA τ_main / τ_set with MLS intervals, split-half r_SB, NPMLE reservoir, K-grid replay at
+  T ∈ {50, 100, 200} with cap = T and M = 1,000, prompt bootstrap B = 200 for the regret-range interval).
+
+### Classification (Pre-reg 10 §6.5 kept; one tier added)
+
+| tier | rule |
+|---|---|
+| flat | regret range < 0.005 at all three primary T and `rr_hi_T200` < 0.01 |
+| meaningful | regret range ≥ 0.01 at ≥ 2 of 3 primary T and `rr_lo_T200` > 0.005 |
+| moderate | otherwise |
+| **decision-relevant** (sub-tier of meaningful) | regret range at T = 200 ≥ 0.02 **and** `rr_lo_T200` > 0.01 **and** gap(`fixed_K8`) ≥ 0.005 **and** gap(`always_search`) ≥ 0.01 (gaps to the pool's own K-grid minimum at T = 200 on the NPMLE reservoir) **and** the regret range at T = 200 with the top and bottom prompt removed ≥ 0.015 **and** split-half r_SB > 0 at p < 0.05 |
+
+Calibration equivalents (Stage 0, T = 200): flat ≈ true sd < 0.02 (τ_flat 0.0192); decision-relevant ≈ sd
+≥ 0.07 on Beta pools (fixed-K8 gap crosses 0.005 between sd 0.05 and 0.075) or ≥ 0.03 on rare-great-arm
+mixtures. "Statistically detectable" (τ_set MLS lower bound > 0, or r_SB > 0 at p < 0.05) is reported
+beside the tier and decides nothing.
+
+### Gate (Stage A → Stage B)
+
+Stage B's verdict is **read** iff GLK is decision-relevant on the primary mix, or moderate on the primary mix
+and decision-relevant on S1. Otherwise the leg ends with the classification and Stage B is run for the
+record only (as Pre-reg 9's flatness guard). The gate governs interpretation and any further collection;
+Stage B itself costs nothing.
+
+### Stage B — the thesis test (replay on the NPMLE reservoir; fixed before data)
+
+Policies: `fixed_K4`, `fixed_K8`, `p3_star` (the corpus-tuned cap-T constants, unchanged), `always_search`,
+and the pool's K-grid minimum per horizon as the ceiling. No learned policy. A live online run is impossible
+for `always_search` on a 40-prompt pool (it needs T distinct prompts), so replay is the test, disclosed.
+Contrasts at each T ∈ {50, 100, 200}, prompt-bootstrap intervals (B = 200), MEI = 0.002:
+
+- **C1 (too little search loses):** `het_scale` — `p3_star` − `fixed_K8` < −MEI, one-sided lower bound rule.
+- **C2 (too much search loses):** `het_spread` — `always_search` − `p3_star` > +MEI.
+- **C3 (the schedule captures most of the value):** captured = (max regret over the K grid − regret of
+  `p3_star`) / (max regret − regret at the K-grid minimum); holds iff the point estimate ≥ 0.7 and its
+  bootstrap 5th percentile ≥ 0.5, or `p3_star`'s gap to the minimum ≤ 0.005.
+
+**Supported:** C1, C2 and C3 all hold at ≥ 2 of the 3 horizons. **Partially supported:** C2 and C3 hold but C1
+fails (spread with a thin tail: a small fixed K suffices); or C1 and C2 hold but C3 fails (the corpus-tuned
+constants do not transfer). **Contradicted:** C1 or C2 reversed beyond MEI (interval excluding 0 on the wrong
+side) at any primary horizon, or captured < 0.5 at ≥ 2 horizons. A model-free secondary at T = 40: replay on
+the recorded outcome matrix, prompts drawn without replacement, a random task per pull (`fixed_K4`,
+`fixed_K8`, search-all-40-once), reported beside C1.
+
+### Fake-positive diagnostics (all pre-registered; each reported beside the tier)
+
+1. Anchors excluded from the pool; the tier is recomputed with the top and bottom prompt removed and with the
+   top four removed (decision-relevant requires the drop-2 range ≥ 0.015, above).
+2. Leave-one-prompt-out τ_set²: no prompt may move it by more than 30%.
+3. Leave-one-task-out τ_set²: no task may carry more than 30%; split-half r_SB > 0 at p < 0.05 is required
+   for decision-relevant (prompt differences must generalise across tasks).
+4. Length: Spearman(words, rate) reported; τ_set after regressing prompt rate on length must be ≥ 0.8 × τ_set.
+5. Timeouts and steps: per-prompt clock-ended share, mean steps and mean recorded errors, each with its
+   Spearman against the rate; τ_set in both regimes side by side (efficiency vs capability).
+6. Leak guard: already applied at pool freeze (0 rejections); the 6-gram overlap scan is re-run and reported.
+7. Noise: 120 replicate pairs; v̂ with its interval; raw and deconvolved spreads both reported.
+
+### What each outcome means (fixed now)
+
+- **A, decision-relevant and Stage B supported:** the paper gains its positive real cell; the calibration
+  curve gets a real point in the regime where search matters; the claim becomes that prompts vary when they
+  carry procedural knowledge and the agent works under a per-episode budget, and there the schedule captures
+  a stated share of the attainable value while small K and always-search each lose a stated amount.
+- **B, decision-relevant but Stage B partial or contradicted:** C1 failing challenges "K should grow with the
+  budget" on real pools; C3 failing challenges "a schedule tuned once generalises" (§12.8) and the paper must
+  say real pools need per-domain constants; C2 failing most likely indicates a misestimated reservoir, which
+  the T = 40 matrix replay exposes.
+- **C, flat or moderate under the budget:** stylistic, free-form and manual-derived procedural prompts are
+  all below decision relevance under this agent even when budgeted; the paper's conclusion becomes that the
+  bottleneck in adaptive prompt search is the candidate reservoir's behavioural diversity, not the search
+  algorithm, with the June 0.057 spread reported as the one hint that a more constrained agent shows more
+  prompt sensitivity (future work).
+
+### Stop rule
+
+This leg is finished when GLK on block A has been classified on the primary outcome and Stage B has been
+replayed and written up (§15), whatever the outcome. Block B, the bridge, the Gmail K pool and any new pool
+are not run. The GLG attribution control is the single permitted addition, under the condition above and
+its own registration. Any other proposal must name the sentence of the paper that would read differently
+depending on its result, or it is future work.
+
+### Run, in order
+
+```bash
+scripts/run_empirical_pool.sh --profile gitlab --budget 260 --through-index 3059 --pools GLK
+.venv/bin/python experiments/growing_bandits/empirical/gates.py collection --profile gitlab --pools GLK --through-index 3059
+.venv/bin/python experiments/growing_bandits/empirical/replay.py estimate --study glk30   # and --study glk
+.venv/bin/python experiments/growing_bandits/empirical/replay.py point   --study glk30 --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/replay.py kgrid   --study glk30 --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/replay.py boot    --study glk30 --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/replay.py boot_kgrid --study glk30 --workers 12
+.venv/bin/python experiments/growing_bandits/empirical/describe.py --study glk30
+.venv/bin/python experiments/growing_bandits/empirical/glk_gate.py --study glk30 --tau-flat 0.019165515325428883
+```
+
+### Pre-registration 11 — Amendment 1 (2026-09-30, after code review, before any Pre-reg 11 episode)
+
+An independent review of the implementation found places where the registered text was ambiguous or the code
+did not implement it. These rulings are made **before any of the 1,170 episodes runs and before any analysis
+of GLK data**; the only data seen remains the audit aggregates disclosed above.
+
+- **S1's split-half.** S1 re-weights the same 40 prompts on the same 30 tasks, so its split-half r_SB and p are
+  the primary mix's. (As first written, S1 carried no split-half and so could never be decision-relevant,
+  which made the gate's second branch unreachable.) The ANOVA spread estimates are unweighted and are reported
+  as not defined for S1.
+- **Diagnostic 1.** "Top four removed" means the four highest-rate prompts (not two top and two bottom). On the
+  primary mix the tier is recomputed in full on each drop variant — regret range at T = 50 / 100 / 200, its
+  T = 200 bootstrap interval, the two gaps and the split-half on the remaining prompts — and reported
+  (`drop2_tier`, `drop4_tier`). The decision-relevance condition is unchanged: the drop-2 range at T = 200 ≥ 0.015.
+- **Noise per mix.** A mix's within-cell variance is v_mix = Σ w_t² s_p / Σ w_t² over the replicate pairs on
+  tasks the mix weights (s_p = (x₀ − x₁)² / 2). Equal weights on all 30 tasks reproduce the registered v; S2
+  uses only its discriminating tasks' pairs, whose noise is higher than the floor and ceiling tasks'. Using the
+  all-task v would have understated S2's noise and biased it toward heterogeneity.
+- **S2's cap.** S2 may move a verdict from flat to moderate only, so both its class and its tier are capped at
+  moderate.
+- **Stage B precedence and the gap branch.** A horizon at which C3 holds, including through its small-gap branch,
+  never counts toward "captured < 0.5". "Reversed beyond MEI" is Pre-reg 10's rule: for C1 the bootstrap lower
+  bound above +MEI, for C2 the upper bound below −MEI. Contradicted takes precedence over supported. When no
+  registered pattern holds at two horizons the verdict is `inconclusive`.
+- **Gaps on S1 / S2.** The always-search gap is fixed K = T on the K-grid, the same policy as `always_search` at
+  cap T. The fixed-K8 gap is K = 8. The primary mix keeps the policy episodes.
+- **Matrix replay (T = 40).** A prompt's rate is its replicate-0 rate. A pull draws a task among the prompt's
+  observed cells, so a missing cell is never scored as a failure. Refinement is round-robin with a Beta(1, 1)
+  pick, not the harness's rule; this is disclosed beside C1.
+- **Reported, not decided.** The Stage B table carries each of `fixed_K4`, `fixed_K8`, `p3_star` and
+  `always_search`'s gap to the K-grid minimum per T. The leave-one-out diagnostics use τ_set without the
+  imputed-cell correction (≤ 5% imputation). Mean recorded errors are capped at 3 per episode by the collector.
+- **Stale inputs raise.** The gate refuses replay tables whose reservoir or manifest sha differs from the frozen
+  manifest, a bootstrap K-grid missing any replicate at any T, and any missing bootstrap episode file.
+- **Collection guard.** A staged launch records its filter in `logs/heterogeneity/gitlab/STAGE.json`. Any later
+  launch into that log dir with a different `--pools` / `--through-index` / `--pilot`, or none, refuses before
+  touching STATUS or any lock, and the watchdog does not relaunch it. A hand relaunch after `provider_down`
+  therefore cannot spend the budget on withdrawn GLG cells.

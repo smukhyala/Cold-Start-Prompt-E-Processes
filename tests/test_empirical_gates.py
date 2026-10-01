@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -185,3 +186,44 @@ def test_realized_sd_matches_the_spread_of_the_drawn_true_rates():
     # generally equal) the reservoir's population spread -- that gap is exactly why
     # `run_rehearsal` compares the NPMLE fit against `realized_sd`, not the population.
     assert rehearsal.realized_sd(out, "G") != rehearsal._sd(truth["G"])
+
+
+# ---- collection --pools / --through-index: G3 on the restricted queue --------------------------------
+
+def _two_pool_rows(missing_glk):
+    rows = []
+    for pool, n_missing in (("GLG", 0), ("GLK", missing_glk)):
+        for i in range(100):
+            status = "missing" if i < n_missing else "ok"
+            rows.append({"pool": pool, "arm_id": f"{pool}_{i % 5:02d}", "task_id": f"t{i}", "replicate": 0,
+                         "attempt": 3 if status == "missing" else 1, "status": status,
+                         "success": None if status == "missing" else 1, "cost_usd": 0.1, "worker": 0})
+    return pd.DataFrame(rows)
+
+
+def test_collection_cli_pools_and_through_index_restrict_the_coverage_denominator(tmp_path, capsys):
+    frame = _two_pool_rows(missing_glk=8)  # 8 / 200 = 4% overall, but 8 / 100 = 8% of GLK
+    queue = _queue(frame, pilot=False)  # GLG is queue items 0..99, GLK 100..199
+    logs, queue_path = tmp_path / "logs", tmp_path / "queue.jsonl"
+    logs.mkdir()
+    with open(logs / "worker_0.jsonl", "w") as fh:
+        for rec in frame.to_dict("records"):
+            fh.write(json.dumps(rec) + "\n")
+    mp.write_queue(queue_path, queue)
+    base = ["collection", "--profile", "gitlab", "--log-dir", str(logs), "--queue", str(queue_path)]
+    assert gates.main(base) == 1  # per-pool: missing_rate[GLK] fails; 200 items overall
+    assert "200 queue items" in capsys.readouterr().out
+    assert gates.main(base + ["--pools", "GLG"]) == 0  # GLK's records are another stage's, not outside the queue
+    out = capsys.readouterr().out
+    assert "100 queue items = 100 ok" in out and "missing_rate[GLK]" not in out and "0 terminal records are not" in out
+    assert gates.main(base + ["--pools", "GLK", "--through-index", "149"]) == 1  # 8 / 50 = 16%
+    assert "50 queue items = 42 ok + 8 missing" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        gates.main(base + ["--pools", "GLX"])
+    with pytest.raises(SystemExit):
+        gates.main(["pilot", "--profile", "gitlab", "--log-dir", str(logs), "--queue", str(queue_path),
+                    "--pools", "GLK"])
+    kept, rows = gates.restrict_queue(queue, frame, ("GLK",), 149)
+    assert [q.index for q in kept] == list(range(100, 150)) and len(rows) == 50
+    kept, rows = gates.restrict_queue(queue, frame, None, None)
+    assert kept == queue and rows is frame  # neither given: untouched

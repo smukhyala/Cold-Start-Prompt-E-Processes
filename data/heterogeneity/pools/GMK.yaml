@@ -1,0 +1,446 @@
+pool: GMK
+template: configs/template_freeform.jinja
+meta:
+  generator: claude-opus-4-7
+  app: gmail
+arms:
+- arm_id: GMK_00
+  name: GMK_00
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'When operating Gmail on a computer, remember that the vast majority of feature toggles live behind Settings (gear icon, top right) → See all settings, which opens a tabbed configuration page. The tabs you''ll navigate most are: General (smart features, images, stars, keyboard shortcuts, vacation responder, button labels, hover actions, undo send delay, conversation view), Labels, Inbox (importance markers, inbox type customization), Accounts and Import (send mail as, check mail from other accounts, import), Filters and Blocked Addresses, Forwarding and POP/IMAP, and Advanced (templates, custom keyboard shortcuts). After changing anything in these tabs, always scroll to the bottom and click Save Changes; leaving the page without saving discards edits.'
+  prompt_sha256: 027d820ce18cafa1f408e34a66bb778a3605110803f91a546f979ca33a6f4f3b
+- arm_id: GMK_01
+  name: GMK_01
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: For quick inbox appearance tweaks such as inbox type (Default, Important first, Unread first, Starred first, Priority Inbox, Multiple Inboxes), density (Default, Comfortable, Compact), theme, and reading pane, use the Quick settings side panel that opens when you click the gear icon once—no Save button is needed there since changes apply immediately. Reserve the full See all settings page for options that require an explicit save.
+  prompt_sha256: aa4c6f3a6d462c569c10b53772ef9e7acc7ce191d2f691ba54d8cc3f2cad32aa
+- arm_id: GMK_02
+  name: GMK_02
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To turn on smart features in Gmail, Chat, and Meet: go to mail.google.com, click Settings → See all settings, stay on the General tab, scroll to the Smart features section, and check or uncheck the box next to ''Turn on smart features in Gmail, Chat, and Meet.'' This governs Smart Compose, Smart Reply, automatic Primary/Social/Promotions categorization, and summary cards. Save Changes at the bottom. Note that the separate Workspace and other-Google-products smart feature settings are managed elsewhere in General under ''Google Workspace smart features'' via Manage Workspace smart feature settings, and they require an explicit Save in that dialog.'
+  prompt_sha256: 56a5c09ab73bebc9e6bf5d4d7988d91b0d268c62bad9e8746ac00b2374bd91c6
+- arm_id: GMK_03
+  name: GMK_03
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'The two smart-feature toggles are independent: ''Smart features in Gmail, Chat, and Meet'' controls in-product experiences like Smart Compose, and ''Smart features in Google Workspace'' and ''Smart features in other Google products'' control cross-product experiences like Gmail-to-Calendar flight events, Wallet loyalty cards, and Maps reservations. Changing one does not affect the other. If a user asks about a specific experience (e.g., ''why aren''t my flights showing in Calendar?''), verify the correct setting: cross-app behaviors need the Workspace or other-Google-products setting, not the Gmail/Chat/Meet one.'
+  prompt_sha256: 08c7d5f521d6652f918dc53b1c4708cb403989206f2c47dfa0a7ea44f8062511
+- arm_id: GMK_04
+  name: GMK_04
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Automatic forwarding requires a two-step verification handshake. From Settings → See all settings → Forwarding and POP/IMAP, click Add a forwarding address, enter the address, click Next → Proceed → OK. Gmail sends a verification email to that address; the user must open the destination mailbox, click the link, then return to Gmail and refresh the browser before the address becomes selectable. Only then can you choose 'Forward a copy of incoming mail to' and pick what happens to Gmail's copy (Keep in Inbox is recommended). Save Changes to activate.
+  prompt_sha256: 2bf3eaed016a54a182847100291f3c3a5cf83dbe8f507e312bf4798d9d922b88
+- arm_id: GMK_05
+  name: GMK_05
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To confirm forwarding is really on, look for the reminder banner at the top of the inbox: ''You are forwarding your email to [address].'' This banner shows for the first week after enabling forwarding. If forwarding was set up via filter, the banner reads ''…and your filters are also forwarding some of your email.'' If you turn forwarding off or edit the filter to stop forwarding, the banner disappears—use that as your visual confirmation that the change took effect.'
+  prompt_sha256: f7bb02e9db5baef28cc035963265d5e4b26a9cdf607ade21be8bea23ee210606
+- arm_id: GMK_06
+  name: GMK_06
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To forward only messages that match specific criteria instead of everything: first make sure default forwarding is disabled or set as desired, then click Show search options (the tune icon in the search bar), enter search criteria, click Create filter at the bottom of the search panel, select ''Forward it,'' pick the previously verified forwarding address (you must have added it already under Forwarding and POP/IMAP), and click Create filter. To forward to multiple destinations, create one filter per address.'
+  prompt_sha256: 2e89c58eb21ade4a11bebe3f4bb004c8e6fc24d974ae6a10c83b2902add92f05
+- arm_id: GMK_07
+  name: GMK_07
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Gmail offline only works in a regular Chrome window (not Incognito or Guest) with cookies allowed for mail.google.com. Navigate directly to mail.google.com/mail/u/0/#settings/offline, check 'Enable offline mail,' choose how many days to sync and whether to include attachments, then click Save changes. Only the account signed in at setup gets offline access; enabling it for another account requires signing into that account and repeating the flow. Verify by disconnecting the network and reopening Gmail in Chrome.
+  prompt_sha256: 3cf113ba41790e5848ff1521014ce0cce7acd2dd8e1f2c39335cfea1f9454dcc
+- arm_id: GMK_08
+  name: GMK_08
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'When troubleshooting Gmail offline sync issues, check three things in order: (1) at chrome://settings/content/siteData, confirm mail.google.com or *.google.com is NOT under ''Always delete site data from your device when you close Chrome''; (2) verify Chrome is not in Incognito or Guest mode; (3) confirm sufficient disk space—if not, return to the offline settings page and reduce the number of sync days or uncheck Download attachments. Messages only sync while Chrome is open.'
+  prompt_sha256: 3da60d057b5a9dfde006040b3dd4c12252c61caa40540379ae713c868e3100c6
+- arm_id: GMK_09
+  name: GMK_09
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To set up POP access for external clients, go to Settings → See all settings → Forwarding and POP/IMAP. In the POP download section pick either 'Enable POP for all mail' or 'Enable POP for mail that arrives from now on,' then choose what Gmail does with its own copy (Keep in Inbox, Mark as read, Archive, or Delete). Save Changes. The external client should use pop.gmail.com with SSL on port 995 for incoming and smtp.gmail.com with TLS on port 587 for outgoing, with authentication enabled.
+  prompt_sha256: 8f3094ff37a4d948dd51246169bab166cec20bf78accbdde05ba9d0c73423e70
+- arm_id: GMK_10
+  name: GMK_10
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Because Microsoft now requires modern authentication, you cannot add an Outlook/Hotmail/Live account to Gmail on the computer web interface anymore. If a user asks to connect Outlook, direct them to the Gmail mobile app: tap the profile picture, tap Add another account, choose Outlook, Hotmail, and Live, and sign in. On iPhone and iPad, existing Outlook syncs continue to work. Don''t attempt to walk them through the desktop Add mail account flow for Outlook—it will fail.'
+  prompt_sha256: 517b69b6edbb72402886cd06d03dcc04de6759a24b547378de1e35fda2d4ba99
+- arm_id: GMK_11
+  name: GMK_11
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Gmailify and ''Check mail from other accounts'' via POP are being deprecated: no new users after Q1 2026, full turndown later in 2026. Already-imported messages are preserved. If a user wants to consolidate a third-party inbox going forward, recommend either (a) setting up automatic forwarding at the source provider so new mail lands in Gmail, or (b) adding the account to the Gmail mobile app which uses IMAP. A one-time import of mail and contacts is still available under Settings → Accounts and Import → Import mail and contacts.'
+  prompt_sha256: 63d77753bc63a5cc5f895fb001eddb6d33271ffc74423f8e1f74df4fd45e520e
+- arm_id: GMK_12
+  name: GMK_12
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To turn image display fully on: Settings → See all settings → General tab → Images section → select ''Always display external images'' → Save Changes. Note that Gmail may still block images automatically when it considers a sender or message suspicious, prompting the user to display them manually. If images stubbornly don''t appear even after setting Always display, suspect that Gmail flagged the sender rather than a misconfiguration.'
+  prompt_sha256: b12e854cbbd3e33c1b56bcc54b1d30aed61f5b1498e914e0168d012a120c1d0c
+- arm_id: GMK_13
+  name: GMK_13
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To create a label, in the left sidebar next to Labels click the + (Create new label) icon, enter a name, optionally check 'Nest label under' and pick a parent, then click Create. Labels appear in the left sidebar and as chips on messages. Verify creation by scrolling the left sidebar or by searching label:name in the search bar. Users can have up to 5,000 labels and up to 100 custom colors.
+  prompt_sha256: 222d450205579b15b0204d5221c902380ed7ddcd7104ab897fbe5d4f08a7bea4
+- arm_id: GMK_14
+  name: GMK_14
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Managing labels lives in two places: quick actions (rename, remove, change color, nest, show/hide) come from hovering the label in the left sidebar and clicking the three-dot More menu; bulk visibility and system-label toggling come from Settings → See all settings → Labels tab, where each label has Show/Hide links. If a label seems missing from the sidebar, check the Labels settings tab first—it may just be hidden, not deleted.'
+  prompt_sha256: dafe1a56dfac201b1fc26c91b7a932dda7bbd59ff295d92a2f56685b0d23cbcd
+- arm_id: GMK_15
+  name: GMK_15
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To apply a label to messages, select messages in the list with their checkboxes, then click the Labels icon (tag) in the toolbar and check any labels to apply. Uncheck a label there to remove it. To move a message (which removes it from its current location), use the Move to icon (folder with arrow) instead—Move to sets a single location, while Label as can stack multiple labels on one conversation.
+  prompt_sha256: 19af9483073759eb8d47c14cfe570867f2fa94be18e7e3ed4bb8bb9af4e00119
+- arm_id: GMK_16
+  name: GMK_16
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Conversation view affects how labels behave: with conversation view ON, a label applied to a conversation covers existing messages in that thread but not future replies; with conversation view OFF, labels only affect the specific messages you label. Toggle this at Settings → See all settings → General → Conversation View, then Save Changes. Nudges (reply/follow-up suggestions at the top of the inbox) also depend on conversation view—turn conversation view off to eliminate them.'
+  prompt_sha256: e1efb266c3aad354fb03fdb5fca1aeb242288e213906d29f10ae781890cc50ac
+- arm_id: GMK_17
+  name: GMK_17
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'The Default inbox type divides mail into tabs like Primary, Social, Promotions, Updates, and Forums, and is the only inbox that supports category tabs. To pick which tabs show: open Quick Settings (single click on the gear), under Inbox type select Default, click Customize, tick the categories, and Save. You cannot create new categories, but you can move misfiled emails between tabs by dragging—which trains the classifier.'
+  prompt_sha256: 13ea9ac38f85bae18cb95eca249e8c11b3f7f1867af08cd6a57adddae26f6a3c
+- arm_id: GMK_18
+  name: GMK_18
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: The Default inbox type is unavailable if the user has more than 250,000 emails in the inbox. If a user reports missing category tabs or a missing right-click menu and other troubleshooting fails, check the inbox size and instruct them to archive or delete until they drop below 250,000. There is no other workaround for this limit.
+  prompt_sha256: 3ad636411d3fce7b176e44d01696a7e85772ab407b673e2841a9696a1d3a6c49
+- arm_id: GMK_19
+  name: GMK_19
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Multiple Inboxes lets you carve extra sections into the inbox using search operators or labels as section definitions. Choose it from Quick Settings under Inbox type. Priority Inbox splits the inbox into sections such as Important and unread, Starred, Everything else, or a custom label. Use Priority Inbox when Gmail's importance ranking is helpful; use Multiple Inboxes when you want to define sections yourself with queries like is:starred or label:followup.
+  prompt_sha256: 409cfd21ae0239f7611133b3fa0b4f0857dfa97d2ff98c102710c178520c3b5c
+- arm_id: GMK_20
+  name: GMK_20
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Importance markers (the small yellow chevron next to sender names) are computed automatically from who you email, what you open, reply to, star, archive, or delete. To override the classifier, click a marker on any message to flip it; this also teaches Gmail. To disable prediction entirely, go to Settings → See all settings → Inbox tab → Importance markers → select 'Don't use my past actions to predict which messages are important' or 'No markers' to hide them—then Save Changes.
+  prompt_sha256: a8de8d3a42d014fa1a620601abce48775b95835e6ce9117bbddcade366f1c039
+- arm_id: GMK_21
+  name: GMK_21
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To find archived mail, click More in the left sidebar and open All Mail, or search in:archive. Archiving removes a message from the inbox but keeps it under All Mail; if someone replies to an archived thread, it returns to the inbox. Keyboard shortcut e archives selected messages when shortcuts are enabled. To bring an archived message back, open it and click Move to Inbox in the toolbar.
+  prompt_sha256: 91f7264874a15ac7a0f5ed3364968b506c2f4b15904ae68907d46215a7789bc1
+- arm_id: GMK_22
+  name: GMK_22
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To mute long threads that keep bumping the inbox, select the conversation, click More in the toolbar, then Mute (or press M with shortcuts on). Muted messages skip the inbox and go to All Mail, tagged with a Muted label. New replies still show if you are the sole recipient, are on the To/Cc, or the mail hits a Google Group you belong to. Find muted mail with is:muted. Unmute via More → Unmute.
+  prompt_sha256: b77cac7f3dee7f819db18791235ee8540c9ebcf3c1d2a0970cd556835eeb4bb8
+- arm_id: GMK_23
+  name: GMK_23
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To create a Gmail filter that automates handling of specific mail: click the tune icon (Show search options) in the search bar at the top, fill in criteria such as From, Subject, or Has the words, optionally click Search to preview matches, then click Create filter at the bottom of the panel. Pick actions (Skip Inbox, Apply label, Forward, Star, Mark as read, Never send to Spam, Always mark important, Delete, etc.) and click Create filter. Verify by checking Settings → See all settings → Filters and Blocked Addresses.'
+  prompt_sha256: 605eb33d1300d5705a07e9fcddad1c08e3611924237fa0ab0fe9d19a37f4ed68
+- arm_id: GMK_24
+  name: GMK_24
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Filters can be exported and imported as XML. Under Settings → Filters and Blocked Addresses, tick the filters you want, then use Export at the bottom to download an XML file, or Import filters to upload one and then Create filters to apply. This is the fastest way to migrate a curated rule set between accounts or to back up complex rules before rewriting them.
+  prompt_sha256: ebe01bccbff277a7160cb860c3fac3cf61c698b3988d64e39af412b67d0048cb
+- arm_id: GMK_25
+  name: GMK_25
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Right-clicking a message in the list opens a context menu with Reply, Reply all, Forward, Forward as attachment, Archive, Delete, Mark as read/unread, Snooze, Add to Tasks, Move to, Label as, Mute, Find emails from [sender], and Open in new window. If the right-click menu doesn't appear, the inbox type may be wrong or the inbox may exceed 250,000 messages. Switch Inbox type to Default in Quick settings and select at least one category, or reduce inbox size.
+  prompt_sha256: 2fa3e9a770c813f2c24f78bfcff32fe70fb1c756d0b28b2de7e0cb0a68f3d41e
+- arm_id: GMK_26
+  name: GMK_26
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: The toolbar above the message list has two modes. Simple toolbar shows Archive, Report spam, Delete, Mark as unread, Move to, and a More menu; the Advanced toolbar surfaces snooze, add to Tasks, label as, and more without going into More. Switch between them by clicking More in the toolbar and choosing Switch to advanced toolbar or Switch to simple toolbar. To show text instead of icons for these buttons, Settings → See all settings → General → Button labels → Text → Save.
+  prompt_sha256: 78e75c53b8040586b019b5729fc40812410505fc2f2374e2852d3b7c6c59a624
+- arm_id: GMK_27
+  name: GMK_27
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Hover actions expose archive, delete, snooze, and mark as read icons when you hover the right end of a row in the inbox list, without opening or checking the message. If a user finds them distracting or clicks them by accident, disable at Settings → See all settings → General → Hover actions → Disable hover actions → Save Changes.
+  prompt_sha256: 4b19084733cacf3b5cd498afd9937281dc96a860dc840c0f156f4841089a7034
+- arm_id: GMK_28
+  name: GMK_28
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Star types are extensible: Settings → See all settings → General → Stars section. Drag icons between ''Not in use'' and ''In use'' or click 1 star, 4 stars, or all stars presets. Once multiple stars are in use, click the star icon repeatedly on a message to cycle through them. Search by has:yellow-star, has:red-bang, has:blue-info, has:purple-question, has:green-check, etc. To find all starred mail regardless of color, use is:starred.'
+  prompt_sha256: 11979b67e0ea14ae683a0b3d57b62bad86c6e3b36adf03f696521da8cce5d00e
+- arm_id: GMK_29
+  name: GMK_29
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Search chips appear under the Gmail search bar after you run a search and let you refine quickly: From, Any time, Has attachment, Exclude calendar updates, To, Is unread, and Is encrypted. If Chat is enabled, additional Mail, Conversations, and Spaces chips appear. For power queries use search operators directly: from:, to:, subject:, has:attachment, filename:pdf, before:, after:, older_than:1y, larger:10M, label:, category:, is:unread, in:anywhere (includes Spam and Trash).'
+  prompt_sha256: 1303a0aae709cf2066e21522406b1f4120ed9153af7ff894bcba688512c4b8c7
+- arm_id: GMK_30
+  name: GMK_30
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'By default Gmail search excludes Spam and Trash. To include them: click the tune icon in the search bar to open Advanced search, change the Search dropdown from ''All Mail'' to ''Mail & Spam & Trash'', enter criteria, and click Search. Alternatively use in:anywhere in a plain search. This is essential when a user believes an email ''disappeared''—it may have been marked spam or trashed.'
+  prompt_sha256: c46153403b246e0250fd4ff5452eca27c0fda166cd0e9b83cb14ec515b2ceb61
+- arm_id: GMK_31
+  name: GMK_31
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To turn on keyboard shortcuts, Settings → See all settings → General → Keyboard shortcuts → Keyboard shortcuts on → Save Changes. Then press ? within Gmail to see the full cheat sheet. High-value shortcuts: c compose, / search, e archive, # delete, r reply, a reply all, f forward, s star, ! spam, m mute, b snooze, x select, u back to threadlist, j/k next/previous conversation, gi go to inbox, gs starred, gt sent, gd drafts, ga all mail.'
+  prompt_sha256: f031d3660323ffcae8c33be1b9fa1e4721309419279b20a735a7548697701cb9
+- arm_id: GMK_32
+  name: GMK_32
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: For advanced users, custom keyboard shortcuts can be enabled at Settings → See all settings → Advanced → Custom keyboard shortcuts → Enable → Save. This exposes a new Keyboard Shortcuts tab in Settings where you type the key you want next to each action. Each key can only map to one action, so rebinding requires care.
+  prompt_sha256: b748d7559b1791b97112652daba581ca7abfd25c21fb352b6d5b536ea1ecec2a
+- arm_id: GMK_33
+  name: GMK_33
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To permanently delete mail, select the messages and click Delete (trash icon) in the toolbar, or press #. Deleted messages sit in Trash for 30 days then are removed automatically; within that window you can find them under More → Trash, tick them, and click Delete forever or Move to → Inbox. To empty Trash immediately, click More → Trash and click Empty Trash now in the notice at the top.'
+  prompt_sha256: a8f06170c2e1060f429e1a44b0b2a18c5f380612588f0a12602ec6ec473a9c69
+- arm_id: GMK_34
+  name: GMK_34
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: The Manage subscriptions feature (rolling out gradually, may be absent) lives at More → Manage subscriptions in the left sidebar. It aggregates active mailing lists so the user can click Unsubscribe next to a sender. Unsubscribing routes future mail from that sender to Spam with an explanatory banner; blocking a sender does not unsubscribe. Some senders redirect the unsubscribe to their own site—Gmail then offers Go to website or Block instead.
+  prompt_sha256: 35db1a90c634f192e3ec1f39161080bed34422fd38767dc090264d6a07383939
+- arm_id: GMK_35
+  name: GMK_35
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: To send a message from a non-primary address (alias, work domain, or another mailbox you own), Settings → See all settings → Accounts and Import → Send mail as → Add another email address, fill in name and address, click Next Step → Send verification, open the confirmation email in the destination account, click the link, and it becomes selectable in the From dropdown of the Compose window. Up to 99 addresses can be added. To make it the always-used sender, click Make default next to it in the same list.
+  prompt_sha256: 2005466b2926ec0bfe2e6f09d0ab40aebcf900e0e036f9d8789ecaef523f797f
+- arm_id: GMK_36
+  name: GMK_36
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: By default replies to a message sent from a Send mail as alias will still go to the original Gmail address unless you also set a reply-to. In Settings → Accounts and Import → Send mail as, click Edit info next to the alias, choose Specify a different 'reply to' address, and enter one. Save. Verify by composing a test message with that alias and confirming the From dropdown reflects it and the reply-to header is set.
+  prompt_sha256: b33f4267b4b668ab8bb41c997b025a215a25c82cc6f6a6fcb25db48989cfdf45
+- arm_id: GMK_37
+  name: GMK_37
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'Vacation responder setup: Settings → See all settings → General → Vacation responder → select Vacation responder on, set First day and (optionally) Last day, subject, message, and optionally the ''Only send a response to people in my Contacts'' or organization checkboxes, then Save Changes. It runs 12:00 AM start day to 11:59 PM end day. Confirmation: a persistent banner at the top of the inbox shows the responder is on with an End now button. Each sender only gets the reply once every 4 days.'
+  prompt_sha256: 362f69b62f5ca24b320638ae1d2ccfc4d87cd38eb5deffa9a92ec508540f8742
+- arm_id: GMK_38
+  name: GMK_38
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: Undo Send is not automatic—it depends on the send cancellation delay. Settings → See all settings → General → Undo Send → choose 5, 10, 20, or 30 seconds, then Save Changes. Longer delays give more time to click Undo in the transient bottom-left toast that appears after you press Send. Emoji reactions honor the same window, so you can also undo an accidental reaction within that period.
+  prompt_sha256: 35e026174c4e07a838b1dea1bfb4d0c321d4c9fa7b792e84f0a6f2cd156f0233
+- arm_id: GMK_39
+  name: GMK_39
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: 'To reuse boilerplate emails, enable templates: Settings → See all settings → Advanced → Templates → Enable → Save Changes. Then in the Compose window, click More options (three-dot menu at bottom) → Templates → Save draft as template → Save as new template (or overwrite existing). To insert one, More options → Templates → Insert template → pick one. Deletions are permanent. Combine templates with filters (Send template action) to auto-reply to matching mail.'
+  prompt_sha256: 4e402d09fe7e5db63894b792007a087f8c8b8e647d7ac8b16e43d4171e1fc7f3

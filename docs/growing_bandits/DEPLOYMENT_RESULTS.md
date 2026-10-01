@@ -77,6 +77,12 @@ registered follow-ups that re-examined them (§12), is the following.
    are *uninformative*; every rule except always-search is within about 0.003 of the ceiling. Items 1–4 are statements about pools
    that vary; this benchmark's prompts mostly do not.
 
+7. **Even knowledge-bearing real prompts are not heterogeneous enough (§15, Pre-registration 11).** 40
+   manual-derived GitLab procedural prompts, scored under a 30-step per-episode budget, have deconvolved spread
+   0.041 (below every corpus environment), no detectable heterogeneity (MLS lower bound 0, split-half ≤ 0), and
+   classify *moderate* on every task mix; the gate to the thesis test did not open. Across three real prompt
+   families the bottleneck is the reservoir's behavioural diversity, not the search algorithm.
+
 The rest of §1 states the pre-registered hypotheses as they were tested, at cap 64. They are correct as
 written; §12.7 is what they mean.
 
@@ -1506,6 +1512,101 @@ within about 0.003 of the ceiling, and only "always search" is measurably wrong.
 statements about what to do *when* prompts differ; whether they differ enough to matter is an empirical
 property of the benchmark and model, and here the answer was no. Two limits bound the claim: one app, one
 agent model; and a flat pool is resolved only to about ±0.015 at 30 tasks.
+
+## 15. A knowledge-bearing real pool under a per-episode budget (Pre-registration 11)
+
+*Registered 2026-09-30 (`DEPLOYMENT_PLAN.md`, Pre-registration 11 and its Amendment 1) before any of its
+episodes; collected 2026-09-30; analysed 2026-10-01. Tables `results/growing_bandits/heterogeneity/glk30_*`
+(primary) and `glk_*` (secondary), replay tables `results/growing_bandits/deploy/tables/glk30_*` / `glk_*`,
+reservoirs `data/heterogeneity/reservoirs_glk30/` and `reservoirs_glk/`. This is the project's final planned
+collection leg; §14 (Pre-registration 10's full factorial) was narrowed to this one cell before any of its
+non-pilot episodes ran.*
+
+§13 found two real Gmail pools flat. The missing quadrant was a *real* pool whose heterogeneity is large enough
+that candidate search has decision value. This section tests the best candidate the project had: 40 prompts
+written by `claude-opus-4-7` from the public GitLab user manual (procedural knowledge — where features live,
+how workflows run — varied in scope and length, leak-guarded against the 140 task instructions), on WebArena
+GitLab block A (30 tasks, 10 per tier), with the agent's outcome scored at the originally registered 30-step
+budget. The budget is the primary outcome because the audit before registration showed that with unlimited
+steps the agent brute-forces block A (14 of 30 tasks at ≥ 0.95 for every pilot arm) while at 30 steps the
+pilot's anchor ordering reappears (oracle 0.867 > baseline 0.733 > explorer 0.633).
+
+### 15.1 What was collected
+
+1,320 of 1,320 GLK block-A items `ok` (1,200 main cells, 150 of them from the Pre-reg 10 pilot, plus 120
+replicate pairs), 0 missing; gate G3 passed. 10 provider errors were retried. New spend $155.73 (the gitlab
+log directory holds $209.87 including the pilot). Disclosed operating events, none of which lost an episode:
+two host-sleep relaunches (lid closed), one stale-worker relaunch, and one operator pause from 18:20 to ~20:34
+local on 2026-09-30 during an OpenAI latency degradation (seconds per agent step 6.1 → 16.8, clock-ended share
+7.4% → 34.6% on the 52 records collected from 17:40). Those 52 records are kept as registered (a clock-ended
+episode is a failure); the registered timeout sensitivity treats them as missing.
+
+### 15.2 Where the pool sits
+
+| outcome | prompt rate min / median / max | deconvolved sd | τ_main [95% MLS] | τ_set [95% MLS] | split-half r_SB (p) |
+|---|---|---|---|---|---|
+| **30-step budget (primary)** | 0.500 / 0.633 / 0.733 | **0.041** | 0.020 [0, 0.054] | 0.036 [0, 0.062] | ≤ 0 (p = 0.61) |
+| as collected (secondary) | 0.633 / 0.767 / 0.867 | 0.009 | 0.000 [0, 0.046] | 0.011 [0, 0.049] | 0.21 (p = 0.22) |
+
+Execution noise from the 120 replicate pairs: v̂ = 0.079 [0.050, 0.113] (primary). The deconvolved spread under
+the budget, 0.041, is below every one of the 33 simulated environments (corpus range 0.075–0.298), as both Gmail
+pools were. **No form of heterogeneity is statistically detectable** on either outcome: both MLS lower bounds
+are 0, and the split-half correlation — whether a prompt's rate on one half of the tasks predicts its rate on
+the other half — is non-positive under the budget and not significant as collected.
+
+### 15.3 The registered classification and gate
+
+K-grid regret ranges on the NPMLE reservoir (cap = T; `glk30_kstar.csv`, `glk30_gate_classification.csv`):
+
+| mix (primary outcome) | range T = 50 | T = 100 | T = 200 | 95% interval at T = 200 | gap fixed K8 | gap always-search | tier |
+|---|---|---|---|---|---|---|---|
+| block A, equal weights (primary) | 0.0079 | 0.0097 | 0.0082 | [0.0002, 0.0276] | 0.0000 | 0.0139 | **moderate** |
+| bank-weighted, S1 | 0.0021 | 0.0017 | 0.0012 | [0.0001, 0.0154] | 0.0000 | 0.0038 | moderate |
+| discriminating tasks, S2 | 0.0084 | 0.0070 | 0.0103 | [0.0002, 0.0252] | 0.0005 | 0.0136 | moderate (capped) |
+
+The primary mix is above the flat threshold (0.005) at every T and below the meaningful one (0.01) at every T;
+its tier is recomputed unchanged with the top and bottom prompt removed and with the top four removed (both
+moderate). Decision-relevance needed a range ≥ 0.02 at T = 200 with a lower bound above 0.01, a fixed-K8 gap
+≥ 0.005 and a positive split-half; none holds. **Gate: not passed** — the primary mix is moderate and S1 is
+moderate (`glk30_gate.csv`). The secondary outcome classifies the same way (every mix moderate; the primary
+mix's range is 0.0008–0.0014, kept out of "flat" only by its bootstrap upper bound of 0.027).
+
+### 15.4 Stage B, computed and not read
+
+By registration Stage B is always computed and is read only when the gate passes. Its verdict is
+`inconclusive` (`glk30_stage_b.csv`): C1 (`p3_star` − `fixed_K8`) is +0.0012 to +0.0032, the small fixed K
+*ahead* on the point estimate, every interval including zero; C2 (`always_search` − `p3_star`) is +0.009 to
++0.012 with lower bounds at 0.0000; C3 holds through its small-gap branch (`p3_star` within 0.001–0.003 of the
+K-grid minimum). The pool's own K\* is 8 at every T except T = 100 (12). The model-free replay on the recorded
+outcome matrix at T = 40 agrees: fixed K = 4 and K = 8 have regret 0.093, searching all 40 prompts once 0.109
+(`glk30_matrix_replay_T40.csv`). This is the pattern of a flat-to-moderate pool — over-searching costs about a
+point, and nothing is gained by searching more than a handful of prompts — not the simulation's interior-K
+trade-off.
+
+### 15.5 Fake-positive diagnostics
+
+All registered (`glk30_diagnostics.csv`). No prompt moves τ_set² by more than 21% (limit 30%). One task,
+`task_e3`, carries 34% of τ_set² (limit 30%) — the little spread there is is concentrated. Prompt length is
+unrelated to rate (Spearman −0.03; τ_set after removing length 0.99 of itself). No prompt shares a 6-gram with
+any task instruction. Clock-ended share and recorded errors are unrelated to rate (Spearman 0.04 and 0.04);
+mean steps is related (−0.40): what spread exists under the budget is prompts that finish faster, which the
+as-collected outcome confirms by losing it (τ_set 0.036 → 0.011). That is an efficiency effect, and it does not
+generalize across tasks (split-half ≤ 0).
+
+### 15.6 What this changes
+
+The pre-registered reading for this outcome (Pre-registration 11, "C") applies. Three real prompt families —
+stylistic grid prompts (§13, Gmail), deliberately diverse free-form prompts (§13, Gmail), and procedural
+prompts carrying app knowledge from the manual (here, GitLab) — are all below decision relevance under this
+agent, and the third remains so under a per-episode budget designed to let knowledge show through as
+efficiency. On every real pool measured, deconvolved prompt spread is under the corpus's smallest; every
+sensible K-rule is within a few thousandths of the ceiling; and only searching every pull is measurably worse.
+The simulation's claims stand as statements about pools that vary. **The practical bottleneck in adaptive prompt
+search is a candidate reservoir with enough behavioural diversity to make search worthwhile, not the search
+algorithm.** Limits: one agent model (`gpt-5.4-mini`, low effort); two WebArena apps; 30 tasks per cell, which
+resolves a pool's spread to about ±0.02; and the June GitLab run's hand-written prompts (true spread 0.057
+[0.016, 0.111] under a 180 s, ≤ 40-step regime, no replicates) remain the one hint that a more constrained agent
+configuration shows more prompt sensitivity — recorded as future work, not tested here.
 
 ## 10. Errata for `RESULTS.md`
 

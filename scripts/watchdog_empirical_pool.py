@@ -1,10 +1,27 @@
 """Keep the empirical-pool collector alive unattended.
 
     .venv/bin/python scripts/watchdog_empirical_pool.py [--pilot] [--workers 8] [--budget 40]
+    .venv/bin/python scripts/watchdog_empirical_pool.py --profile gitlab --budget USD [--pilot]
+    .venv/bin/python scripts/watchdog_empirical_pool.py --profile gitlab --budget USD --through-index N
+    .venv/bin/python scripts/watchdog_empirical_pool.py --profile gitlab --budget USD --through-index N --pools GLK
+
+``--profile`` (default ``prereg9``) is forwarded to the collector, and the watchdog's own
+LOG_DIR -- STATUS, ``collect.lock``, the worker files, RELAUNCH_LOG -- follows it:
+``logs/empirical_pool`` for ``prereg9``, ``logs/heterogeneity/<profile>`` otherwise (passed
+to the collector as ``--log-dir`` too, so the two can never watch different directories).
+A heterogeneity profile needs an explicit ``--budget``. ``--print-log-dir`` prints that
+directory and exits without touching anything (the launcher uses it). ``--through-index N``
+(heterogeneity profiles) is forwarded to the collector, which stops cleanly after queue item N
+with STATUS ``through`` -- a finished state, never relaunched. ``--pools A,B`` (heterogeneity
+profiles) is forwarded the same way: the collector works only those pools' queue items (composes
+with ``--through-index``) and also ends with STATUS ``through``. The heterogeneity profiles are
+mutually exclusive (collect.py's shared ``logs/heterogeneity/het.lock``): a watchdog refuses to
+launch, or relaunch, while another heterogeneity profile's live process group holds that lock
+(exit `EXIT_HET_LOCKED`).
 
 Every POLL_SECONDS:
 
-* STATUS ``done``/``budget`` -> exit 0. STATUS ``provider_down`` -> exit 2 without a
+* STATUS ``done``/``budget``/``through`` -> exit 0. STATUS ``provider_down`` -> exit 2 without a
   relaunch: the provider is failing (outage or exhausted quota) and a relaunch would only turn
   more queue items into ``missing``; a person decides when to resume.
 * The collector process is gone -> relaunch it (it resumes by itself).
@@ -13,7 +30,10 @@ Every POLL_SECONDS:
   relaunch. A worker whose ``worker_<w>.exit`` says it finished (done/budget/provider_down)
   is exempt; a worker file that does not exist yet counts as fresh until the collector has
   been up for WORKER_STALL_MINUTES. One hung worker is therefore caught on its own, not only
-  once every worker hangs.
+  once every worker hangs. The limit follows the profile's wall clock (`worker_stall_minutes`):
+  WORKER_STALL_MINUTES (15) for the 180 s profiles, WORKER_STALL_MINUTES_LONG (25) for the
+  600 s ones, whose healthy worker can go ~17 minutes without an append (a 300 s provider
+  backoff, a recovery, then a 600 s episode).
 
 Before every launch it writes STATUS ``launching`` (treated like ``running``), so a STATUS
 left ``done`` by an earlier run -- e.g. the pilot -- can never make a fresh launch that dies
@@ -35,15 +55,28 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT / "logs" / "empirical_pool"
+HET_LOG_ROOT = ROOT / "logs" / "heterogeneity"
+DEFAULT_PROFILE = "prereg9"
+#: collect.py's `PROFILES` (kept stdlib-only here; tests assert the two agree).
+PROFILE_NAMES = ("prereg9", "gitlab", "gmail", "bridge")
 COLLECT = ROOT / "experiments" / "growing_bandits" / "empirical" / "collect.py"
 POLL_SECONDS = 120
 STALL_MINUTES = 30.0
 WORKER_STALL_MINUTES = 15.0
+#: Profiles whose agent wall clock is 600 s (collect.py's `PROFILES`): provider backoff (300 s)
+#: + recovery (~20-100 s) + one episode (600 s) + a poll (120 s) can exceed 15 minutes.
+WORKER_STALL_MINUTES_LONG = 25.0
+LONG_CLOCK_PROFILES = ("gitlab", "bridge")
 MAX_RELAUNCHES = 20
 RELAUNCH_LOG = "relaunches.log"
-FINISHED = ("done", "budget", "provider_down")
+FINISHED = ("done", "budget", "provider_down", "through")
 #: A worker exit marker with one of these outcomes means the worker is finished, not hung.
 WORKER_FINISHED = ("done", "budget", "provider_down")
+#: Exit code when another heterogeneity profile holds the shared lock (nothing launched).
+EXIT_HET_LOCKED = 5
+#: collect.py's `EXIT_STAGE_MISMATCH`: the log dir's STAGE.json records another stage; never relaunched.
+EXIT_STAGE_MISMATCH = 3
+HET_LOCK_NAME = "het.lock"
 
 
 def decide(status: str | None, alive: bool, minutes_since_progress: float,
@@ -92,12 +125,20 @@ def finished_workers(log_dir: Path) -> set[int]:
     return out
 
 
-class WorkerClocks:
-    """When each worker's log last grew; every clock restarts at each (re)launch."""
+def worker_stall_minutes(profile: str) -> float:
+    """How long one worker's log may stay unchanged before it counts as hung, for `profile`."""
+    return WORKER_STALL_MINUTES_LONG if profile in LONG_CLOCK_PROFILES else WORKER_STALL_MINUTES
 
-    def __init__(self, n_workers: int, now: float) -> None:
+
+class WorkerClocks:
+    """When each worker's log last grew; every clock restarts at each (re)launch.
+
+    `stall_minutes` ``None`` means WORKER_STALL_MINUTES (read at each `stale` call)."""
+
+    def __init__(self, n_workers: int, now: float, stall_minutes: float | None = None) -> None:
         self.size: dict[int, int | None] = {w: None for w in range(n_workers)}
         self.grew_at: dict[int, float] = {w: now for w in range(n_workers)}
+        self.stall_minutes = stall_minutes
 
     def restart(self, now: float) -> None:
         for w in self.grew_at:
@@ -111,7 +152,7 @@ class WorkerClocks:
                     self.grew_at[w] = now
 
     def stale(self, now: float, exempt: set[int]) -> tuple[int, ...]:
-        limit = WORKER_STALL_MINUTES * 60.0
+        limit = (WORKER_STALL_MINUTES if self.stall_minutes is None else self.stall_minutes) * 60.0
         return tuple(w for w, t in sorted(self.grew_at.items()) if w not in exempt and now - t > limit)
 
 
@@ -225,13 +266,67 @@ def _kill_and_wait_process(proc: subprocess.Popen) -> None:
             pass
 
 
-def collector_args(workers: int, pilot: bool, budget: float | None) -> list[str]:
+def profile_log_dir(profile: str) -> Path:
+    """Where `profile`'s collector writes (collect.py's ``PROFILES[profile]["log_dir"]``)."""
+    if profile not in PROFILE_NAMES:
+        raise ValueError(f"unknown profile {profile!r}; expected one of {PROFILE_NAMES}")
+    return LOG_DIR if profile == DEFAULT_PROFILE else HET_LOG_ROOT / profile
+
+
+def collector_args(workers: int, pilot: bool, budget: float | None, profile: str = DEFAULT_PROFILE,
+                   log_dir: Path | None = None, through_index: int | None = None,
+                   pools: str | None = None) -> list[str]:
+    """collect.py's arguments. ``prereg9`` forwards exactly what it always did; any other
+    profile adds ``--profile`` and ``--log-dir`` (the directory this watchdog watches), and
+    ``--through-index`` / ``--pools`` when given."""
     extra = ["--workers", str(workers)]
     if budget is not None:
         extra += ["--budget", str(budget)]
     if pilot:
         extra.append("--pilot")
+    if profile != DEFAULT_PROFILE:
+        extra += ["--profile", profile, "--log-dir", str(log_dir if log_dir is not None else profile_log_dir(profile))]
+        if through_index is not None:
+            extra += ["--through-index", str(through_index)]
+        if pools is not None:
+            extra += ["--pools", pools]
     return extra
+
+
+def _group_alive(pid: int) -> bool:
+    """collect.py's `_pgid_is_alive` (stdlib-only copy): does process group `pid` still exist?"""
+    try:
+        os.killpg(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def het_lock_holder(profile: str) -> tuple[int, str] | None:
+    """``(pid, profile)`` of ANOTHER heterogeneity profile whose live process group holds the shared
+    lock (``HET_LOG_ROOT/het.lock``), else ``None`` (no lock, a dead holder, or this same profile's --
+    its own stale lock is reclaimed by the collector). Always ``None`` for ``prereg9``."""
+    if profile == DEFAULT_PROFILE:
+        return None
+    try:
+        parts = (HET_LOG_ROOT / HET_LOCK_NAME).read_text().split()
+        pid, holder = int(parts[0]), (parts[1] if len(parts) > 1 else "?")
+    except (FileNotFoundError, OSError, ValueError, IndexError):
+        return None
+    if holder == profile or not _group_alive(pid):
+        return None
+    return pid, holder
+
+
+def _refuse_het_locked(profile: str) -> int | None:
+    held = het_lock_holder(profile)
+    if held is None:
+        return None
+    print(f"heterogeneity profile {held[1]!r} (pid {held[0]}) holds {HET_LOG_ROOT / HET_LOCK_NAME}; the heterogeneity "
+          f"profiles run one at a time -- not launching {profile!r}", flush=True)
+    return EXIT_HET_LOCKED
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -239,29 +334,56 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pilot", action="store_true")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--budget", type=float, default=None, help="forwarded to collect.py (its default otherwise)")
+    ap.add_argument("--profile", choices=PROFILE_NAMES, default=DEFAULT_PROFILE, help="forwarded to collect.py")
+    ap.add_argument("--print-log-dir", action="store_true", help="print this profile's log dir and exit")
+    ap.add_argument("--through-index", type=int, default=None,
+                    help="heterogeneity profiles: forwarded to collect.py (stop cleanly after queue item N)")
+    ap.add_argument("--pools", type=str, default=None,
+                    help="heterogeneity profiles: forwarded to collect.py (work only these comma-separated pools)")
     args = ap.parse_args(argv)
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    (LOG_DIR / RELAUNCH_LOG).touch()  # its existence is how gate G2 knows a watchdog supervised the run
+    if args.profile != DEFAULT_PROFILE and args.budget is None:
+        ap.error(f"--profile {args.profile} needs an explicit --budget USD (the collector has no default for it)")
+    if args.through_index is not None and args.profile == DEFAULT_PROFILE:
+        ap.error("--through-index stages the heterogeneity collection (not --profile prereg9)")
+    if args.pools is not None and args.profile == DEFAULT_PROFILE:
+        ap.error("--pools stages the heterogeneity collection (not --profile prereg9)")
+    log_dir = profile_log_dir(args.profile)
+    if args.print_log_dir:
+        print(log_dir)
+        return 0
+    refused = _refuse_het_locked(args.profile)
+    if refused is not None:
+        return refused
+    log_dir.mkdir(parents=True, exist_ok=True)
+    (log_dir / RELAUNCH_LOG).touch()  # its existence is how gate G2 knows a watchdog supervised the run
     mode = "pilot" if args.pilot else "full"
-    extra = collector_args(args.workers, args.pilot, args.budget)
+    if args.through_index is None and args.pools is None:
+        extra = collector_args(args.workers, args.pilot, args.budget, args.profile, log_dir)
+    else:
+        extra = collector_args(args.workers, args.pilot, args.budget, args.profile, log_dir,
+                               through_index=args.through_index, pools=args.pools)
     proc: subprocess.Popen | None = None
-    _kill_orphaned_lock_holder(LOG_DIR)  # orphans of a PREVIOUS watchdog session/process
+    _kill_orphaned_lock_holder(log_dir)  # orphans of a PREVIOUS watchdog session/process
     _ensure_previous_dead(proc)  # a no-op here (no `proc` yet): kept for the "every launch" invariant
-    _prepare_launch(LOG_DIR)
-    proc = _launch(extra, LOG_DIR)
+    _prepare_launch(log_dir)
+    proc = _launch(extra, log_dir)
     now = time.time()
-    relaunches, last_lines, last_progress = 0, line_count(LOG_DIR), now
-    clocks = WorkerClocks(args.workers, now)
+    relaunches, last_lines, last_progress = 0, line_count(log_dir), now
+    clocks = WorkerClocks(args.workers, now, stall_minutes=worker_stall_minutes(args.profile))
     while True:
         time.sleep(POLL_SECONDS)
         now = time.time()
-        lines = line_count(LOG_DIR)
+        lines = line_count(log_dir)
         if lines != last_lines:
             last_lines, last_progress = lines, now
-        clocks.observe(worker_sizes(LOG_DIR, args.workers), now)
-        status = _status(LOG_DIR)
+        clocks.observe(worker_sizes(log_dir, args.workers), now)
+        status = _status(log_dir)
         alive = proc.poll() is None
-        stale = clocks.stale(now, finished_workers(LOG_DIR)) if alive and status == "running" else ()
+        if not alive and getattr(proc, "returncode", None) == EXIT_STAGE_MISMATCH:
+            print("collector refused: this launch's --pools / --through-index / --pilot differ from the stage "
+                  f"recorded in {log_dir / 'STAGE.json'}; NOT relaunching (see collect.out).", flush=True)
+            return EXIT_STAGE_MISMATCH
+        stale = clocks.stale(now, finished_workers(log_dir)) if alive and status == "running" else ()
         action = decide(status, alive, (now - last_progress) / 60.0, stale)
         if action == "finished":
             if status == "provider_down":
@@ -274,8 +396,13 @@ def main(argv: list[str] | None = None) -> int:
         if action == "wait":
             continue
         if relaunches >= MAX_RELAUNCHES:
-            (LOG_DIR / "WATCHDOG_GAVE_UP").write_text(f"{relaunches} relaunches\n")
+            (log_dir / "WATCHDOG_GAVE_UP").write_text(f"{relaunches} relaunches\n")
             return 1
+        refused = _refuse_het_locked(args.profile)
+        if refused is not None:
+            if proc.poll() is None:
+                _kill_and_wait_process(proc)
+            return refused
         if action == "kill_and_relaunch" and proc.poll() is None:
             _kill_and_wait_process(proc)
         relaunches += 1
@@ -285,10 +412,10 @@ def main(argv: list[str] | None = None) -> int:
             reason = "stale_workers:" + ",".join(str(w) for w in stale)
         else:
             reason = "global_stall"
-        _record_relaunch(LOG_DIR, relaunches, reason, mode)
+        _record_relaunch(log_dir, relaunches, reason, mode)
         _ensure_previous_dead(proc)
-        _prepare_launch(LOG_DIR)
-        proc = _launch(extra, LOG_DIR)
+        _prepare_launch(log_dir)
+        proc = _launch(extra, log_dir)
         last_progress = time.time()
         clocks.restart(last_progress)
 

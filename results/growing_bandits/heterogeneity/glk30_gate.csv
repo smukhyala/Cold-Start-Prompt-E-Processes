@@ -1,0 +1,2 @@
+gate_pass,reason,tier_primary,tier_S1,tier_S2,study,score_cap,task_universe,manifest_sha256,tau_flat,calibration_sha256,n_boot,unregistered
+False,"primary mix moderate, S1 moderate: no decision-relevant heterogeneity",moderate,moderate,moderate,glk30,30,block_a,3f19367cbebe0fe08384572f788d8e90677a2041af72774e28d78435f9e8346f,0.019165515325428883,48b06726c6a1d566347c74602900bc571414dbf1cb2cfe27a26f0df80758c7d5,200,False

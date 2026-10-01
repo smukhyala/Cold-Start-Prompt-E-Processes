@@ -1,0 +1,17 @@
+{
+  "study": "glk",
+  "score_cap": null,
+  "task_universe": "block_a",
+  "manifest_sha256": "d0f6d6c092e08add12ff4bdd841ee860cdf94371142706452101d45e685eca97",
+  "tau_flat": 0.019165515325428883,
+  "calibration_sha256": "48b06726c6a1d566347c74602900bc571414dbf1cb2cfe27a26f0df80758c7d5",
+  "n_boot": 200,
+  "unregistered": false,
+  "tiers": {
+    "primary": "moderate",
+    "S1": "moderate",
+    "S2": "moderate"
+  },
+  "gate_pass": false,
+  "stage_b": "inconclusive"
+}

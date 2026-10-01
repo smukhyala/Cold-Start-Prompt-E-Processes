@@ -333,8 +333,8 @@ State on 2026-10-01: `main` (933a46d) ← PR #5 `fix/post-merge-corrections` (6 
 Nothing supersedes anything destructively: each later branch *adds* sections (§12.x, §13, §14 note, §15) and
 pre-registrations 8–11 with amendments, and every table the paper needs is tracked.
 
-1. Open the PR for `prompt-heterogeneity` with base `empirical-reservoir` (stacked, like #6). *Done in this
-   pass; not merged.*
+1. Open the PR for `prompt-heterogeneity` with base `empirical-reservoir` (stacked, like #6). *Done: PR #7,
+   not merged.*
 2. Merge #5 into `main` (merge commit, no squash, so the registration-before-run commit order stays auditable).
 3. Retarget #6 to `main`, merge (merge commit).
 4. Retarget the `prompt-heterogeneity` PR to `main`, merge (merge commit).

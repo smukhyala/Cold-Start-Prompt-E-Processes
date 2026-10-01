@@ -1,0 +1,14 @@
+{
+  "noise": "45e7c9a40cd699da25db3aed712ea037928a391a13fe1581b5e3b564b03deb1a",
+  "outcomes_snapshot": {
+    "file": "outcomes_snapshot.jsonl",
+    "sha256": "50e2833d060b541dcba96a5a56ee24363ba6a6400fa981e17fb0a58a6ece6d7f"
+  },
+  "parametric_fits": "104c6044f3df988bdb6d1771d6a223f6b2e010cbbaa202f496ab7423675c4ced",
+  "reservoirs": {
+    "GLK_npmle": "1b6ee9217e8971bed09548ed8a46e0c5f91f6a27e88a8885b3dd8bc02ebbd815",
+    "GLK_parametric": "347d6ecd8ce1d166daf028afbd3c1ae90f1139c75ea498718b1db8190ec58579",
+    "GLK_raw": "941f282399a7053f14c2efeba2e0b1e4916eb517400a2840c4eb8949cb78407f"
+  },
+  "task_universe": "block_a"
+}

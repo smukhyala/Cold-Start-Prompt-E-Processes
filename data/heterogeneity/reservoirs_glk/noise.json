@@ -1,0 +1,14 @@
+{
+  "v": {
+    "GLK": 0.09583333333333334
+  },
+  "by_pool": {
+    "GLK": 0.09583333333333334
+  },
+  "n_pairs": {
+    "GLK": 120
+  },
+  "borrowed": {},
+  "per_pool": true,
+  "noise_mode": "per_pool"
+}

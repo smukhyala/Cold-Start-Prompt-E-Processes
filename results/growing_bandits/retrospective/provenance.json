@@ -1,0 +1,46 @@
+{
+  "analysis": "retrospective task-held-out prompt selection and pilot signal",
+  "seed": 20261006,
+  "splits_per_pool": 2000,
+  "leave_one_out_splits_per_task": 300,
+  "pilot_prompts": 8,
+  "source_sha256": {
+    "data/empirical_pool/reservoirs/outcomes_snapshot.jsonl": "a0c09e1b0d27ce57138d293ca6f8482a82dfbd208ad013c4dc306b8c5b615d75",
+    "data/heterogeneity/reservoirs_glk30/outcomes_snapshot.jsonl": "50e2833d060b541dcba96a5a56ee24363ba6a6400fa981e17fb0a58a6ece6d7f",
+    "results/gitlab_strong_arm/paired/paired_results.csv": "712bd066003f84be9af77ff3c57b1a11af0816c027bb58984fd95bad7f2a91d8"
+  },
+  "pools": [
+    {
+      "name": "G",
+      "arms": 50,
+      "tasks": 30,
+      "excluded": []
+    },
+    {
+      "name": "F",
+      "arms": 50,
+      "tasks": 30,
+      "excluded": []
+    },
+    {
+      "name": "GLK30",
+      "arms": 40,
+      "tasks": 30,
+      "excluded": []
+    },
+    {
+      "name": "GitLab17",
+      "arms": 17,
+      "tasks": 40,
+      "excluded": [
+        "gitlab_oracle_operator"
+      ]
+    },
+    {
+      "name": "GitLab18_cookbook",
+      "arms": 18,
+      "tasks": 40,
+      "excluded": []
+    }
+  ]
+}

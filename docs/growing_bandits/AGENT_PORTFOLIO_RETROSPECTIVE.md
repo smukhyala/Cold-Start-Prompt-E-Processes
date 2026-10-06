@@ -60,7 +60,7 @@ The frozen outcomes reconcile with the live G/F logs; every main trial has a sav
 
 For GLK, the same 1,200 main episodes score 61.8% at 30 steps and 75.7% as collected: 166 of the as-collected successes occurred too late to count at 30 steps. This supports completion speed as an important explanation of the cap-sensitive GLK result. It does not show that a different prompt causes faster completion, and as-collected costs are not 30-step costs. Among the 50 GLK repeat cells whose first run failed under the cap, the rerun succeeds 24.0% of the time; a different GLK prompt's main run succeeds 29.1% on average. The small number of discordant cases, especially within difficulty tiers, limits trace-level interpretation.
 
-The saved histories make a later blinded qualitative trace review possible. This report uses recorded success, steps, timeouts and costs; it does not assign post-hoc failure-mechanism labels to individual histories.
+A fixed-seed audit read 12 saved history pairs: two first-fail/repeat-fail and two first-fail/repeat-success cells per pool. It checked that each history had actions and recorded its action types, steps, raw outcome and timeout flag (`trace_audit_sample.csv`). The sample includes both clock-ended Gmail failures and, in GLK, a repeat that succeeded only after step 30. Action lists vary even for the same prompt and task. This **outcome-stratified descriptive sample** is too small for a frequency estimate and does not justify causal failure-mechanism labels; the saved histories remain available for a blinded qualitative study.
 
 ## What this means for the thesis
 
@@ -75,8 +75,9 @@ From the repository root:
 ```bash
 ./.venv/bin/python experiments/growing_bandits/retrospective/agent_portfolio.py
 ./.venv/bin/python experiments/growing_bandits/retrospective/plot_agent_portfolio.py
+./.venv/bin/python experiments/growing_bandits/retrospective/trace_audit.py
 ./.venv/bin/pytest -q tests/test_agent_portfolio.py tests/test_task_transfer.py
-./.venv/bin/ruff check experiments/growing_bandits/retrospective/agent_portfolio.py experiments/growing_bandits/retrospective/plot_agent_portfolio.py tests/test_agent_portfolio.py
+./.venv/bin/ruff check experiments/growing_bandits/retrospective/agent_portfolio.py experiments/growing_bandits/retrospective/plot_agent_portfolio.py experiments/growing_bandits/retrospective/trace_audit.py tests/test_agent_portfolio.py
 ```
 
 Tables, split-level rows, source hashes and the figure are in `results/growing_bandits/retrospective/agent_portfolio/`. The primary visualization is `agent_portfolio_overview.pdf` (and `.png`).

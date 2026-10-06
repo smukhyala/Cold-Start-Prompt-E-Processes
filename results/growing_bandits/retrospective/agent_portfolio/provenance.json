@@ -1,0 +1,27 @@
+{
+  "seed": 20261006,
+  "n_reused_splits": 500,
+  "n_task_bootstrap": 10000,
+  "sources": {
+    "data/empirical_pool/reservoirs/outcomes_snapshot.jsonl": "a0c09e1b0d27ce57138d293ca6f8482a82dfbd208ad013c4dc306b8c5b615d75",
+    "data/heterogeneity/reservoirs_glk30/outcomes_snapshot.jsonl": "50e2833d060b541dcba96a5a56ee24363ba6a6400fa981e17fb0a58a6ece6d7f",
+    "results/gitlab_strong_arm/paired/paired_results.csv": "712bd066003f84be9af77ff3c57b1a11af0816c027bb58984fd95bad7f2a91d8",
+    "logs/empirical_pool/worker_0.jsonl": "4e7a46a16107d9a1af0d16e67f8f9c9d9e8807db95f067f718c2027a20d19bec",
+    "logs/empirical_pool/worker_1.jsonl": "5f128220dfe42e954ca5bd328cff265f6749601d3fe2e9490c6d392bf14a5204",
+    "logs/empirical_pool/worker_2.jsonl": "b975153e4fccf1219f270c1e6d08012e6f5724197a1478da08292e908df593b6",
+    "logs/empirical_pool/worker_3.jsonl": "5506a6c286075d9191d60a7ce4a9c3628f927dd64d8814c675c485cfa5f7542e",
+    "logs/empirical_pool/worker_4.jsonl": "9f7c8493d11988fc869a0b935927d80ce3c28a467b175c91d40adcf3e76be999",
+    "logs/empirical_pool/worker_5.jsonl": "a1db422df0440471f4f9c99da305cb978ff55b2c6a473cb95f9e17e8ac63813e",
+    "logs/empirical_pool/worker_6.jsonl": "aff4f272cb26f702eb68897d52423a9c0be546a79307a0f53a69ebc0aa992d2b",
+    "logs/empirical_pool/worker_7.jsonl": "22ae1afebe0434f59f39160f29813b7118f749842b7aa60695d1516434412eee",
+    "logs/heterogeneity/gitlab/worker_0.jsonl": "8bb6ae61ae1516ee85c092ce50d858b60dcc0d31d1b9ff23cb818cfcbfdaed3f",
+    "logs/heterogeneity/gitlab/worker_1.jsonl": "cacaf782bcc04963b39b382f6b081ec0b6ad39b4dc739db2274bd34be3e5ac71",
+    "logs/heterogeneity/gitlab/worker_2.jsonl": "b241e8592f2f07b957b6a3f042c76321a83bdd91564456f591869ed2232d15e9",
+    "logs/heterogeneity/gitlab/worker_3.jsonl": "c2fc32f26f8448c7ebc9c1d27dad5fd32ac2358da69ebfcc968a65650f79b75c",
+    "logs/heterogeneity/gitlab/worker_4.jsonl": "470735c323bc0d03c6e0dca0ef5acc98a6eae890e3486b65036ca40248ccb667",
+    "logs/heterogeneity/gitlab/worker_5.jsonl": "da31967e5b689f5701350bb44e0052d7a97c36a51ab47af7d4cc5f66e0257cdc",
+    "logs/heterogeneity/gitlab/worker_6.jsonl": "0fe11ea797e6ce45f6143618158a54e544bcbc91db8e91b57b0e25476015286e",
+    "logs/heterogeneity/gitlab/worker_7.jsonl": "456beac7499c2e72275f26252b1352a50cb33400f6c40cace56f09cd85061136"
+  },
+  "note": "Exploratory reanalysis; no new agent episodes; splits reuse the same task banks."
+}

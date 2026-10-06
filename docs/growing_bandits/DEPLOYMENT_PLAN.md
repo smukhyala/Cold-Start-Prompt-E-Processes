@@ -1314,3 +1314,53 @@ between two prompts predict behavioural distance between them, beyond what execu
 
 - The behavioural results were known before registration. Only the linguistic side is blind.
 - The choice of embedding model is a researcher degree of freedom. Secondary measures are reported in full.
+
+### Pre-registration 12 — Amendment 1: power and trajectories (registered 2026-10-05, after L1–L3, before either check is run)
+
+*Added after a validity review of the L1–L3 results. Main problems found:*
+- *L2 is close to uninformative when outcomes are flat.*
+- *Only 7 (G) and 9 (F) of the 30 Gmail tasks discriminate.*
+- *The NPMLE spread for F has a degenerate interval.*
+- *"Behavioural" was measured only as pass/fail.*
+
+*Two checks address these. Neither runs a new episode or calls a paid API.*
+
+**P — minimum detectable spread.**
+- **Simulation.** For each pool (G, F, GLK30), simulate pools whose true prompt spread is known:
+  - Spread τ ∈ {0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.10} on the probability scale.
+  - Each pool keeps its own number of prompts, tasks and per-task difficulty (fitted on the logit scale from the
+    data), its estimated prompt × task interaction, its replicate design, and its noise level.
+  - Prompt effects are drawn on the logit scale and scaled so the implied spread on the probability scale equals τ.
+  - 200 simulated pools per τ.
+- **Estimation.** Each simulated pool goes through the repo's own estimators, unchanged: the NPMLE deconvolved
+  spread, the τ interval, the split-half test, and the "detectable" rule Pre-reg 11 used.
+- **Reported:** power against τ; the minimum detectable spread (MDS), defined as the smallest τ with power ≥ 0.8;
+  and the distribution of the NPMLE spread estimate at each τ, in particular P(estimate ≤ 0.005 | τ).
+- **Paper wording.**
+  - Point estimates such as "SD 0.001" are replaced by "no detectable spread; a spread of MDS or more would have
+    been detected with probability ≥ 0.8".
+  - If MDS > 0.05 in a pool, that pool's flatness is reported as uninformative, not as flat.
+
+**T — trajectory distance.**
+- **Features.** From the existing episode logs, compute per episode:
+  - step count (log scale);
+  - the sequence of browser-use action types;
+  - the multiset of action types.
+- **Distances, in each pool:**
+  - (a) Prompt main effect on log steps, tested against the replicate noise (variance components, as in §13/§15,
+    plus a permutation test over prompt labels within task).
+  - (b) Action distance between two episodes: normalised edit distance between action-type sequences (primary)
+    and Jaccard distance between action-type multisets (secondary). Excess = mean distance between different
+    prompts on the same task − mean distance between replicates of the same prompt on the same task. Bootstrap
+    95% interval over prompts and tasks.
+  - (c) A Mantel test between linguistic distance (emb3large) and the per-pair mean action distance, with the
+    same settings as L2.
+- **Decision rules.**
+  - If (b) excess is > 0 with an interval excluding 0 in a pool, the paper says that wording changed *how* the
+    agent acted without changing *whether* it succeeded, and the S4 sentence uses "success" rather than
+    "behaviour".
+  - If (c) is significant and positive, the paper reports that linguistic distance predicts trajectory distance.
+  - If (a) and (b) are both null, "behaviour" may be used, scoped to "success and trajectory".
+
+**Limitation, recorded now.** Gmail has no positive control: no anchor that shows prompts *can* move success on this
+task bank. This cannot be fixed without paid episodes and is reported as a limitation.

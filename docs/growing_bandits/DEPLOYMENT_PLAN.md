@@ -1249,3 +1249,68 @@ of GLK data**; the only data seen remains the audit aggregates disclosed above.
   launch into that log dir with a different `--pools` / `--through-index` / `--pilot`, or none, refuses before
   touching STATUS or any lock, and the watchdog does not relaunch it. A hand relaunch after `provider_down`
   therefore cannot spend the budget on withdrawn GLG cells.
+
+## Pre-registration 12 — linguistic distance versus behavioural distance (registered 2026-10-05, before any embedding is computed)
+
+*Branch `paper`. An analysis of data that are already collected: no new agent episode is run. The behavioural
+results (Pre-reg 9 §13, Pre-reg 11 §15) were known when this was written; the linguistic distances were not.
+Results become §16 of `DEPLOYMENT_RESULTS.md` and support claim S4 ("linguistic diversity is not behavioural
+diversity") in the paper.*
+
+### Question
+
+Did the prompts in each real pool actually differ in wording and meaning, how much, and does linguistic distance
+between two prompts predict behavioural distance between them, beyond what execution noise explains?
+
+### Data
+
+- Pools: G (50, Gmail), F (50, Gmail), GLK (40, GitLab; primary outcome = the 30-step re-score `glk30`, the
+  uncapped `glk` as secondary). Anchors are reported as reference points only, never pooled.
+- Text: the `prompt_guidance` field (the part that varies; the template is shared). The full rendered prompt is a
+  sensitivity check.
+- Outcomes: the episode-level outcomes already behind §13 and §15, including their replicate cells. Nothing is
+  re-collected.
+
+### Measures
+
+- **Linguistic distance (primary):** cosine distance between OpenAI `text-embedding-3-large` embeddings.
+  Secondary: `text-embedding-3-small`, TF-IDF cosine distance, token Jaccard distance. Embeddings are cached
+  with model name and text SHA-256. Expected cost: under $0.05.
+- **Behavioural distance, two kinds:**
+  - *Main effect:* |rate_i − rate_j| over the shared tasks (raw), set against the deconvolved spread already in
+    §13 and §15.
+  - *Profile:* the per-task disagreement rate between prompts i and j. Its noise floor is the disagreement rate
+    between two replicate episodes of the *same* prompt on the same task, taken from the replicate cells.
+    Excess disagreement = profile disagreement − noise floor.
+- **Linguistic dispersion of a pool:** mean pairwise linguistic distance, with a bootstrap 95% interval over
+  prompts. Between-pool and cross-domain (Gmail vs GitLab) distances are reported as reference scales.
+
+### Registered tests
+
+1. **L1 (dispersion ordering).** F's mean pairwise linguistic distance (primary embedding) is ≥ G's. This is a
+   descriptive check with a bootstrap interval for the difference.
+2. **L2 (no linguistic → behavioural association).** In each pool, a Mantel test (Spearman, 10,000 permutations,
+   one-sided for positive association) between the linguistic and behavioural distance matrices, run once for
+   main-effect distance and once for excess profile disagreement. The correlation is reported with a bootstrap
+   95% interval over prompts.
+3. **L3 (excess over noise).** Per pool, mean excess profile disagreement with a bootstrap 95% interval over
+   prompts and tasks.
+
+### Decision rules for the paper
+
+- **The S4 sentence stays as written** ("prompts written to differ behave like one"; "linguistic diversity did
+  not produce behavioural diversity") if both hold:
+  - L1 holds; and
+  - in F, the L2 main-effect Mantel test is not significant at 0.05 and the upper end of its correlation interval
+    is < 0.3.
+- **If L1 fails** (F is not more linguistically dispersed than G), the paper drops "written to differ" and
+  reports F's dispersion relative to G and GLK.
+- **If L2 is significant and positive in any pool**, the paper reports it in that pool and scopes S4 to the pools
+  where it holds.
+- **L3** is descriptive. A positive excess with a near-zero main effect is reported as prompt × task interaction,
+  consistent with the §13 and §15 variance components. It is not reported as prompt quality.
+
+### Disclosed
+
+- The behavioural results were known before registration. Only the linguistic side is blind.
+- The choice of embedding model is a researcher degree of freedom. Secondary measures are reported in full.

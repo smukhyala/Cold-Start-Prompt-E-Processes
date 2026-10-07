@@ -1,0 +1,40 @@
+{
+  "decision": "retry same if first incomplete, or if complete and predicted same-retry gain >= threshold",
+  "features": [
+    "log1p_steps",
+    "log1p_100x_cost",
+    "log1p_wallclock_s",
+    "log1p_final_result_length",
+    "log1p_nontrivial_errors",
+    "is_F"
+  ],
+  "standardizer_mean": [
+    2.16879946457786,
+    1.745888993783811,
+    3.371394237902868,
+    5.15327695064427,
+    0.00525111500424201,
+    0.5265151515151515
+  ],
+  "standardizer_scale": [
+    0.6343457262853076,
+    0.6979970547162087,
+    0.7701169719390607,
+    0.4644759851872112,
+    0.06010175830371832,
+    0.49929645176000226
+  ],
+  "ridge_coefficients": [
+    -0.014685310247317469,
+    0.03261489626530701,
+    -0.08407825728291642,
+    0.023958573785022048,
+    0.007984486652440627,
+    0.00356101577561917
+  ],
+  "ridge_intercept": -0.01893939393939434,
+  "completed_G_training_prediction_p80": 0.027597779890882704,
+  "threshold": 0.027597779890882704,
+  "n_completed_training_anchors": 264,
+  "ridge_alpha": 10.0
+}

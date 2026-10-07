@@ -1,0 +1,10 @@
+{
+  "source": "https://github.com/LucasEtteldorf/workbench/blob/main/data/results/item_level_results.csv.gz",
+  "sha256": "6035fb112bbb4fb48cd56d643898cac43c42c2d11bc6d2bb0e595d8d31ea2216",
+  "cohort": "revisited_2026, v2, all tools",
+  "n_models": 24,
+  "n_tasks": 690,
+  "n_base_templates": 69,
+  "empirical_snapshot_sha256": "a0c09e1b0d27ce57138d293ca6f8482a82dfbd208ad013c4dc306b8c5b615d75",
+  "seed": 20261006
+}

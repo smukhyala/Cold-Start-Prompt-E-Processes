@@ -2,6 +2,8 @@
 
 *Prepared 2026-10-07. No new agent episode or billable API call has been started.*
 
+**Launch attempt, 2026-10-07:** Sanjay authorized the $12 cap. The collector started, but this Codex execution environment denied the local Gmail server permission to bind port 8001 (`PermissionError: [Errno 1] Operation not permitted`). The collector was stopped before any task record or model call; it reported **$0.00 spent**, with zero worker records and no remaining collector lock. Running the command below from Sanjay's normal terminal, where localhost servers are permitted, is the remaining execution step. The failed `STATUS` in the isolated log directory does not alter the frozen queue or earlier trials; the collector resumes from recorded terminal cells.
+
 ## Exact batch
 
 - **30 task IDs:** the 10 easy, 10 medium, and 10 hard Gmail tasks omitted from the primary G/F grid. Some of these task IDs had archived pre-amendment pilot runs with other prompts. Neither selected prompt has a recorded run on any of the 30 IDs, so the planned **prompt–task cells** are new; this is not an untouched task bank or new task-template family.

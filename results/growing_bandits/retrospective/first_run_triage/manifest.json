@@ -1,0 +1,20 @@
+{
+  "empirical_snapshot": "data/empirical_pool/reservoirs/outcomes_snapshot.jsonl",
+  "empirical_snapshot_sha256": "a0c09e1b0d27ce57138d293ca6f8482a82dfbd208ad013c4dc306b8c5b615d75",
+  "worker_log_sha256": {
+    "logs/empirical_pool/worker_0.jsonl": "4e7a46a16107d9a1af0d16e67f8f9c9d9e8807db95f067f718c2027a20d19bec",
+    "logs/empirical_pool/worker_1.jsonl": "5f128220dfe42e954ca5bd328cff265f6749601d3fe2e9490c6d392bf14a5204",
+    "logs/empirical_pool/worker_2.jsonl": "b975153e4fccf1219f270c1e6d08012e6f5724197a1478da08292e908df593b6",
+    "logs/empirical_pool/worker_3.jsonl": "5506a6c286075d9191d60a7ce4a9c3628f927dd64d8814c675c485cfa5f7542e",
+    "logs/empirical_pool/worker_4.jsonl": "9f7c8493d11988fc869a0b935927d80ce3c28a467b175c91d40adcf3e76be999",
+    "logs/empirical_pool/worker_5.jsonl": "a1db422df0440471f4f9c99da305cb978ff55b2c6a473cb95f9e17e8ac63813e",
+    "logs/empirical_pool/worker_6.jsonl": "aff4f272cb26f702eb68897d52423a9c0be546a79307a0f53a69ebc0aa992d2b",
+    "logs/empirical_pool/worker_7.jsonl": "22ae1afebe0434f59f39160f29813b7118f749842b7aa60695d1516434412eee"
+  },
+  "n_randomized_repeats": {
+    "G": 145,
+    "F": 155
+  },
+  "seed": 20261007,
+  "distinct_agent_estimate": "mean over all other prompt main outcomes on the same task"
+}

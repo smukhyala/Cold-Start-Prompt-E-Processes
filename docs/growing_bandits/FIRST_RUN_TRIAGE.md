@@ -35,6 +35,8 @@ Among 264 apparently completed anchor runs, 76 first runs were wrong. The failur
 
 The model aimed directly at *retry benefit* did better descriptively: it selected 25 G and 28 F completed anchors and produced **one net additional success in each pool**. Across all 264 completed anchors that is +0.76 points (task bootstrap 0.0 to +2.3), at $0.0062 extra per completed task. Two net rescues on the same reused task banks are far too little evidence for a deployed rule; changing the feature set or the next tasks could reverse the result. This probe sharpens the next-trial target: a useful policy must predict **recoverability after retry**, rather than just the chance that the first attempt is wrong.
 
+I also inspected the saved browser-action histories for three fixed observable cues: whether the final answer *claimed* verification, whether a read-style action appeared anywhere, and whether one appeared after the final click. Among completed anchors, claimed verification appeared in 176/264 runs; success was 72.2% there versus 69.3% without it. A read-style action after the last click appeared in only 11/264 runs, and those runs succeeded less often (36.4% versus 72.7%). In this scaffold, extra inspection often accompanies a hard task, while many successful short tasks end directly after a click. These crude cues do not constitute a reliable verifier. The summary is descriptive and was chosen after the outcomes were available.
+
 ## What the next independent trial must test
 
 The saved data reveal a simple timeout rule but cannot validate a stronger rule for **apparently completed but incorrect** first runs. That is the first-run research question that remains open. The independent trial should be frozen as follows before inference:
@@ -49,4 +51,4 @@ The 30 unused Gmail tasks could check feasibility but are underpowered for a 2â€
 
 ## Reproduction
 
-Run `./.venv/bin/python experiments/growing_bandits/retrospective/first_run_triage.py` and then `./.venv/bin/python experiments/growing_bandits/retrospective/first_run_trace_probe.py` from the repository root. The code, cell-level anchors, grouped-CV predictions, summaries, and input hashes are in those two scripts and `results/growing_bandits/retrospective/first_run_triage/`.
+Run `./.venv/bin/python experiments/growing_bandits/retrospective/first_run_triage.py`, `./.venv/bin/python experiments/growing_bandits/retrospective/first_run_trace_probe.py`, and `./.venv/bin/python experiments/growing_bandits/retrospective/history_evidence_probe.py` from the repository root. The code, cell-level anchors, grouped-CV predictions, history cues, summaries, and input hashes are in those scripts and `results/growing_bandits/retrospective/first_run_triage/`.

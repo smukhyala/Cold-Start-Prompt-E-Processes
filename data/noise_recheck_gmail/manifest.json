@@ -1,0 +1,411 @@
+{
+  "design": "30 sampled September pool-G repeat cells, each rerun as replicates 0 and 1; single worker, seeded random order; profile prereg9 (180 s clock)",
+  "hypothesis": "provider/model drift raised G self-disagreement (pilot 33% vs 10.3% in September)",
+  "source_manifest_sha256": "1f59088b57d23281b7f3f8b1dfa9c82606e7060d2056409e568e42e9439b0e9c",
+  "seed": 20261011,
+  "profile": "prereg9",
+  "n_cells": 30,
+  "n_episodes": 60,
+  "n_historical_repeat_cells": 145,
+  "september_disagree_all_cells": 15,
+  "september_disagree_sampled_cells": 3,
+  "disclosure": "The 30-step cap is now enforced (bug fixed 2026-10-10 in src/cold_start/tasks/webarena.py); September (Pre-reg 9) ran effectively uncapped (4.6% of Gmail episodes exceeded 30 steps). The 2026-10-09 first-run pilot also ran uncapped.",
+  "cells": [
+    {
+      "arm_id": "G_00",
+      "task_id": "task_m14",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.021153900000000003,
+        0.020786850000000003
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_01",
+      "task_id": "task_m13",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.05003384999999999,
+        0.0656631
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_04",
+      "task_id": "task_m13",
+      "sept_success": [
+        0,
+        1
+      ],
+      "sept_cost_usd": [
+        0.030230700000000003,
+        0.0324885
+      ],
+      "sept_disagree": 1
+    },
+    {
+      "arm_id": "G_05",
+      "task_id": "task_m14",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.03792855,
+        0.02051865
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_13",
+      "task_id": "task_e11",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.0312906,
+        0.031487100000000004
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_14",
+      "task_id": "task_e15",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.4136778000000001,
+        0.3631377
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_14",
+      "task_id": "task_m7",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.19649234999999998,
+        0.15477450000000004
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_16",
+      "task_id": "task_e11",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.020059050000000002,
+        0.0231906
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_16",
+      "task_id": "task_m7",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.1682493,
+        0.06858945
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_17",
+      "task_id": "task_h19",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.04298595,
+        0.10648575000000002
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_19",
+      "task_id": "task_h6",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.3850281,
+        0.13260435
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_20",
+      "task_id": "task_m15",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.01573305,
+        0.01618245
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_21",
+      "task_id": "task_e12",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.0260019,
+        0.032857500000000005
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_21",
+      "task_id": "task_e19",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.0275385,
+        0.04794495
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_21",
+      "task_id": "task_m15",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.017844600000000002,
+        0.0159642
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_24",
+      "task_id": "task_h15",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.02837385,
+        0.026737050000000005
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_25",
+      "task_id": "task_m13",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.042136950000000006,
+        0.0434211
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_26",
+      "task_id": "task_h12",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.10503509999999999,
+        0.18955635
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_27",
+      "task_id": "task_e16",
+      "sept_success": [
+        1,
+        0
+      ],
+      "sept_cost_usd": [
+        0.022205550000000004,
+        0.0449805
+      ],
+      "sept_disagree": 1
+    },
+    {
+      "arm_id": "G_28",
+      "task_id": "task_e20",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.04560915000000001,
+        0.0496992
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_28",
+      "task_id": "task_h8",
+      "sept_success": [
+        1,
+        0
+      ],
+      "sept_cost_usd": [
+        0.2777436,
+        0.15809325000000005
+      ],
+      "sept_disagree": 1
+    },
+    {
+      "arm_id": "G_28",
+      "task_id": "task_m4",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.16275734999999997,
+        0.0291303
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_29",
+      "task_id": "task_h13",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.1676598,
+        0.16132605000000003
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_30",
+      "task_id": "task_e14",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.01913745,
+        0.01996485
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_36",
+      "task_id": "task_e19",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.029187450000000004,
+        0.03053535
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_37",
+      "task_id": "task_h12",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.2547486,
+        0.25596795000000006
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_37",
+      "task_id": "task_h17",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.25544715,
+        0.23246535000000002
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_41",
+      "task_id": "task_h17",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.03020925,
+        0.23990940000000002
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_41",
+      "task_id": "task_m7",
+      "sept_success": [
+        0,
+        0
+      ],
+      "sept_cost_usd": [
+        0.12227715000000001,
+        0.05819745
+      ],
+      "sept_disagree": 0
+    },
+    {
+      "arm_id": "G_42",
+      "task_id": "task_e13",
+      "sept_success": [
+        1,
+        1
+      ],
+      "sept_cost_usd": [
+        0.0245673,
+        0.02518605
+      ],
+      "sept_disagree": 0
+    }
+  ],
+  "files": {
+    "pool_G.yaml": "20da6911d1b79749aa134f8255257bc4393a24c43930d82588d5d44eba62a4f6",
+    "pool_F.yaml": "b47c2327d0ed6565878ec1c545108587cee3b2fb88ad3fcc250dca87301b15a0",
+    "pool_anchor.yaml": "9681872cd65cdf43374d18e5dd35be3a606653a9235c1330c691cf177e3238e6",
+    "queue.jsonl": "002c22793250175c1c9590c3cce4165da021584b2f2bb451f37768e5154aa43a"
+  }
+}

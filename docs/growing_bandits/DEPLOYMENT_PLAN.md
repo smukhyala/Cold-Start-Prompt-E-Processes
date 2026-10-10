@@ -1364,3 +1364,80 @@ between two prompts predict behavioural distance between them, beyond what execu
 
 **Limitation, recorded now.** Gmail has no positive control: no anchor that shows prompts *can* move success on this
 task bank. This cannot be fixed without paid episodes and is reported as a limitation.
+
+## Pre-registration 13 — does the search's winner beat the default on held-out tasks? (registered 2026-10-10, before any episode)
+
+*Branch `paper`. Confirmatory test of the exploratory finding in `docs/RESEARCH_PATHS_AUDIT_2026-10-09.md` §2:
+in every realistic pool, the prompt selected by search did not reliably beat the default prompt on held-out tasks.
+The planted answer-key prompt did. This registration is committed before any of its episodes is run. All three
+legs use one model (`gpt-5.4-mini`, low reasoning effort), the same agent framework, isolated resets, and the
+**30-step cap now actually enforced** (fix `bd3fff5`; it was never enforced before).*
+
+### Leg G (primary): GitLab winner check
+
+- **Arms.**
+  - W = `GLK_25`, frozen by a rule applied to old data only: highest GLK30 success on block A, then the tie-breaks
+    in the manifest. It had no tie: 0.733 against 0.700 for the next four.
+  - D = default `GL_anchor_baseline`.
+  - O = planted positive control `GL_anchor_oracle`, which hard-codes task issue IDs.
+- **Old block-A rates (30 tasks, 30-step):** W 0.733, D 0.733, O 0.867. The searched winner had **no in-sample lead**
+  over the default. This leg therefore tests "the search found nothing better than the default". It does not test
+  the winner's curse; Leg M does that.
+- **Tasks.** The 110 GitLab tasks the September study never ran (`data/winner_check_gitlab/manifest.json`).
+  - **Deviation, signed off by Sanjay 2026-10-10.** The registered "never run by any prompt" rule leaves 0 tasks,
+    because the June strong-arm allocation runs covered all 140 tasks.
+  - **Selection is unaffected.** No GLK prompt has run on these 110 tasks, and none of them was used to select W.
+  - **Exposure in June.** D and O, among other June prompts, ran on them in June under a different regime. No
+    selection used those runs.
+- **Episodes.** 110 tasks × 3 arms × 2 replicates = 660, in seeded order (seed 20261010). The estimated cost is
+  about $92, and the hard stop is `--budget 120`.
+- **Primary analysis** (`analyze_winner_check.py`). Each arm's per-task score is the mean of its 2 replicates, and
+  d_t = W_t − D_t.
+  - **G-primary:** certify "W is not ≥ 10 points better than D" if and only if the one-sided 95% upper bound
+    (paired t over tasks) on mean(d) is below 0.10.
+  - **G-control, required for G-primary to be informative:** the one-sided 95% lower bound on mean(O − D) is above
+    0. If the control fails, the leg is reported as **uninformative**, whatever G-primary says.
+- **Expected power.** In simulation, with W truly equal to D, the chance of certifying is about 0.94. That simulation
+  ignores prompt × task interaction, so real power may be lower.
+
+### Leg M: Gmail winner's-curse test
+
+- **Arms.** G_14, which was the top G prompt in September at 0.70 against the default's 0.60, an **in-sample lead of
+  +10 points**. It is compared with the Gmail default anchor.
+- **Tasks.** The 30 Gmail tasks of the 2026-10-09 first-run pilot. None of them was used to select G_14.
+  - **G_14 data.** Its 2 pilot runs per task are already collected (uncapped; a frozen file).
+  - **New runs.** The default runs 2 × 30 = 60 new episodes (`data/winner_check_gmail/`), estimated at about $5 (hard stop `--budget 8`).
+- **Scoring.** Both arms are scored at the 30-step rescore, the same rule as GLK30, because the pilot ran before the
+  cap fix.
+- **Analysis.** d_t = G14_t − D_t (per-task means of 2 runs each).
+  - **"Lead reproduced"** if the one-sided 95% lower bound of mean(d) is at least 0.10.
+  - **"Lead shrank below its in-sample size"** if the one-sided 95% upper bound is below 0.10.
+  - **Otherwise inconclusive.** With 30 tasks, power is modest; this is disclosed now.
+- **Confounds, disclosed now.** The two arms ran one or more days apart. The as-collected (uncapped G_14) analysis is
+  reported only as a secondary, labelled confounded.
+
+### Leg N: Gmail noise re-check (drift)
+
+- **Design.** 30 historical G repeat cells, randomly sampled with seed 20261011, each run twice now: 60 episodes (hard stop `--budget 8`),
+  about $6 (`data/noise_recheck_gmail/`). In September those cells disagreed in 3 of 30.
+- **Purpose.** The pilot's G_14 rerun disagreement was 33%, against 10.3% in September. This leg tests whether
+  noise has changed: an exact binomial test of the current disagreement against 0.103, plus a paired per-cell
+  comparison.
+- **Reading.** It is descriptive only. A raised rate is reported as possible provider drift and goes in the paper's
+  limitations.
+
+### Decision rules for the paper
+
+- **G-primary certified and G-control holds:** the claim "in a pre-registered held-out test, the search's best
+  prompt was not 10+ points better than the default, while a prompt with a real advantage was detected" moves
+  from exploratory to confirmed, for GitLab and this model.
+- **Leg M reads "shrank":** the winner's-curse claim is confirmed for Gmail at the +10 scale. **"Reproduced"**
+  overturns it, and the paper must say so. **Inconclusive** leaves it exploratory.
+- **Every leg is reported in full, whatever the outcome.** No leg is re-run or extended without a new amendment.
+
+### Order and stopping
+
+- **Run order:** Leg N, then Leg M (both on the Gmail server, one worker each, run one after the other to avoid
+  load confounds), then Leg G (GitLab, `--workers 4`, run alone).
+- **Each leg's `--budget`** is its hard stop. A leg that stops on budget is reported as partial, and its primary
+  analysis is not run.

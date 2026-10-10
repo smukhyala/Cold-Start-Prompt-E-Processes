@@ -1441,3 +1441,23 @@ legs use one model (`gpt-5.4-mini`, low reasoning effort), the same agent framew
   load confounds), then Leg G (GitLab, `--workers 4`, run alone).
 - **Each leg's `--budget`** is its hard stop. A leg that stops on budget is reported as partial, and its primary
   analysis is not run.
+
+### Pre-registration 13, Amendment 1 — sleep-spanning episodes (registered 2026-10-10, before any Leg N, M or G outcome was examined)
+
+- **What happened.** The MacBook ran on battery and went into clamshell sleep. `pmset` logs a "Clamshell Sleep"
+  at 09:55 local time on 2026-10-10, and `caffeinate` does not prevent lid-close sleep. Episodes in flight across
+  a sleep fire their clock late.
+  - **Leg N:** 6 `ok` records have `wallclock_s` far above the 180 s clock, up to 8,673 s.
+  - **Leg M:** one such episode was already caught as an `infra_error` and retried automatically.
+  - Only wall-clock times and statuses were inspected to find these. No success, disagreement or arm-level outcome
+    was looked at.
+- **Rule, for every leg.** An `ok` record with `wallclock_s > timeout_s + 60 s` is an infrastructure artifact.
+  - It is moved verbatim to `<log>/archive/worker_<w>.sleep_spanning.jsonl` by
+    `experiments/growing_bandits/retrospective/archive_sleep_spanning.py`, and its queue item is re-run.
+  - Re-runs come out of the same leg's `--budget`.
+  - Archived records are counted and reported, never analysed.
+- **Step-cap note, recorded now.** With the cap enforced, browser-use stops at 31 history steps, not 30, because
+  its final step is counted too. Nothing ran past 31 in Legs N or M. The registered 30-step rescore (steps ≤ 30)
+  scores 31-step episodes as failures in Legs G and M, as registered. Leg N uses raw success.
+- **Order change.** Leg G runs next, as the chain already has it. Leg N's re-runs follow Leg G, so that two
+  servers never run together. Sleep-spanning records in Leg G are handled the same way after it finishes.

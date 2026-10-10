@@ -153,7 +153,6 @@ def _get_armed_agent_cls() -> type:
                 browser_session=self._session,
                 use_vision=self.use_vision,
                 save_conversation_path=str(task_dir / "conversations"),
-                max_steps=self.max_steps,
                 # Have browser-use accumulate token usage + cost per call
                 # via its TokenCost service; we read the summary after run().
                 calculate_cost=True,
@@ -166,7 +165,10 @@ def _get_armed_agent_cls() -> type:
             timed_out = False
             t0 = time.time()
             try:
-                history = await asyncio.wait_for(agent.run(), timeout=self.timeout)
+                # The step cap goes to run(): browser-use's Agent() swallows an unknown
+                # `max_steps` kwarg and run() defaults to 500, so before 2026-10-10 no
+                # registered step cap was enforced (Pre-reg 10 Amendment 1).
+                history = await asyncio.wait_for(agent.run(max_steps=self.max_steps), timeout=self.timeout)
             except TimeoutError:
                 timed_out = True
                 history = agent.history

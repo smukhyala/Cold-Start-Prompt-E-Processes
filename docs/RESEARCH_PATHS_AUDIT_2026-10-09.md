@@ -200,6 +200,45 @@ The three research questions that fit Ian's work are:
    pools.
 3. A trial-style "how many arms to carry forward", compared against the infinite-armed K\* ∝ T^0.8.
 
+## 3c. Option B worked through, steps B1–B5 (2026-10-09; simulation plus replay, exploratory, $0)
+
+**Code.** `experiments/growing_bandits/audit/{adaptive_tests,known_baseline,combined_tests}.py` and their runners.
+Outputs are in `results/audit/b/`; the headline is `b5_headline.md`. All 53 audit tests pass.
+
+**The five steps.**
+
+| Step | Question | Result |
+|---|---|---|
+| B1 | Does adaptive challenger sampling (Thompson, as in Sandoval–Waudby-Smith–Jordan) speed up efficacy? | 1.7–1.9× fewer **episodes**, but about 3.6× more **distinct tasks**. Greedy plateaus; UCB is about the same as audit mode. |
+| B2 | Does testing against the default's known per-task rate help? | 1.4–1.8× fewer tasks. Real data cap the gain at about 2×, because only the incumbent's run noise is removed. A plug-in estimate reused across a bank is **invalid** (false rejections up to 0.23 at m = 1); a Hoeffding bank shift fixes it. Futility then needs only about 30 prior default runs per task, efficacy about 100. |
+| B3 | Does drop-the-loser speed up futility? | 1.7–2.2× fewer episodes with the same tasks, and 2.5–3.2× on realistic pools that contain bad prompts. Real Shopping: 487 episodes against 780. |
+| B4 | Is the finite-bank replay (without replacement) valid? | Yes as is: 0 false calls in 2000 orders per pool; conservative. |
+| B5 | Do the two wins combine? | Combined futility (drop-the-loser plus known baseline) uses 2.4–3.7× fewer episodes and 1.4–1.7× fewer tasks than audit mode. Every false-decision rate is ≤ 0.05 within Monte Carlo error. |
+
+**Headline, median episodes / distinct tasks to decide (K = number of prompts).**
+
+| Decision | K | Naive (audit, paired) | Best design | Fits a 30–80-task benchmark? |
+|---|---|---|---|---|
+| "Not worth searching" (futility), δ = 0.15 | 12 | 1450 / 112 | **602 / 79** | Borderline |
+| "Not worth searching" (futility), δ = 0.15 | 40 | 5699 / 139 | **2032 / 94** | No (94) |
+| "Not worth searching" (futility), δ = 0.10 | 40 | 12177 / 297 | 3308 / 184 | No |
+| "Found a better prompt" (efficacy), Δ = 0.20 | 12 | 2301 / 177 | 1662 / 138 (fewest tasks) or 904 / 904 (fewest episodes) | No |
+| "Found a better prompt" (efficacy), Δ = 0.10 | 12 | 8138 / 626 | 3960 / 330 or 2394 / 2394 | No |
+
+**Reading.**
+1. **There is an asymmetry.** Certifying "not worth searching" is about 2–4× cheaper than certifying "found a better
+   prompt" at the same effect size. At K = 12 and 0.15, futility takes 602 episodes / 79 tasks; efficacy takes
+   1258 / 1258 or 2196 / 183. Clinical trials have the same pattern: futility is cheaper than efficacy. It
+   also fits A′: real pools look flat, so the practical tool is a futility certificate.
+2. **Episodes can be cut 2–4×. Tasks barely move.** Adaptivity saves runs but needs fresh tasks, and benchmark task
+   banks, not inference cost, are the binding constraint.
+3. **The plan's criterion for B to stand alone is not met.** That criterion was cutting about 240 tasks to about 60
+   for efficacy. Efficacy stays infeasible on today's benchmarks under every design. Futility comes close at
+   δ = 0.15 (79–94 tasks).
+4. **Verdict:** B is a strong, Ian-fit section of A′, titled something like "a cheap, valid certificate that search
+   won't pay". It is not a standalone headline paper unless a larger task supply is available, for example
+   generated or templated tasks.
+
 ## 4. Direction scorecard
 
 | | A′: measurement, incumbent-relative tail | B: anytime-valid test as headline | C: agent portfolios / retry | D: search-vs-refine policy |

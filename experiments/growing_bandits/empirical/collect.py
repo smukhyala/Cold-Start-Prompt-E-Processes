@@ -718,10 +718,25 @@ def check_existing_records(log_dir: Path, prompts: dict[str, make_pools.PoolArm]
                            f"files (or names an arm no pool file has), e.g. {bad[:3]}; refusing to start")
 
 
+def pool_files(data_dir: Path, profile: str = DEFAULT_PROFILE) -> tuple[str, ...]:
+    """The pool files of `profile` in `data_dir`: the profile's own, unless the data dir's ``manifest.json``
+    names a ``pool_files`` list (new-style data dirs such as ``data/oracle_full_pilot`` carry pools the
+    heterogeneity profile does not know; every older data dir has no such key and is unchanged)."""
+    manifest_path = Path(data_dir) / "manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text())
+        if "pool_files" in manifest:
+            out = []
+            for rel in manifest["pool_files"]:
+                out.append(str(rel))
+            return tuple(out)
+    return tuple(profile_spec(profile)["pools"])
+
+
 def load_prompts(data_dir: Path, profile: str = DEFAULT_PROFILE) -> dict[str, make_pools.PoolArm]:
     """Every arm of the profile's pool files (each rendered prompt sha-checked by `load_pool`)."""
     out: dict[str, make_pools.PoolArm] = {}
-    for rel in profile_spec(profile)["pools"]:
+    for rel in pool_files(data_dir, profile):
         for arm in make_pools.load_pool(Path(data_dir) / rel):
             if arm.arm.arm_id in out:
                 raise RuntimeError(f"duplicate arm id {arm.arm.arm_id}")
@@ -734,7 +749,12 @@ def verify_queue(data_dir: Path, profile: str = DEFAULT_PROFILE) -> None:
     pool files) are byte-identical to the frozen ones in ``manifest.json``'s ``files`` map."""
     data_dir = Path(data_dir)
     manifest = json.loads((data_dir / "manifest.json").read_text())
-    for rel in profile_spec(profile)["frozen"]:
+    frozen = [profile_spec(profile)["queue"]]
+    if profile != DEFAULT_PROFILE:
+        frozen.extend(pool_files(data_dir, profile))
+    else:
+        frozen = list(profile_spec(profile)["frozen"])
+    for rel in frozen:
         expected = manifest["files"].get(rel)
         if expected is None:
             raise RuntimeError(f"{data_dir / 'manifest.json'} has no frozen entry for {rel} "

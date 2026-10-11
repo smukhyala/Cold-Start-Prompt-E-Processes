@@ -1461,3 +1461,74 @@ legs use one model (`gpt-5.4-mini`, low reasoning effort), the same agent framew
   scores 31-step episodes as failures in Legs G and M, as registered. Leg N uses raw success.
 - **Order change.** Leg G runs next, as the chain already has it. Leg N's re-runs follow Leg G, so that two
   servers never run together. Sleep-spanning records in Leg G are handled the same way after it finishes.
+
+## Pre-registration 14: a positive control that covers every Leg G task (registered 2026-10-10, before any study episode)
+
+*Branch `paper`. Pre-registration 13's Leg G was **uninformative**: its positive control `GL_anchor_oracle` carries
+answers for only 20 of the 110 tasks (`docs/growing_bandits/PREREG13_RESULTS.md`). This study re-runs **only the
+control**, using an answer key that covers all 110 tasks, against a fresh default arm, on the same 110 tasks. It does
+not re-run W and does not change Leg G's registered reading. It adds the missing evidence that this task set and
+design could detect a real advantage. Settings are unchanged: `gpt-5.4-mini` at low effort, the same agent framework,
+isolated resets, the 30-step cap enforced, 600 s clock.*
+
+### The new control arm (built before registration)
+
+- **`GL_oracle_full`** is generated mechanically by `experiments/growing_bandits/retrospective/build_full_oracle.py`
+  (sha256 fe0d44c1…), in three steps:
+  1. For every one of the 140 bank tasks, apply the benchmark's own `solve_task_<id>` from `sanity_check_real.py` to
+     the seed state.
+  2. Diff the result against the seed state.
+  3. Write one answer-key line per task: the exact instruction, then the exact item ids and final values.
+- **One prompt for both stages.** The same arm, byte-identical pool file (`pools/oraclefull.yaml`, 59,570
+  characters, about 14,900 tokens, all 140 entries), is used in the pilot and in the study. No solver failed and no
+  diff was empty.
+- **Pilot, on the 30 block-A tasks only** (disjoint from the 110; not study data). One episode per task, gate
+  ≥ 0.80 at the 30-step rescore. The old oracle scored 0.867 on these tasks and the default 0.733.
+  - **v1** (the old oracle's header "Save once, then finish. Do not repeatedly verify", and its vector):
+    **0.633, fails** ($1.91; `data/oracle_full_pilot_v1`, `logs/oracle_full_pilot_v1`). The agent ignored the
+    key: it searched for items itself and finished without checking.
+  - **v2** (`HEADER_V2`: look up the exact line, use the listed ids, reopen and check every value before finishing;
+    `VECTOR_V2`: agency 0, verification 2): **0.800 = 24/30, passes the gate exactly** ($2.33).
+  - v2 is frozen here. It was revised once, on block-A tasks only. No study task has been run with any O2 version.
+  - **Disclosed now:** v2 sits at the gate, and on block A it is about +7 points over the old default rate, not the
+    old oracle's +13. On the harder study tasks (the Leg G default is 0.40) there is more room, but the margin is
+    not guaranteed.
+
+### Design
+
+- **Arms:**
+  - O2 = `GL_oracle_full`.
+  - Dnew = `GL_anchor_baseline`, whose prompt sha must match Leg G's.
+- **Tasks:** the 110 Leg G tasks (`data/winner_check_gitlab/manifest.json`).
+- **Episodes:** 110 tasks × 2 arms × 2 replicates = 440, in seeded order (seed 20261012), with arms shuffled within
+  each task (`data/control_check_gitlab/`).
+  - **Cost.** The prepare script's conservative estimate is $55, at $0.15 per O2 episode; the pilot measured $0.078.
+    Expected spend is about $40–45. The hard stop is `--budget 60`, which is below the script's recommended $75. A
+    run that stops on budget is reported as partial, and its primary analysis is not run.
+  - The run uses `--workers 4` on the GitLab profile, alone on the machine, with the Mac on AC power and the lid open.
+- **Amendment 1 of Pre-registration 13 applies:** sleep-spanning `ok` records are archived and re-run.
+
+### Analysis (`analyze_control_check.py`, sha256 993928c9…, frozen at registration)
+
+- **Scoring:** every record is scored at the 30-step rescore. An arm's per-task score is the mean of its 2
+  replicates.
+- **PRIMARY:** the one-sided 95% lower bound (paired t over 110 tasks) of mean(O2 − Dnew). **The control holds iff this
+  lower bound is > 0.**
+- **Combined reading with Leg G**, which was registered here before any O2 study episode:
+  - **Control holds, and Leg G's registered upper bound (+0.034) is < 0.10:** the paper may state "on 110 held-out
+    GitLab tasks, the search's winner was not ≥ 10 points better than the default (Pre-reg 13), and on the same tasks
+    a prompt with a real advantage was detected (Pre-reg 14, next day)." The paper must disclose the two-session
+    design.
+  - **Control fails:** Leg G stays uninformative and the claim stays exploratory. No further control run without a
+    new registration.
+- **SECONDARY, reported whatever the outcome:**
+  1. A task-cluster bootstrap of the primary.
+  2. **Day-to-day drift:** Dnew − Dold, where Dold is Leg G's default arm, as the mean with a 90% CI. If the CI
+     excludes 0, the combined reading carries a drift caveat.
+  3. **Exploratory:** O2 − Dnew, split by whether the task was in the old oracle's cookbook.
+  4. Per-arm operations.
+- **Power (stated now):** with D at about 0.40 and a per-task sd of the difference about 0.31 (Leg G's O − D, se 0.029),
+  the lower bound exceeds 0 with probability ≈ 0.9 if the true O2 − D ≥ +0.087, and ≈ 0.5 at +0.049.
+  - On its 20 covered tasks the old oracle was +0.10. The new key also covers the harder tasks, where the default sits
+    at 0.32, so more room is expected there.
+  - A control below about +0.05 would likely fail, and that would be reported as is.

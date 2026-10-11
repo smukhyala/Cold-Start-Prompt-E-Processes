@@ -1,0 +1,85 @@
+{
+  "study": "Oracle-full pilot -- does the mechanically derived answer key work on the 30 block-A GitLab tasks",
+  "design": "GL_oracle_full (the SAME 140-task answer-key prompt the study uses) x the 30 block-A GitLab tasks x replicate 0 only; seeded task order; isolated resets",
+  "stage": "pilot",
+  "seed": 20261011,
+  "decision_rule": "pilot passes iff 30-step-rescored success (success and not timed_out and steps <= 30) >= 0.80 over the 30 episodes; old GL_anchor_oracle scored 0.867 and GL_anchor_baseline 0.733 on these tasks",
+  "arms": {
+    "O2": {
+      "arm_id": "GL_oracle_full",
+      "pool": "oraclefull"
+    }
+  },
+  "pool_files": [
+    "pools/oraclefull.yaml"
+  ],
+  "n_tasks": 30,
+  "task_ids": [
+    "task_e2",
+    "task_h18",
+    "task_e1",
+    "task_h26",
+    "task_m7",
+    "task_m4",
+    "task_h19",
+    "task_m2",
+    "task_e3",
+    "task_h72",
+    "task_m19",
+    "task_m12",
+    "task_m8",
+    "task_e7",
+    "task_m5",
+    "task_e13",
+    "task_e5",
+    "task_h89",
+    "task_h77",
+    "task_h8",
+    "task_e19",
+    "task_h84",
+    "task_e11",
+    "task_m16",
+    "task_h12",
+    "task_m11",
+    "task_h100",
+    "task_e14",
+    "task_m18",
+    "task_e9"
+  ],
+  "n_episodes": 30,
+  "replicates": [
+    0
+  ],
+  "max_steps": 30,
+  "timeout_s": 600,
+  "cost_per_episode_assumed_usd": {
+    "O2": 0.15,
+    "D": 0.1
+  },
+  "cost_estimate_usd": 4.5,
+  "recommended_budget_usd": 8,
+  "budget_rule": "fixed by the coordinator: $8",
+  "oracle_prompt": {
+    "entries": 140,
+    "chars": 59296,
+    "approx_tokens_chars_div_4": 14824
+  },
+  "real_tasks_sha256": "d612612475df646bd4e9fc32f62f8798ca76e85e04c1979d4ee3ba012f39d3f7",
+  "generator_sha256": {
+    "build_full_oracle.py": "25067da0d8eac89b75c4c6b711e2c652d2e588e2794104985fe0c756c2eb2231",
+    "prepare_oracle_full.py": "422fe9a12331c93031bc37d5f4a64233607f8900194e9950f68c783f8fcded94"
+  },
+  "files": {
+    "gitlab/queue.jsonl": "5bdfec882e66e16a453126df5da8f6a879f2bbf05dc6228dff292153ef6af419",
+    "pools/oraclefull.yaml": "23c90dca31796d51d517cfcb6665defe9dfabc5add30b53d15a926e75f9ac12e"
+  },
+  "provenance": {
+    "leg_g_manifest_sha256": "f9a15884556d47011af57c60ffe88d993ca136117dabf7f7f23024ade61e485c"
+  },
+  "gate": {
+    "threshold": 0.8,
+    "statement": "pilot passes iff 30-step-rescored success (success and not timed_out and steps <= 30) >= 0.80 over the 30 episodes; old GL_anchor_oracle scored 0.867 and GL_anchor_baseline 0.733 on these tasks",
+    "old_GL_anchor_oracle_rate": 0.867,
+    "old_GL_anchor_baseline_rate": 0.733
+  }
+}

@@ -316,6 +316,17 @@ decision-relevant E1b fails on power. B is therefore demoted to a supporting sec
      - The §2 "no better than the default" claim **stays exploratory**. A valid control on every task needs a new
        registration, about $45.
    - **Leg N, noise:** rerun disagreement is 20% against 10% in September (p = 0.12). This is possible drift, not significant, and goes in the limitations.
+5. **Positive-control re-run, Pre-registration 14: done 2026-10-10** ($50.98 including pilots;
+   [PREREG14_RESULTS.md](growing_bandits/PREREG14_RESULTS.md)).
+   - **The control holds, narrowly.** A full 140-task answer key beat a same-session default by +5.5 pp, with a
+     one-sided lower bound of +0.7 pp.
+   - **Leg G is now registered-informative**, as "informative with a next-day control". The §2 "winner no better
+     than the default" claim is **confirmed on GitLab** (W − D −0.9 pp, upper bound +3.4 pp), with the two-session
+     design disclosed.
+   - **Fragile (exploratory):** against Leg G's earlier default, O2 is only +1.8 pp, with a lower bound of
+     −3.7 pp. The default dipped 3.6 pp between sessions, which is not significant.
+   - **New finding:** even an exact answer key lifts `gpt-5.4-mini` only about 5 pp on GitLab. O2 scores 0.418,
+     about the same as the old cookbook's 0.436. Execution, not knowledge, is the ceiling.
 
 ## Provenance
 

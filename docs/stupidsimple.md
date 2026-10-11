@@ -132,6 +132,28 @@ That was my mistake when I set up the test.
 **To make GitLab count:** build an answer prompt that works on all 110 chores, and run it again next to the default.
 That's about $45.
 
+## Update 2: I fixed the GitLab test (Oct 10, about $51)
+
+I built a new answer prompt with the answers for *every* chore, and wrote the rules down first again.
+Then I ran it next to the default on the same 110 GitLab chores.
+
+**It won, just barely: 42% vs 36%, about 5 points.**
+That's enough to pass my rule, which was "the low end of its range has to be above zero."
+It passed by less than 1 point.
+
+**So the GitLab result now counts.**
+The test *could* catch a prompt that's really better, and the "best" prompt from the search still wasn't.
+
+**Two honest catches:**
+- The default happened to score a bit lower in this second session (36% vs 40%).
+  Compared with the earlier 40%, the answer prompt would *not* have passed.
+- The Mac fell asleep for 3 hours partway through. I threw out the 4 chores that were running and re-ran them, like
+  my rules said.
+
+**The surprise:** even with every answer handed to it, the AI only got 5 points better.
+On GitLab it mostly fails at *doing* the clicks, not at *knowing* what to do.
+So no prompt can help it much there, which fits everything else I found.
+
 ## My questions for you
 
 1. Is "does anything beat the default?" a good headline, or too negative?

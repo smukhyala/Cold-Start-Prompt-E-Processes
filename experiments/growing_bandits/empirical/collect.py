@@ -235,6 +235,8 @@ class WorkerConfig:
     profile: str = DEFAULT_PROFILE
     timeout_s: int = AGENT["timeout_s"]
     base_port: int = BASE_PORT
+    #: Recorded on every attempt (the agent's model, after any manifest ``agent_overrides``).
+    llm_model: str = AGENT["llm_model"]
 
 
 def _default_failure_streak() -> int:
@@ -465,6 +467,7 @@ def _record(item, attempt: int, status: str, result: RunResult | None, exc: Base
         "prompt_sha256": prompt.sha256,
         "profile": cfg.profile,
         "timeout_s": cfg.timeout_s,
+        "llm_model": cfg.llm_model,
         "ended_by": ended_by(result, cfg.max_steps),
         "timestamp_utc": dt.datetime.now(dt.UTC).isoformat(),
     }
@@ -733,6 +736,26 @@ def pool_files(data_dir: Path, profile: str = DEFAULT_PROFILE) -> tuple[str, ...
     return tuple(profile_spec(profile)["pools"])
 
 
+#: The agent settings a data dir's manifest may override (``agent_overrides``); everything else stays the profile's.
+AGENT_OVERRIDE_KEYS = ("llm_provider", "llm_model", "llm_reasoning_effort")
+
+
+def agent_settings(data_dir: Path, profile: str = DEFAULT_PROFILE) -> dict:
+    """The profile's agent settings, with the data dir's ``manifest.json`` ``agent_overrides`` applied (new-style
+    data dirs such as ``data/headroom_*`` run another model; every older data dir has no such key and is
+    unchanged). Only `AGENT_OVERRIDE_KEYS` may be overridden."""
+    agent = dict(profile_spec(profile)["agent"])
+    manifest_path = Path(data_dir) / "manifest.json"
+    if manifest_path.exists():
+        manifest = json.loads(manifest_path.read_text())
+        overrides = manifest.get("agent_overrides") or {}
+        for key, value in overrides.items():
+            if key not in AGENT_OVERRIDE_KEYS:
+                raise RuntimeError(f"{manifest_path}: agent_overrides key {key!r} is not one of {AGENT_OVERRIDE_KEYS}")
+            agent[key] = value
+    return agent
+
+
 def load_prompts(data_dir: Path, profile: str = DEFAULT_PROFILE) -> dict[str, make_pools.PoolArm]:
     """Every arm of the profile's pool files (each rendered prompt sha-checked by `load_pool`)."""
     out: dict[str, make_pools.PoolArm] = {}
@@ -920,7 +943,7 @@ def _worker_main(worker: int, n_workers: int, data_dir: str, log_dir: str, budge
     data, logs = Path(data_dir), Path(log_dir)
     queue = make_pools.read_queue(data / spec["queue"])
     prompts = load_prompts(data, profile)
-    agent = spec["agent"]
+    agent = agent_settings(data, profile)
     adapter = WebArenaInfinityAdapter(port=spec["base_port"] + worker,
                                       artifacts_dir=str(logs / "artifacts" / f"w{worker}"),
                                       axes_path=str(ROOT / "configs" / "axes.yaml"),
@@ -935,7 +958,7 @@ def _worker_main(worker: int, n_workers: int, data_dir: str, log_dir: str, budge
         check_bank(adapter, queue)
         cfg = WorkerConfig(worker=worker, n_workers=n_workers, log_dir=logs, budget_usd=budget, pilot_only=pilot,
                            assigned=assigned, profile=profile, timeout_s=int(agent["timeout_s"]),
-                           base_port=spec["base_port"])
+                           base_port=spec["base_port"], llm_model=str(agent["llm_model"]))
         return run_worker(cfg, queue, prompts, adapter)
     finally:
         try:
@@ -1054,7 +1077,7 @@ def main(argv: list[str] | None = None) -> int:
         # prereg9 submits exactly the historical call; any other profile binds its name.
         worker_fn = _worker_main if args.profile == DEFAULT_PROFILE else \
             functools.partial(_worker_main, profile=args.profile)
-        log.info("profile %s: agent %s", args.profile, spec["agent"])
+        log.info("profile %s: agent %s", args.profile, agent_settings(args.data, args.profile))
         with cf.ProcessPoolExecutor(max_workers=args.workers, mp_context=ctx) as pool:
             futures = {
                 pool.submit(worker_fn, w, args.workers, str(args.data), str(args.log_dir), args.budget,

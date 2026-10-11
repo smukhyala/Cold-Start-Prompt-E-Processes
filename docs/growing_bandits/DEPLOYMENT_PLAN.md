@@ -1532,3 +1532,68 @@ isolated resets, the 30-step cap enforced, 600 s clock.*
   - On its 20 covered tasks the old oracle was +0.10. The new key also covers the harder tasks, where the default sits
     at 0.32, so more room is expected there.
   - A control below about +0.05 would likely fail, and that would be reported as is.
+
+## Pre-registration 15: Gmail answer-key headroom (registered 2026-10-11, before any study episode)
+
+*Branch `paper`. Pre-reg 14 found that a full answer key lifts `gpt-5.4-mini` only +5.5 pp on GitLab: there is little
+room for any prompt there. For Gmail it is unknown whether the searches found nothing because there was nothing to
+find (small headroom) or because they missed real gains (large headroom). This study measures Gmail's answer-key
+headroom H: how much a prompt that contains the exact answer to every task beats the default. Settings are Gmail's
+registered ones: profile `gmail`, `gpt-5.4-mini` at low effort, 180 s clock, 30-step cap, isolated resets.*
+
+### Arms (built before registration)
+
+- **O = `GM_oracle_full`.** Generated mechanically by `experiments/growing_bandits/retrospective/build_gmail_oracle.py`
+  (sha256 0cd0e244…).
+  - For each of the 60 Gmail real tasks, the benchmark's own `solve_task_<id>` (`sanity_check_real.py`) is applied to
+    the seed state and diffed against it.
+  - Each entry is one answer-key line: the exact instruction, then the exact emails (id, subject, sender), labels,
+    filters and settings, with their final values.
+  - The header is the GitLab v2 procedure adapted to Gmail's URL routes, with the same vector (`VECTOR_V2`).
+  - Size: 60 entries, 17,233 characters, about 4,300 tokens. No solver failed and no diff was empty.
+  - It renders through `configs/template_gitlab.jinja`, which is byte-identical to `template.jinja` when the guidance
+    is empty, so O differs from D only in guidance and vector.
+- **D = `GM_anchor_baseline`**, the Gmail default. Its rendered prompt sha256 is ae8c7c7f…, the same prompt as Pre-reg
+  13 Leg M's default.
+- **Not piloted.** All 60 Gmail real tasks are study tasks, so there is no disjoint set to pilot on. If the agent
+  ignores the key (as GitLab v1 did), H **underestimates** the true answer-key headroom. H is therefore a lower
+  bound on what a prompt could add.
+
+### Design
+
+- **Episodes:** O and D × the 60 Gmail real tasks × replicates {0, 1} = **240**. Tasks are in a seeded order (seed
+  20261013), and a task's 4 episodes are in a seeded order (`data/headroom_gmail/`, manifest sha256 bf2ccf89…;
+  `prepare_headroom_gmail.py` sha256 313e8152…).
+- **Run:** `--workers 4`, `--budget 30` (hard stop). Estimate $21.60. The Mac is on AC with the lid open. A run that
+  stops on budget is reported as partial, and its primary analysis is not run.
+- **Amendment 1 of Pre-reg 13 applies:** sleep-spanning `ok` records are archived and re-run.
+- **Collector:** gains `agent_overrides` (a manifest may swap the model) and records `llm_model` on every attempt. This
+  manifest has no overrides; the agent is the profile's.
+
+### Analysis (`analyze_headroom_gmail.py`, sha256 41fdc32e…, frozen at registration)
+
+- **Scoring:** the 30-step rescore. An arm's per-task score is the mean of its 2 replicates.
+- **PRIMARY:** H = mean over the 60 tasks of O_t − D_t, paired t, two-sided 90% CI.
+  - **large** iff the lower bound ≥ 0.10;
+  - **small** iff the upper bound < 0.10;
+  - **unresolved** otherwise.
+  - The 0.10 threshold is the margin used throughout: the search winner's in-sample lead (Leg M) and Leg G's
+    certification margin.
+- **Readings, fixed now:**
+  - **large:** Gmail had at least 10 pp of headroom, and the search's winner captured none of it held out (Leg M,
+    0.0 pp). The searches *missed* available gains; the pool, not the ceiling, was the problem. This motivates a
+    realistic-pool study (step 2) on Gmail.
+  - **small:** Gmail, like GitLab, has under 10 pp of headroom for this agent. "There was little to find" holds on
+    both apps.
+  - **unresolved:** report the point estimate and interval; no claim.
+- **SECONDARY, reported whatever the outcome:**
+  1. A task-cluster bootstrap of H (10,000 resamples).
+  2. **Capture:** Leg M's held-out G_14 lead (0.000) against H on Leg M's 30 tasks.
+  3. **Default drift:** D now minus Leg M's default (same prompt) on those 30 tasks, mean with 90% CI. Disclosed:
+     Leg M ran 1 worker, this study 4. Both arms here share the load, so H is unaffected.
+  4. Per-arm operations and rerun disagreement.
+- **Power (stated now):** the per-task sd of O − D is assumed about 0.35 (GitLab's was 0.30), so the se is about
+  0.045 and the CI half-width about 0.075.
+  - True H = 0.25: P(large) ≈ 0.95. True H = 0.20: P(large) ≈ 0.7.
+  - True H = 0.00: P(small) ≈ 0.7. True H = 0.10: neither reading is likely, and the study would most likely end
+    unresolved.

@@ -304,6 +304,18 @@ decision-relevant E1b fails on power. B is therefore demoted to a supporting sec
    - **Further optional spend:** if a positive real-data demonstration is wanted, the cheapest is one Gmail pool
      built to have an upper tail (task-family procedural prompts that do not leak task IDs). Score it on a fresh
      task bank, because the 30 unused Gmail tasks are now spent on this pilot.
+4. **Confirmatory run, Pre-registration 13: done 2026-10-10** ($75.81;
+   [PREREG13_RESULTS.md](growing_bandits/PREREG13_RESULTS.md)).
+   - **Leg M, Gmail winner's curse: "shrank", as registered.** G_14's +10 pp in-sample lead is 0.0 pp held out
+     (90% CI ±9.1 pp). The §2 winner's-curse claim is **confirmed for Gmail at the +10 scale**, narrowly.
+   - **Leg G, GitLab winner vs default: "uninformative", as registered.**
+     - W − D is −0.9 pp with a one-sided upper bound of +3.4 pp, which would certify.
+     - The planted control reached only +3.6 pp, with a lower bound of −1.2 pp.
+     - Its cookbook covers just 20 of the 110 fresh tasks; on those 20 it is +10 pp. This is an exploratory
+       diagnosis.
+     - The §2 "no better than the default" claim **stays exploratory**. A valid control on every task needs a new
+       registration, about $45.
+   - **Leg N, noise:** rerun disagreement is 20% against 10% in September (p = 0.12). This is possible drift, not significant, and goes in the limitations.
 
 ## Provenance
 

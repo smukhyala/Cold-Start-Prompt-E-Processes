@@ -105,6 +105,33 @@ Proving "this one is 15 points better" takes about 2,200 runs and 180 chores.
 
 The first two cost about $65 and fix the biggest weakness.
 
+## Update: I ran the double-check (Oct 10, about $76)
+
+I wrote down the rules before running anything, so I couldn't fudge them afterwards.
+
+**Gmail: the "best" prompt's lead disappeared.**
+In September it beat the default by 10 points.
+On 30 new chores it tied exactly: 72% vs 72%.
+So the lead really was luck. That's now confirmed, just barely.
+
+**GitLab: the winner tied the default, but the test didn't count.**
+The "best" prompt from the search scored 39%, and the default scored 40%.
+That's what I expected.
+But the rules said I also had to show the test *could* catch a real winner.
+So I added the prompt with the answers in it, and it was supposed to win clearly.
+It only won by about 4 points, which isn't clear enough.
+So by my own rules, the GitLab result doesn't count yet.
+
+**Why the answer prompt didn't win:** its answers were only for the old chores.
+Only 20 of the 110 new chores were ones it had answers for.
+On those 20 it won by 10 points. On the other 90 it was just a normal prompt.
+That was my mistake when I set up the test.
+
+**The noise check:** Running the same prompt twice now gives different answers 20% of the time, against 10% in September. That might mean the AI changed a bit, but with only 30 checks I can't be sure.
+
+**To make GitLab count:** build an answer prompt that works on all 110 chores, and run it again next to the default.
+That's about $45.
+
 ## My questions for you
 
 1. Is "does anything beat the default?" a good headline, or too negative?

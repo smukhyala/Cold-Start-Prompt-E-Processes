@@ -164,6 +164,9 @@ _HET_PROFILES: dict[str, dict] = {
                "pools": ("pools/GMB.yaml",), "base_port": 8301},
     "linear": {"web_app": "apps/linear-account-settings", "timeout_s": 180, "n_bank_tasks": 120,
                "pools": ("pools/fixed_pair.yaml",), "base_port": 8401},
+    "sampled_linear": {"web_app": "apps/linear-account-settings", "timeout_s": 180, "n_bank_tasks": 120,
+                       "task_suite": str(ROOT / "data/prospective_sampled_linear/tasks"),
+                       "pools": ("pools/fixed_pair.yaml",), "base_port": 8501},
 }
 
 
@@ -190,7 +193,8 @@ def _build_profiles() -> dict[str, dict]:
     for name, het in _HET_PROFILES.items():
         queue = f"{name}/queue.jsonl"
         profiles[name] = {
-            "agent": {**AGENT, "web_app": het["web_app"], "timeout_s": het["timeout_s"]},
+            "agent": {**AGENT, "web_app": het["web_app"], "timeout_s": het["timeout_s"],
+                      "task_suite": het.get("task_suite", AGENT["task_suite"])},
             "n_bank_tasks": het["n_bank_tasks"],
             "data_dir": HET_DATA_DIR,
             "log_dir": HET_LOG_ROOT / name,
@@ -790,6 +794,14 @@ def verify_queue(data_dir: Path, profile: str = DEFAULT_PROFILE) -> None:
         got = make_pools.file_sha256(data_dir / rel)
         if got != expected:
             raise RuntimeError(f"{rel} sha256 {got} != manifest's frozen {expected}; refusing to start")
+    if profile == "sampled_linear":
+        suite = Path(agent_settings(data_dir, profile)["task_suite"] + ".json")
+        expected = manifest["task_bank_sha256"]
+        if make_pools.file_sha256(suite) != expected:
+            raise RuntimeError(f"{suite} differs from frozen task_bank_sha256; refusing to start")
+        for rel, expected in manifest["verifier_sha256"].items():
+            if make_pools.file_sha256(data_dir / rel) != expected:
+                raise RuntimeError(f"{rel} differs from frozen verifier_sha256; refusing to start")
 
 
 def check_queue_arms(queue: list[make_pools.QueueItem], prompts: dict[str, make_pools.PoolArm]) -> None:

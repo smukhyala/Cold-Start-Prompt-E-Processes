@@ -126,6 +126,9 @@ def _get_armed_agent_cls() -> type:
         def __init__(self, *a: Any, **kw: Any) -> None:
             super().__init__(*a, **kw)
             self._prompt_extension: str | None = None
+            # browser-use's ``use_thinking`` (None = its default, True). Haiku 4.5 needs False: with the
+            # thinking field it inlines its action JSON into ``thinking`` and fails AgentOutput validation.
+            self._use_thinking: bool | None = None
             # Most recent task's token usage; overwritten by every `run()`.
             # webarena-infinity's run_task only marshals specific AgentResult
             # fields into its result_dict, so we stash tokens here for our
@@ -159,6 +162,8 @@ def _get_armed_agent_cls() -> type:
             )
             if self._prompt_extension:
                 agent_kwargs["extend_system_message"] = self._prompt_extension
+            if self._use_thinking is not None:
+                agent_kwargs["use_thinking"] = self._use_thinking
 
             agent = Agent(**agent_kwargs)
 
@@ -289,6 +294,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         llm_provider: str = "anthropic",
         llm_model: str = "claude-sonnet-4-6",
         llm_reasoning_effort: str | None = None,
+        use_thinking: bool | None = None,
         artifacts_dir: str = "logs/webarena",
         axes_path: str = "configs/axes.yaml",
         template_path: str = "configs/template.jinja",
@@ -308,6 +314,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         self._llm_provider = llm_provider
         self._llm_model = llm_model
         self._llm_reasoning_effort = llm_reasoning_effort
+        self._use_thinking = use_thinking
         self._artifacts_dir = Path(artifacts_dir)
         self._axes = load_axes(axes_path)
         self._template_path = template_path
@@ -356,6 +363,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
             timeout=self._timeout_s,
             headless=self._headless,
         )
+        self._agent._use_thinking = self._use_thinking
         _loop().run_until_complete(self._agent.setup(self._server_url))
 
     def _start_drains(self) -> None:

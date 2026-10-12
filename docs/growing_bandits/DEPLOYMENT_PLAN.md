@@ -1597,3 +1597,53 @@ registered ones: profile `gmail`, `gpt-5.4-mini` at low effort, 180 s clock, 30-
   - True H = 0.25: P(large) ≈ 0.95. True H = 0.20: P(large) ≈ 0.7.
   - True H = 0.00: P(small) ≈ 0.7. True H = 0.10: neither reading is likely, and the study would most likely end
     unresolved.
+
+## Pre-registration 16: Gmail answer-key headroom under Claude Haiku 4.5 (registered 2026-10-11, before any study episode)
+
+*Branch `paper`. Pre-reg 15 found Gmail's answer-key headroom "small" for `gpt-5.4-mini` (H −1.7 pp). Exploratory
+diagnosis: that agent referred to the key in only 33 of 120 episodes. This study asks whether an agent from another
+model family uses the answers, and whether that changes the headroom. Everything is Pre-reg 15's except the model.*
+
+### Changes from Pre-reg 15 (only these)
+
+- **Model:** `claude-haiku-4-5-20251001` (provider anthropic), set through the manifest's `agent_overrides`.
+  - Run with browser-use's `use_thinking` **off**. With it on, Haiku inlines its action JSON into the thinking field.
+    In smoke runs most steps then fail browser-use's output schema, and no tokens are counted, so the budget guard
+    would be blind.
+  - With it off, every step was valid in 10 smoke episodes, all on non-study tasks: GitLab block A and Gmail
+    function-tasks.
+  - The adapter (`src/cold_start/tasks/webarena.py`, sha256 181034ef…) gains a `use_thinking` option. Its default
+    (None) leaves every earlier configuration unchanged.
+- **Queue seed:** 20261014 (`data/headroom_haiku_gmail/`, manifest sha256 6a63246c…; `prepare_headroom_haiku.py`
+  sha256 594ffd5b…).
+- **Unchanged:**
+  - The same two prompt files, byte-identical to Pre-reg 15's (the test asserts this).
+  - The same 60 tasks, 2 replicates, profile `gmail`, 180 s clock and 30-step cap: 240 episodes.
+- **Run:** `--workers 4`, `--budget 35` (hard stop), estimate about $22, on AC with the lid open. Amendment 1 of
+  Pre-reg 13 applies.
+- **Disclosed:** Haiku is slower per step than `gpt-5.4-mini` (about 6 s against 4 s in smoke runs), so the 180 s clock
+  binds sooner. It binds equally on both arms.
+
+### Analysis (`analyze_headroom_haiku.py`, sha256 b4b214d4…, frozen at registration)
+
+- **PRIMARY:** exactly Pre-reg 15's rule, computed by its frozen analyzer on this study's logs. H is the mean over the
+  60 tasks of O − D, with a two-sided 90% paired-t CI.
+  - **large** iff the lower bound ≥ 0.10;
+  - **small** iff the upper bound < 0.10;
+  - **unresolved** otherwise.
+- **Readings, fixed now:**
+  - **large:** an agent from another family gains at least 10 pp from the answers. The flat Gmail result is specific to
+    `gpt-5.4-mini`'s weak adherence, and a realistic-pool study on Haiku becomes the next step.
+  - **small:** the low Gmail ceiling holds across two model families.
+  - **unresolved:** no claim.
+- **SECONDARY, reported whatever the outcome:**
+  1. Pre-reg 15's secondaries, computed by its analyzer.
+  2. **Model contrast:** H_haiku − H_mini per task, paired over the 60 tasks, mean with a 90% CI. This is
+     cross-session and descriptive: D drifted by +15 pp between sessions in Pre-reg 15.
+  3. Arm levels (O, D) under each model.
+  4. **Key use** in the answer-key arm under each model:
+     - the reference rate (model outputs match `/answer[ -]key|the key\b/i`);
+     - the direct-URL rate (they match `/#\/email\/\d|#\/settings\//`);
+     - success within each group.
+     - Haiku has no thinking field, so the reference rate is less sensitive for it. The direct-URL rate is
+       behavioural and comparable across models.

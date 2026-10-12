@@ -1,0 +1,129 @@
+{
+  "study": "Pre-registration 16 -- Gmail answer-key headroom under Claude Haiku 4.5: full answer key (O) vs the default prompt (D), 60 tasks",
+  "design": "O (GM_oracle_full) and D (GM_anchor_baseline) x the 60 Gmail real tasks x replicates {0, 1}; seeded task order and within-task episode order; isolated resets; profile gmail (180 s), 30-step cap; agent claude-haiku-4-5-20251001 with use_thinking off",
+  "stage": "study",
+  "seed": 20261014,
+  "decision_rule": "PRIMARY: H = mean over the 60 tasks of O_t - D_t (arm score = mean of its 2 replicates, each 30-step rescored), paired t, two-sided 90% CI. large iff CI lower bound >= 0.10; small iff CI upper bound < 0.10; else unresolved",
+  "arms": {
+    "O": {
+      "arm_id": "GM_oracle_full",
+      "pool": "gmoraclefull"
+    },
+    "D": {
+      "arm_id": "GM_anchor_baseline",
+      "pool": "anchor"
+    }
+  },
+  "pool_files": [
+    "pools/gmoraclefull.yaml",
+    "pools/anchors_gmail.yaml"
+  ],
+  "n_tasks": 60,
+  "task_ids": [
+    "task_e18",
+    "task_e16",
+    "task_h9",
+    "task_h11",
+    "task_h16",
+    "task_m18",
+    "task_m10",
+    "task_e2",
+    "task_h19",
+    "task_m2",
+    "task_h17",
+    "task_e4",
+    "task_e6",
+    "task_m11",
+    "task_e8",
+    "task_h1",
+    "task_m15",
+    "task_e11",
+    "task_h20",
+    "task_e17",
+    "task_h8",
+    "task_m9",
+    "task_m12",
+    "task_m5",
+    "task_h5",
+    "task_h10",
+    "task_h6",
+    "task_m16",
+    "task_m14",
+    "task_h3",
+    "task_m3",
+    "task_e12",
+    "task_m17",
+    "task_e13",
+    "task_e14",
+    "task_e3",
+    "task_m7",
+    "task_m6",
+    "task_m8",
+    "task_m20",
+    "task_h12",
+    "task_e19",
+    "task_e10",
+    "task_h2",
+    "task_h18",
+    "task_h13",
+    "task_h15",
+    "task_e9",
+    "task_h14",
+    "task_m13",
+    "task_e15",
+    "task_e5",
+    "task_m19",
+    "task_h4",
+    "task_m4",
+    "task_e1",
+    "task_h7",
+    "task_e7",
+    "task_e20",
+    "task_m1"
+  ],
+  "n_episodes": 240,
+  "replicates": [
+    0,
+    1
+  ],
+  "max_steps": 30,
+  "timeout_s": 180,
+  "agent": {
+    "web_app": "apps/gmail",
+    "task_suite": "real-tasks",
+    "use_vision": false,
+    "headless": true,
+    "timeout_s": 180,
+    "llm_provider": "anthropic",
+    "llm_model": "claude-haiku-4-5-20251001",
+    "llm_reasoning_effort": null,
+    "use_thinking": false
+  },
+  "cost_per_episode_assumed_usd": {
+    "O": 0.1,
+    "D": 0.08
+  },
+  "cost_estimate_usd": 21.6,
+  "budget_usd": 35,
+  "oracle_pool_sha256": "6e074155b959df072054e79ea36c4f850c3264f74c476afdcaf751a2d158d7e4",
+  "real_tasks_sha256": "1e6606b186c5515c0cd9582019d547c15afd69415fb639a9202950ccb135133b",
+  "generator_sha256": {
+    "build_gmail_oracle.py": "0cd0e244ffef744df551b92679819baffcbd68a7fa5a5dcbc1df2c3684643a5c",
+    "prepare_headroom_gmail.py": "313e815214831c3e8825fdeb021d4587101515148c60b621c64e40615f7d5a32",
+    "prepare_headroom_haiku.py": "594ffd5b9d94d1ff49772d38fe33b513c410979ed848b55cafd8abe617df4e55"
+  },
+  "files": {
+    "gmail/queue.jsonl": "da386ee9ac13cd081eacc0bad947c88257a6e051fca89575c1fd28af89505cff",
+    "pools/gmoraclefull.yaml": "6e074155b959df072054e79ea36c4f850c3264f74c476afdcaf751a2d158d7e4",
+    "pools/anchors_gmail.yaml": "9c8a214df0cc3649d8d37d6b717a74ac56ade82d10aaaefb133d37becdb6465d"
+  },
+  "agent_overrides": {
+    "llm_provider": "anthropic",
+    "llm_model": "claude-haiku-4-5-20251001",
+    "llm_reasoning_effort": null,
+    "use_thinking": false
+  },
+  "comparison": {
+    "pre_reg_15_manifest_sha256": "bf2ccf89884841926c647cab040c8216af477ae0db7c77995087df73210f8456"
+  }
+}

@@ -737,7 +737,7 @@ def pool_files(data_dir: Path, profile: str = DEFAULT_PROFILE) -> tuple[str, ...
 
 
 #: The agent settings a data dir's manifest may override (``agent_overrides``); everything else stays the profile's.
-AGENT_OVERRIDE_KEYS = ("llm_provider", "llm_model", "llm_reasoning_effort")
+AGENT_OVERRIDE_KEYS = ("llm_provider", "llm_model", "llm_reasoning_effort", "use_thinking")
 
 
 def agent_settings(data_dir: Path, profile: str = DEFAULT_PROFILE) -> dict:

@@ -1,0 +1,271 @@
+{
+  "repeat_audit": [
+    {
+      "pool": "G",
+      "paired_cells": 145,
+      "arm_count": 49,
+      "task_count": 29,
+      "discordance": 15,
+      "crossings": 12,
+      "replays": 2000,
+      "crossing_rate": 0.006,
+      "binomial_ci": [
+        0.003104016282377546,
+        0.010457313821794965
+      ],
+      "unswapped_cross": [
+        0,
+        0
+      ]
+    },
+    {
+      "pool": "F",
+      "paired_cells": 155,
+      "arm_count": 49,
+      "task_count": 30,
+      "discordance": 27,
+      "crossings": 43,
+      "replays": 2000,
+      "crossing_rate": 0.0215,
+      "binomial_ci": [
+        0.015602297625726739,
+        0.028852041684886413
+      ],
+      "unswapped_cross": [
+        0,
+        0
+      ]
+    },
+    {
+      "pool": "GLK30",
+      "paired_cells": 120,
+      "arm_count": 38,
+      "task_count": 29,
+      "discordance": 19,
+      "crossings": 15,
+      "replays": 2000,
+      "crossing_rate": 0.0075,
+      "binomial_ci": [
+        0.004203591756889187,
+        0.012339983735785333
+      ],
+      "unswapped_cross": [
+        0,
+        0
+      ]
+    },
+    {
+      "pool": "GLK",
+      "paired_cells": 120,
+      "arm_count": 38,
+      "task_count": 29,
+      "discordance": 23,
+      "crossings": 38,
+      "replays": 2000,
+      "crossing_rate": 0.019,
+      "binomial_ci": [
+        0.013479737835558642,
+        0.02598647563800926
+      ],
+      "unswapped_cross": [
+        0,
+        0
+      ]
+    }
+  ],
+  "drift_summary": {
+    "matched_tasks": 30,
+    "historical_D_mean": 0.7166666666666667,
+    "current_D_mean": 0.8666666666666667,
+    "current_O_mean": 0.7333333333333333,
+    "default_drift": 0.15000000000000002,
+    "O_gain_vs_historical": 0.016666666666666607,
+    "O_gain_vs_concurrent": -0.13333333333333341,
+    "shifted_bank_mean": 0.7766666666666666,
+    "cp_bank_mean": 0.9950915052714573
+  },
+  "drift_fixed_order": [
+    {
+      "scenario": "current_D_vs_historical_plugin_r0",
+      "cross_task": 0,
+      "max_e": 5.385680969180348,
+      "final_e": 5.049075908606575
+    },
+    {
+      "scenario": "current_D_vs_historical_plugin_r1",
+      "cross_task": 0,
+      "max_e": 4.321755573248408,
+      "final_e": 2.532278656200239
+    },
+    {
+      "scenario": "concurrent_D_AA",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 0.3222222222222222
+    },
+    {
+      "scenario": "current_O_vs_historical_plugin_r0",
+      "cross_task": 0,
+      "max_e": 1.061580701706754,
+      "final_e": 0.7178399691783159
+    },
+    {
+      "scenario": "current_O_vs_historical_plugin_r1",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 0.7707006369426751
+    },
+    {
+      "scenario": "concurrent_O_vs_D_r0",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 1.0
+    },
+    {
+      "scenario": "concurrent_O_vs_D_r1",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 1.0
+    },
+    {
+      "scenario": "current_D_vs_shifted_r0",
+      "cross_task": 0,
+      "max_e": 2.910122021346333,
+      "final_e": 2.3080905281803106
+    },
+    {
+      "scenario": "current_D_vs_shifted_r1",
+      "cross_task": 0,
+      "max_e": 2.680173195446172,
+      "final_e": 1.0567730957898396
+    },
+    {
+      "scenario": "current_O_vs_shifted_r0",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 0.65204009327454
+    },
+    {
+      "scenario": "current_O_vs_shifted_r1",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 0.7821373944270797
+    },
+    {
+      "scenario": "current_D_vs_cp_r0",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 0.9995834202012044
+    },
+    {
+      "scenario": "current_D_vs_cp_r1",
+      "cross_task": 0,
+      "max_e": 1.000000521050448,
+      "final_e": 0.9987863521152788
+    },
+    {
+      "scenario": "current_O_vs_cp_r0",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 0.9995834202012044
+    },
+    {
+      "scenario": "current_O_vs_cp_r1",
+      "cross_task": 0,
+      "max_e": 1.0,
+      "final_e": 0.9995834202012044
+    }
+  ],
+  "drift_order_replays": [
+    {
+      "scenario": "current_D_vs_historical_plugin_r0",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_D_vs_historical_plugin_r1",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "concurrent_D_AA",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_O_vs_historical_plugin_r0",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_O_vs_historical_plugin_r1",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "concurrent_O_vs_D_r0",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "concurrent_O_vs_D_r1",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_D_vs_shifted_r0",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_D_vs_shifted_r1",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_O_vs_shifted_r0",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_O_vs_shifted_r1",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_D_vs_cp_r0",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_D_vs_cp_r1",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_O_vs_cp_r0",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    },
+    {
+      "scenario": "current_O_vs_cp_r1",
+      "crossings": 0,
+      "replays": 2000,
+      "max_cross_task": 0
+    }
+  ]
+}

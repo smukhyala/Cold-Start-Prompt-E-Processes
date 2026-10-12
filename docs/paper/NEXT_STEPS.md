@@ -10,7 +10,7 @@ Updated 2026-10-12. This is the operational plan; `FRAMEWORK_GAP_PLAN.md` preser
 
 ## Highest-priority remaining evidence
 
-**Test the conditional future-task claim on a genuinely sampled task stream.** The Linear study collected outcomes after registration but used a fixed public bank, so seeded order does not itself justify the e-process null for future tasks. A next study should create or sample tasks prospectively from a defined population, freeze systems and scoring before outcomes, and run the incumbent concurrently. Its protocol should state why the conditional null is credible under the sampling mechanism. The current Linear crossing remains a registered result on its executed cohort, not a future-task population certificate.
+**Complete the prospectively sampled Linear profile-edit trial now underway.** The task-generating distribution, fixed pair, scoring, and decision rule were committed at `f4d91f5` before the task seed was drawn. The realized 120-task suite and queue were committed at `b22825d` before agent outcomes. See [the protocol](PROSPECTIVE_SAMPLED_LINEAR_PROTOCOL.md). When collection ends, preserve all attempts, run `experiments/growing_bandits/empirical/analyze_sampled_linear.py`, audit missingness and the registered paths, then report the result in the manuscript, including an unresolved or incomplete outcome if applicable. This trial targets a narrow distribution of randomized profile edits; a broader task population and an independent review of conditional stability remain separate evidence needs.
 
 ## Before external submission
 

@@ -17,3 +17,9 @@ This is a retrospective exploratory replay. The two April 2024 matched-pair outc
 ## Decision rule for the manuscript
 
 Include R4 in the framework manuscript only as a descriptive audit of when displayed score leaders would have crossed under a frozen task order. If coverage, dates, or record semantics make a clean 500-task chronology infeasible, report the failure and keep the matched-pair account instead. Do not turn a displayed ranking into a claim of causal model or scaffold improvement.
+
+## Post-inspection source-format amendment (2026-10-12)
+
+The strict first pass found only 12 of 135 result files with at least 490 IDs. On inspecting the source's own `analysis/get_results.py` and `analysis/get_leaderboard.py`, we found why: recent `results.json` files are deliberately sparse, containing resolved IDs and a few failure categories, while the official leaderboard computes `len(resolved)/500`. An omitted ID is therefore scored unsuccessful in the published rate. This explanation was learned **after** the strict replay loaded result files, so the extension below is exploratory and must be reported alongside the registered strict result.
+
+Reanalyse all well-formed result files with the official `resolved`-list semantics, using the same fixed 500-ID universe, absent-as-failure scoring, chronology, E1b task-order seeds, and thresholds. Exclude malformed or out-of-universe files, and report coverage and missing-ID counts. Keep metadata-only entries out of itemwise inference because they lack released resolved-ID lists. The extension is a descriptive reconstruction of the official score scale, not a new preregistered validation of sequential inference.

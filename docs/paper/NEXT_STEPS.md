@@ -9,7 +9,7 @@ Updated 2026-10-12. This is the operational plan; `FRAMEWORK_GAP_PLAN.md` preser
 
 ## Highest-priority remaining evidence
 
-**Run one genuinely prospective, concurrently controlled trial on new tasks.** Freeze an incumbent and one challenger before either sees any outcome on a fresh task cohort. A fixed pair is the cheapest first test: 500 paired tasks require exactly 1,000 arm-task episodes before optional stopping, versus 25,500 for 50 challengers. Use `PROSPECTIVE_TRIAL_TEMPLATE.md` to select the task population, exact system versions, scoring, missing-run policy, target gain, margin, and error allocation before collecting data. Keep each arm's task and timing paired. The result can validly be efficacy, futility, or unresolved; do not choose a different challenger after reading the pilot. A new task cohort and executable systems are external dependencies, so no live run is launched by this paper audit.
+**Complete the prospective, concurrently controlled Linear trial now underway.** The fixed incumbent/challenger pair, all 120 Linear account-settings tasks, queue, hashes, margin, error allocation, and missing-run rule were frozen at commit `30fcc9a` before collection. See `PROSPECTIVE_LINEAR_PROTOCOL.md`. The 240-episode run started on 2026-10-12 with a $35 collector cap. When it ends, preserve all attempts, produce the complete task-level table with `experiments/growing_bandits/empirical/analyze_linear_trial.py`, check missingness and the registered decision paths, and update `paper/main.tex` with the result, including unresolved or incomplete status if applicable. Do not change the pair after seeing outcomes.
 
 ## Before external submission
 

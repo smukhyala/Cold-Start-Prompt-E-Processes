@@ -154,6 +154,21 @@ The test *could* catch a prompt that's really better, and the "best" prompt from
 On GitLab it mostly fails at *doing* the clicks, not at *knowing* what to do.
 So no prompt can help it much there, which fits everything else I found.
 
+## Update 3: Does Gmail have room? (Oct 11, $15)
+
+I gave the AI a prompt with the answer to *every* Gmail chore in it, and ran it next to the normal prompt.
+
+**It didn't help at all: 71% with the answers vs 72% without.**
+
+**Why:** the AI mostly ignored the answers. It looked at them in only about 1 run out of 4.
+The rest of the time it did the chore its own way, as if the answers weren't there.
+
+**What that means:** what you put in this AI's prompt barely changes what it does, even when it's the literal answer.
+So it makes sense that none of my prompts beat the normal one: the prompt just isn't steering it much.
+
+**One more surprise:** the *same* normal prompt scored 87% today and 72% two days ago on the same chores.
+That swing from one day to the next is bigger than any difference between prompts I've ever measured.
+
 ## My questions for you
 
 1. Is "does anything beat the default?" a good headline, or too negative?

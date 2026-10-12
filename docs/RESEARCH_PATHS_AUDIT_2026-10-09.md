@@ -327,6 +327,14 @@ decision-relevant E1b fails on power. B is therefore demoted to a supporting sec
      −3.7 pp. The default dipped 3.6 pp between sessions, which is not significant.
    - **New finding:** even an exact answer key lifts `gpt-5.4-mini` only about 5 pp on GitLab. O2 scores 0.418,
      about the same as the old cookbook's 0.436. Execution, not knowledge, is the ceiling.
+6. **Gmail answer-key headroom, Pre-registration 15: done 2026-10-11** ($15.11;
+   [PREREG15_RESULTS.md](growing_bandits/PREREG15_RESULTS.md)).
+   - **Reading: "small".** A 60-task answer key against the default gives H = −1.7 pp, 90% CI [−8.8, +5.5].
+   - **Exploratory:** the agent referred to the key in only 33 of 120 episodes. The answers sitting in the system
+     prompt barely steer `gpt-5.4-mini`, so answer-key headroom is a lower bound limited by adherence.
+   - **Drift:** the same default scored +15 pp higher than in Leg M on the same 30 tasks (CI [+5.8, +24.2]).
+     Session-to-session drift exceeds every prompt effect measured, so only within-session paired comparisons are
+     trustworthy.
 
 ## Provenance
 

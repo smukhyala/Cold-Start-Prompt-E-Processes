@@ -1,6 +1,14 @@
 # Making it a framework: what our runs show, and which public data fills the gaps (2026-10-11)
 
+## Current disposition (2026-10-12)
+
+R1--R3 and R5 have now been run as registered or, for the own-repeat audit, explicitly retrospectively. [Own-repeat and drift results](OWN_REPEAT_DRIFT_RESULTS.md) show conditional A/A checks below 5% and a 15-point historical-default shift with sign reversal but no false efficacy crossing. [Mizrahi replay](MIZRAHI_REPLAY_RESULTS.md) supplies a natural original-template incumbent across 24 tasks and 305 settings: 58 efficacy, 2 futility, 245 unresolved, with 7.92-point mean search-to-held-out shrinkage. The source contains 25 task CSVs, not the 39 estimated in the original plan. [R6 validation](DESIGN_CALCULATOR_RESULTS.md) failed its cross-dataset transfer gate; only the exact full-grid budget calculator is retained. The framework manuscript is now [paper/main.tex](../../paper/main.tex), with the prior prompt-search draft preserved separately.
+
+The active paper claim is conditional on task sampling and a stable, fixed incumbent. It separates prospective live studies from historical public replays. Historical benchmark reuse does not itself establish a future-task error guarantee. R4's full dated-leaderboard analysis remains unrun; the two prespecified matched SWE-bench pairs provide narrower evidence that large whole-system gains can cross early. The HAL/DOVE breadth extensions also remain unrun and are optional rather than grounds for a broader claim.
+
 ## Update: first public replays (2026-10-12)
+
+The remainder of this document preserves the original planning ledger and intermediate update for provenance; the current disposition above supersedes its proposed next steps and projected claims.
 
 The ledger below records the state when this plan was written. Three frozen public-data replays have since been run:
 

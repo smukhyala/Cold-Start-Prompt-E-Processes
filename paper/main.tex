@@ -1,251 +1,111 @@
-% Working draft. Venue not chosen: neutral article layout; swap in the venue style file when one is set.
-% Every number here is quoted from docs/growing_bandits/{RESULTS,DEPLOYMENT_RESULTS}.md and the tables named in
-% docs/paper/PAPER_PLAN.md (claim ledger, section 1). Do not add a number that is not in the ledger.
+% Framework manuscript, revised 2026-10-12. Historical prompt-search draft:
+% paper/prompt_search_legacy.tex. Evidence ledger: docs/paper/FRAMEWORK_GAP_PLAN.md.
 \documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
-\usepackage{amsmath,amssymb,amsthm}
-\usepackage{booktabs}
-\usepackage{graphicx}
+\usepackage{amsmath,amssymb,booktabs}
 \usepackage[numbers,sort&compress]{natbib}
+\usepackage{xurl}
 \usepackage{hyperref}
-\usepackage{xcolor}
-\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
-\newcommand{\Kstar}{K^{\star}}
-
-\title{When Is Prompt Search Worth It?\\[2pt]\large Search Breadth, Reservoir Heterogeneity, and Flat Real Prompt Pools}
+\title{Should We Search for a Better Agent Configuration?\\
+\large Sequential Efficacy, Futility, and the Cost of Choosing the Best of Many}
 \author{Sanjay Mukhyala \and Ian Waudby-Smith}
-\date{Draft --- \today}
-
+\date{Working manuscript --- October 2026}
 \begin{document}
 \maketitle
 
 \begin{abstract}
-Prompt optimization for LLM agents repeatedly faces one choice: evaluate a new candidate prompt, or evaluate an
-existing one again. We study this choice as best-arm identification over a growing reservoir of candidates and ask
-when it matters. In simulation, the sequential decision collapses to a single quantity, the number of candidates
-evaluated: holding that number fixed, the timing of search is worth nothing, and the optimal number is interior and
-grows sublinearly with the evaluation budget. A policy learned from 87{,}148 oracle-labelled states reduces to a
-three-parameter rule, and a two-constant recruit-then-refine schedule captures nearly all of the attainable value.
-How much choosing the number of candidates matters is set by the reservoir: it rises steeply with the true spread of
-candidate quality, and at equal spread it is dominated by a rare upper tail. We then measure that spread directly
-for three real prompt families on web-agent tasks --- structured stylistic prompts, deliberately diverse free-form
-prompts, and procedural prompts derived from product documentation --- using replicate episodes and nonparametric
-deconvolution to separate execution noise from true differences. All three pools are flatter than every simulated
-environment, none shows heterogeneity that replicates across tasks, and search breadth barely matters on any of
-them. For the agent and applications we measured, the bottleneck in adaptive prompt search was not the search
-algorithm but a candidate pool whose members behave differently.
+Evaluating many prompts or agent configurations against an incumbent creates two problems: an apparent winner may be selected by noise, and a fixed evaluation budget may be spent after the answer is already clear. We study an incumbent-relative sequential protocol with distinct decisions for efficacy (some challenger improves on the incumbent), practical futility (no challenger improves by a prespecified margin), and insufficient evidence. We apply it to prospective web-agent studies and registered historical replays of prompt and agent benchmarks. In PromptEval, the best of 99 prompts leads a positional reference by 5.02 percentage points on search examples but by 0.54 points held out; 421 of 855 settings certify 15-point futility and only four cross efficacy. In a separate paraphrase benchmark with an original-template incumbent, the selected prompt improves by 15.04 points held out, although its search-half lead overstates that gain by 7.92 points; 58 of 305 settings cross efficacy. Two fixed SWE-bench system comparisons cross efficacy after 92 and 95 paired issues, whereas an 8.8-point Terminal-Bench scaffold gain does not cross within 68 tasks. Live rerun checks are compatible with nominal efficacy calibration, while a measured 15-point default shift reverses a historical-bank comparison. These heterogeneous outcomes motivate a protocol that reports unresolved searches and contemporaneous controls. A pilot-based predictor fails cross-dataset validation, so our design guidance gives exact evaluation costs without promising universal stopping times.
 \end{abstract}
 
-% =====================================================================================================
 \section{Introduction}
-\label{sec:intro}
+An agent designer commonly has an incumbent configuration and a pool of candidate prompts, scaffolds, or complete systems. A fixed-grid comparison evaluates all candidates on all tasks and chooses the largest observed mean. The choice is sensitive to the number of candidates: searching more rows raises the largest noisy score, even if no candidate is better. Evaluating every row to a fixed horizon also uses resources after a large gain or a lack of practically useful gain becomes statistically clear.
 
-Choosing a system prompt for an LLM agent is an expensive evaluation problem. Each trial is a full agent episode
-whose outcome is a noisy binary success, and the set of candidates is never fixed: a designer, or an optimizer,
-can always write another prompt. Methods for automatic prompt optimization differ in how they propose
-candidates~\citep{zhou2023ape,yang2024opro,fernando2023promptbreeder,khattab2024dspy,agrawal2025gepa}, but every
-one of them must decide, at each step, whether to spend the next evaluation on a new candidate or on a candidate
-it already holds. This paper asks when that decision matters.
+We ask two separate questions. \emph{Efficacy}: is there evidence that at least one candidate beats the incumbent? \emph{Futility}: is there evidence that every candidate improves by less than a chosen meaningful margin $\delta$? A positive answer to neither is a substantive outcome: the available tasks do not resolve the search. These questions resemble multi-arm trial monitoring and can be addressed by betting-based e-processes, which allow monitoring at every task under their sampling assumptions~\citep{waudbysmith2024betting,ramdas2023gametheoretic}. Candidate generation remains unrestricted; automatic prompt optimizers provide many ways to propose rows~\citep{zhou2023ape,yang2024opro,agrawal2025gepa}.
 
-We formalize the problem as best-arm identification over a growing reservoir. A SEARCH action draws a new prompt
-from an effectively unlimited distribution; a REFINE action evaluates a held prompt again. At the end of the budget
-the procedure names one prompt and is scored by its true success rate. Simple regret then splits exactly into a
-\emph{discovery} term --- the best prompt was never drawn --- and a \emph{selection} term --- it was drawn but not
-recognized. Searching more lowers the first and raises the second.
+Our contribution is an empirical account of what these decisions look like across several kinds of pools. The live web-agent studies give prospective, preregistered uses of the protocol. Public matrices give breadth across models, tasks, and candidate counts, with protocols committed before their outcomes were analysed. They are historical replays of complete benchmark results, so their stopping-time savings are counterfactual and their nominal thresholds require a fresh-task interpretation. The contrast between a positional PromptEval reference and an original-template paraphrase incumbent is central: the baseline defines both the question and the apparent prevalence of useful discoveries.
 
-Our study has two halves. The first asks \emph{how} to search, in a simulator where candidate quality is known.
-Using an oracle that labels each state with the regret-minimizing action by paired replay, we find that the
-decision is driven by how good the held candidates are relative to a fresh draw, not by statistical evidence about
-the leader; that, holding the final number of candidates $K$ fixed, the timing of search is worth nothing; that the
-optimal $K$ is interior and grows sublinearly with the budget; and that a learned policy collapses onto a
-three-parameter rule which a simple budget-scaled schedule nearly matches. The value of all of this, however,
-depends on the reservoir: it rises steeply with the spread of true candidate quality and, at equal spread, with
-the weight of a rare excellent tail.
+\section{Incumbent-relative sequential decisions}
+\label{sec:method}
+Let $b$ denote a fixed incumbent and $k=1,\ldots,K$ fixed challengers. On paired task $t$, observe bounded outcomes $Y_{bt},Y_{kt}\in[0,1]$ and set $D_{kt}=Y_{kt}-Y_{bt}$. The target gain is $\Delta_k=\mathbb{E}D_{kt}$ for a prespecified task population. The efficacy null is $H^+_0:\Delta_k\leq0$ for every $k$; the pool futility null is $H^-_0:\Delta_k\geq\delta$ for at least one $k$. At $\delta>0$, these hypotheses are not complements. A pool can contain a small real improvement that is also below the meaningful margin.
 
-The second half asks \emph{whether} real prompt pools have that spread. We measured three deliberately different
-families on web-agent tasks: structured prompts varying planning, verification and expertise style; free-form
-prompts written to be maximally diverse; and procedural prompts derived from the application's user manual, scored
-under a per-episode step budget designed to let knowledge show through as efficiency. Replicate episodes identify
-execution noise, and a nonparametric deconvolution recovers the distribution of true prompt success rates. All
-three pools are flatter than every simulated environment; none shows heterogeneity that replicates across halves of
-the task set; and on every pool, every sensible choice of $K$ is within a few thousandths of the best, with only
-``open a new prompt every episode'' measurably worse. A pre-registered test of the simulated policy ordering on a
-heterogeneous real pool could not be run, because no pool met its precondition.
-
-\paragraph{Contributions.}
-\begin{enumerate}
-  \item We show that the search-versus-refine decision in prompt search reduces to choosing search breadth $K$,
-        characterize how the optimal breadth scales with budget, and show that mis-sizing breadth dominates any
-        difference between policies (\S\ref{sec:breadth}).
-  \item We show that a two-constant recruit-then-refine schedule captures nearly all of the attainable value: a
-        learned policy trained on oracle labels reduces to an interpretable three-parameter rule and adds little
-        beyond the schedule once breadth is not capped (\S\ref{sec:simple}).
-  \item We map reservoir heterogeneity, and its upper tail in particular, to the regret at stake in choosing
-        breadth, giving a test that can be run before committing to search (\S\ref{sec:heterogeneity}).
-  \item We introduce a measurement protocol for real prompt pools --- replicate-identified noise, deconvolution,
-        variance decomposition and split-half reliability --- and find, under pre-registration, that three
-        qualitatively different real pools are too flat for search breadth to matter (\S\ref{sec:real}).
-\end{enumerate}
-
-The real-data findings are limited to one agent configuration, two applications and pools of 40--50 prompts; we
-state these limits where they bind (\S\ref{sec:discussion}).
-
-% =====================================================================================================
-\section{Related work}
-\label{sec:related}
-
-\paragraph{Prompt optimization.} Automatic prompt optimizers generate and score candidate instructions with an LLM
-in the loop~\citep{zhou2023ape,yang2024opro}, evolve populations of prompts~\citep{fernando2023promptbreeder}, or
-compile multi-stage programs whose prompts are tuned against a metric~\citep{khattab2024dspy}; reflective methods
-propose candidates from execution traces~\citep{agrawal2025gepa}. These methods differ mainly in the proposal
-distribution. Our results concern the evaluation side they share: how many candidates to score, and how often.
-
-\paragraph{Bandits for prompt selection.} Prompt selection under a fixed candidate set has been cast as best-arm
-identification~\citep{shi2024triple}. We study the setting where the candidate set grows, which is the
-infinitely-many-armed bandit~\citep{berry1997infinite,wang2008infinitely,carpentier2015simple}. Classical results
-there prescribe recruiting a number of arms that grows with the horizon at a rate set by the reservoir's upper
-tail; our simulations measure that envelope directly and find that the tail's mass, not only its exponent, sets it.
-
-\paragraph{Anytime-valid inference.} Betting-based confidence sequences and e-processes give error control that
-holds at every stopping time~\citep{waudbysmith2024betting,ramdas2023gametheoretic}, and have been used for
-sequential multi-armed testing. We use them for elimination during refinement and test whether their evidence
-should drive the decision to search; inside the training support it does not.
-
-\paragraph{Prompt sensitivity.} LLM outputs can be sensitive to small, meaning-preserving changes in prompt
-format~\citep{sclar2024quantifying}. Our measurement separates that sensitivity into execution noise, task-specific
-interaction and a stable prompt effect, and finds the stable effect small for the agent and tasks we study.
-
-\paragraph{Empirical Bayes deconvolution.} We recover the distribution of true prompt success rates by the
-nonparametric maximum-likelihood estimator~\citep{kiefer1956consistency,jiang2009general}, with interval estimates
-for variance components from the modified large-sample method~\citep{graybill1980mls}.
-
-% =====================================================================================================
-\section{Prompt search over a growing reservoir}
-\label{sec:setup}
-
-\paragraph{Model.} A reservoir is a distribution $\nu$ over success probabilities $\mu\in[0,1]$. With a budget of $T$
-evaluations, at each step $t$ a procedure either SEARCHes --- draws $\mu_{K+1}\sim\nu$ and evaluates the new prompt
-once --- or REFINEs --- evaluates a held prompt $i\le K_t$ again, observing $Y\sim\mathrm{Bernoulli}(\mu_i)$. At $t=T$ it
-recommends one held prompt $\hat\imath$. Simple regret is measured against the best of the first $T$ reservoir draws,
-$\mu^{\star}_T$, which is attainable and common to all policies under common random numbers:
+For binary paired outcomes, the efficacy process for challenger $k$ bets on its result on discordant tasks. Under the null and the corresponding conditional task-sampling assumption, a challenger win is no more likely than an incumbent win among discordances. A predictable one-sided betting fraction $\lambda_{kt}\geq0$ produces a nonnegative capital process $E^+_{kt}$. We use the existing hedged-capital update in the repository and combine challengers by an equal mixture,
 \begin{equation}
-  R_T \;=\; \mu^{\star}_T-\mu_{\hat\imath}
-      \;=\; \underbrace{\left(\mu^{\star}_T-\max_{i\le K_T}\mu_i\right)}_{R_{\mathrm{disc}}}
-      \;+\; \underbrace{\left(\max_{i\le K_T}\mu_i-\mu_{\hat\imath}\right)}_{R_{\mathrm{sel}}}.
+ E^+_t=K^{-1}\sum_{k=1}^K E^+_{kt}.
 \end{equation}
-\todo{Fig.~1: reservoir, SEARCH/REFINE, recruit-then-refine, the two regret terms.}
+Under the global efficacy null this mixture starts at one and controls the chance of ever crossing $1/\alpha$. It tests existence of an improving arm; it does not identify the best arm or validate the argmax selected on the same examples.
 
-\paragraph{Policies.} A \emph{recruit-then-refine} policy draws until it holds $K(T)$ prompts and then only refines,
-allocating pulls by an anytime-valid elimination rule~\citep{waudbysmith2024betting} and recommending by posterior
-mean. The budget-scaled schedule recruits while $K_t<c\,T^{\alpha}$; the fixed-$K$ policy recruits $K$ at once;
-always-search draws a new prompt every pull. Learned policies decide SEARCH or REFINE from 71 observable state
-features. \todo{Name the level rule here or in \S\ref{sec:simple}; harness details to App.~A.}
+For futility, transform each difference to $X_{kt}=(D_{kt}+1)/2$ and the margin to $m_\delta=(1+\delta)/2$. Under the single-arm null $\Delta_k\geq\delta$, downward factors $1-\lambda_{kt}(X_{kt}-m_\delta)$ form a nonnegative e-process for admissible predictable bets. The implementation mixes an adaptive bet with four fixed bets. We declare pool futility only when \emph{every} challenger process exceeds $1/\alpha$ at the same task. If any arm truly reaches $\delta$, its own process bounds a false pool-futility declaration. For both directions we report the first crossing and treat no crossing as unresolved. The two directional tests each use level $\alpha=0.05$ unless a replay specifies a pairwise correction; this is not a claim that every possible statement across all settings has joint 5\% error.
 
-\paragraph{What should drive the decision?} To learn and evaluate policies we label 87{,}148 simulated states with
-the advantage of SEARCH over REFINE, estimated by replaying each state's future twice under common random numbers.
-Features describing the quality of the held candidates predict the label (best single feature AUC 0.706); features
-summarizing e-process evidence about the leader do not (best 0.535), and adding all of them to a clock-only model
-changes balanced accuracy by $-0.001$ and $+0.006$, against $+0.052$ for quality features. An oracle that sees the
-reservoir's upper tail would score AUC 0.836 on the label, while its observable estimate scores 0.572: the decision
-is a reservoir-estimation problem, not an inference problem. These results hold inside the training support; out of
-support the evidence features recover a little value (App.~B). \todo{Tighten; move feature lists to App.~B.}
+A full paired grid consumes $(K+1)N$ arm-task episodes for $N$ tasks. Monitoring can shorten it to $(K+1)\tau$ when a decision occurs at $\tau<N$. Dropping individual futility-certified challengers may reduce episodes further, but requires an implementation that respects what is observed at each step. The cost and inferential claims assume the incumbent and candidates are fixed independently of the monitored outcomes, tasks represent the intended population, and the required conditional calibration holds. Reusing a public benchmark, tuning candidates against it, or shifting the default between sessions weakens those interpretations.
 
-% =====================================================================================================
-\section{Search breadth is the decision}
-\label{sec:breadth}
-% Claim P1, P2. Evidence: k_star_envelope.csv, capmatch_contrasts.csv, capp_policies.csv. Fig 2, Fig 3b.
-% Not here: Test B / D, the unpaired cap sweep, the 25 learned variants.
+\section{Studies and registered replays}
+\label{sec:studies}
+The prospective studies evaluated prompt pools for a web agent on Gmail and GitLab tasks, including structured, free-form, and manual-derived prompts. Their plans were recorded before paid episodes. They found no incumbent-relative efficacy crossing in the measured real pools; a Shopping pool reached 15-point futility around 64 tasks and a GitLab leg at task 65. The live studies therefore demonstrate an unresolved or futile search as well as practical complications of control coverage and session timing. A planted task-leaking positive control crossed rapidly, but its rerun gain was only 5.5 points, so it is not evidence that ordinary prompt search found a transferable winner.
 
-\paragraph{Timing does not matter given breadth.} Holding a policy's final number of candidates fixed and
-front-loading its recruitment, on the same episodes, the best learned policy ties its control
-($+0.0001$ $[-0.0005,+0.0007]$ over 8 environments) and the validation-tuned gradual schedule is worse
-($+0.0009$ $[+0.0005,+0.0012]$, worse in 8 of 8). \todo{Fig.~2b; one sentence on why: early recruitment gives every
-arm the full refinement budget.}
+The public analyses were registered before each source's relevant outcomes were inspected. PromptEval\footnote{\url{https://huggingface.co/datasets/PromptEval/PromptEval_MMLU_correctness}} supplies 855 model-by-subject matrices, each with 100 prompt rows and at least 100 examples. Its row 0 was fixed by position, with 99 challengers; its provenance as a deployment default is unknown. Mizrahi et al.'s released paraphrases\footnote{\url{https://github.com/SLAB-NLP/Multi-Prompt-LLM-Evaluation}} supply an original benchmark template flag and per-example automatic validation for open-source models. We selected the smallest-index original template, kept only paraphrases annotated correct, and required agreement between reconstructed itemwise accuracies and published prompt-level accuracies. This yielded 305 settings across 24 tasks and 16 models; four mismatched settings and a 26-example task were excluded under the registered rules. Both prompt datasets used disjoint search and held-out example halves, shared across models within a task.
 
-\paragraph{The optimal breadth is interior and grows with budget.} Pooled $\Kstar$ is 24, 32, 48, 128 and 256 at
-$T=50,100,200,500,1000$ (log-log slope about 0.8), with per-environment $\Kstar$ at $T=1000$ spanning 12--400.
-Always-search, which maximizes discovery, has regret 0.346 at $T=1000$ against 0.077 for the tuned schedule.
-\todo{Fig.~2a U-curves.}
+Terminal-Bench\footnote{\url{https://huggingface.co/datasets/harborframework/terminal-bench-2-leaderboard}} supplied repeated outcomes for a same-model scaffold comparison on 68 complete tasks, as well as an A/A label-swap replay. SWE-bench Verified\footnote{\url{https://github.com/SWE-bench/experiments}} supplied two prespecified same-date, same-model \emph{whole-system} comparisons on roughly 500 common issues each. The compared systems had different attempt policies, so these contrasts do not isolate a scaffold effect. For each public matrix, the crossing time is computed from historical outcomes in a registered task order and checked where specified against 2,000 task-order replays. Neither replay recovers a genuinely prospective decision on unseen future tasks.
 
-\paragraph{Mis-sized breadth dominates policy differences.} Under a breadth cap of 64, six policies --- including every
-learned one --- are identical to four decimals at $T=1000$ (0.0973); lifting the cap lowers regret by 0.020 for every
-tuned schedule (pooled; the environment-level interval includes zero above a cap of 128). \todo{Fig.~3b.}
+\section{Results}
+\label{sec:results}
+\subsection{Selection bias depends on the reference and pool}
+\begin{table}[ht]
+\centering
+\caption{Best-of-pool search gains relative to the fixed reference, in percentage points. Intervals for shrinkage cluster by subject or task.}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{lrrrr}
+\toprule
+Dataset and reference & Settings & Search gain & Held-out gain & Shrinkage (95\% interval)\\
+\midrule
+PromptEval, positional row 0 & 855 & 5.02 & 0.54 & 4.48 [4.05, 4.92]\\
+Mizrahi, original template & 305 & 22.96 & 15.04 & 7.92 [6.24, 9.50]\\
+\bottomrule
+\end{tabular}
+\label{tab:selection}
+\end{table}
 
-% =====================================================================================================
-\section{Simple schedules suffice}
-\label{sec:simple}
-% Claim P3, N1, N4. Evidence: h1b_*.csv, capp_contrasts.csv, capc_*.csv, surrogate_validity.csv. Fig 3a, Table 1.
+In PromptEval, 97.3\% of search halves show a lead, yet only 48.3\% of selected rows have a strictly positive held-out gain. Across the Mizrahi settings, 78.0\% of selected paraphrases have a positive held-out gain. The difference is evidence against a universal flat-pool story. The Mizrahi original template offers substantial room for some paraphrases to improve it, while broad search still exaggerates the selected gain. A search-half argmax and an efficacy crossing are different objects: a crossing establishes evidence for some candidate under its null, not an independent guarantee for the selected row.
 
-\paragraph{The learned policy is a three-parameter rule.} \todo{Registration ladder in two sentences: the learned
-policy beats the tuned schedule (0.005), a per-horizon fixed $K$ and an adaptive schedule, then is matched by
-``recruit to $T^{0.75}\exp(4(0.5-\text{level}))$ arms, then refine'': $-0.00002$ $[-0.0007,+0.0007]$, $p=0.96$,
-30 environments, $T\le 200$.}
+\subsection{Efficacy, futility, and unresolved outcomes}
+\begin{table}[ht]
+\centering
+\caption{First sequential boundary in the prompt-matrix search halves, with $\alpha=0.05$ and $\delta=0.15$.}
+\begin{tabular}{lrrr}
+\toprule
+Dataset & Efficacy & Futility & Unresolved\\
+\midrule
+PromptEval, $K=99$ & 4 & 421 & 430\\
+Mizrahi, $K=116$--232 & 58 & 2 & 245\\
+\bottomrule
+\end{tabular}
+\label{tab:decisions}
+\end{table}
 
-\paragraph{With room to work, the edge is small.} \todo{Level rule minus re-tuned schedule $-0.0014$
-$[-0.0045,+0.0017]$; learned policies over-recruit to 380--527 arms uncapped, regret 0.14--0.15 vs 0.076.}
+The PromptEval search half has a median 86 examples and many futility decisions; dropping futility-certified rows uses 59.1\% fewer arm-example evaluations than its full grid in a separate replay. In Mizrahi, the search half has 50 examples, and 60 of 305 settings reach a first boundary. Their median crossing is 35.5 tasks; first-boundary stopping reduces full-grid evaluations by 6.6\%. Most settings remain unresolved. A shorter horizon and larger observed gains favor different boundaries, and neither dataset establishes a universal futility-to-efficacy cost ratio.
 
-\paragraph{The schedule generalizes; learned signals do not.} \todo{Held-out family, uncapped: schedule within 0.001
-of the best single $K$ ($-0.0006$ $[-0.0016,+0.0004]$); learned policy $+0.035$; oracle tail exponent worst.}
+Large whole-system gains can be detected early. On matched SWE-bench issues, the GPT-4 comparison gains 20.0 points and crosses the pair-adjusted efficacy threshold after 92 of 495 issues; the Claude 3 Opus comparison gains 8.9 points and crosses after 95 of 496 in the fixed order. Both cross in all 2,000 task-order replays, although crossing times vary. In Terminal-Bench, a same-model Capy scaffold gains 8.8 paired points over its reference on 68 tasks but crosses in none of 2,000 orders. The latter is an observed power limit, not evidence of no gain. Across public matrices, benchmark reuse and past system development on the same task sets limit the population interpretation of a nominal sequential error threshold.
 
-\paragraph{Offline skill is not a proxy.} \todo{Spearman $+0.005$ $[-0.53,+0.52]$ over 22 variants; the best
-deployed variants rank 19th and 22nd offline.}
+\subsection{Real repeats and a drifting default}
+On four scorings of live same-configuration repeat cells, efficacy crossings in 2,000 conditional label-swap/order replays were 0.6\%, 2.15\%, 0.75\%, and 1.9\%, each below 5\%. The GitLab scorings reuse episodes and are not independent replications. Repeats are sparse per prompt; this is a diagnostic on observed noise rather than an estimate of future-session error.
 
-% =====================================================================================================
-\section{Heterogeneity sets the value of search}
-\label{sec:heterogeneity}
-% Claim P4. Evidence: calibration.csv. Fig 4 (simulation layer).
+The Gmail default moved from 71.7\% in an older 30-task session to 86.7\% in a later session on matched tasks. A current answer-key arm scored 73.3\%: its apparent gain is $+1.7$ points against the historical plug-in bank and $-13.3$ against the concurrent default. No registered efficacy process crossed on these 30 tasks, so the observed result is estimate bias and sign reversal, not a demonstrated false rejection. A confidence adjustment for estimation error in the old bank cannot, by itself, cover an unbounded change in task success probabilities. A concurrent incumbent or a prospectively justified drift bound is required for a cross-session known-baseline claim.
 
-\todo{Calibration: Beta pools at level 0.6, spread 0.01--0.15, and flat-bulk-plus-rare-great mixtures, $T\le 200$.
-Regret range over $K$ at $T=200$: 0.0013, 0.0053, 0.030, 0.080, 0.151 at spread 0.01, 0.02, 0.05, 0.10, 0.15;
-always-search loss 0.002 $\to$ 0.188; schedule within 0.013 of the ceiling throughout. At equal spread the tail
-decides: spread 0.036 with 1\% of arms at $+0.3$ gives 0.083, against 0.015 for a Beta pool. Define the flat
-threshold (spread $\approx 0.019$) and the decision-relevant tier.}
-
-% =====================================================================================================
-\section{Real prompt reservoirs are flat}
-\label{sec:real}
-% Claim P5, S4--S6, N3. Evidence: emp_*, glk30_*, glk_*, stage0_*. Fig 4 (real points), Fig 5, Table 2.
-% Not here: secondary task mixes, diagnostics 1--7 detail, latency window, step-cap deviation (App. F).
-
-\paragraph{Measurement.} \todo{Agent, apps, tasks (30 per pool, stratified by difficulty), replicate cells (300 Gmail,
-120 GitLab), within-cell noise from replicate pairs, NPMLE deconvolution, ANOVA components with MLS intervals,
-split-half reliability, K-grid replay on the deconvolved reservoir. All pre-registered.}
-
-\paragraph{Three pools.} \todo{Grid (50, Gmail), free-form (50, Gmail), procedural (40, GitLab, 30-step budget).}
-
-\paragraph{All three are flat.} \todo{Deconvolved spread 0.035 / 0.001 / 0.041 (0.009 uncapped), all below the
-simulated minimum of 0.075; regret range at $T=200$ 0.009 / 0.0001 / 0.008; no detectable heterogeneity (split-half
-$r_{\mathrm{SB}}$ 0.07, $p=0.43$; $\le 0$, $p=0.61$); task variance 0.164 vs prompt about 0.001; raw spreads about
-twice the true spread. Pools sit below the Beta curve at their own spread: no upper tail.}
-
-\paragraph{A budget exposes efficiency, not knowledge.} \todo{0.036 at 30 steps vs 0.011 uncapped; mean steps vs
-rate $\rho=-0.40$; does not replicate across task halves.}
-
-\paragraph{The pre-registered test.} \todo{State the gate and that it did not open; Stage B computed and not read;
-directionally always-search $\approx 0.01$ worse and $K=8$ at the minimum.}
-
-% =====================================================================================================
-\section{Discussion and limitations}
+\section{Design guidance and limits}
 \label{sec:discussion}
+A design starts by naming the incumbent, target task population, meaningful margin $\delta$, candidate pool, and maximum paired task count. The full-grid episode budget is exactly $(K+1)N$; for 50 challengers and 80 tasks it is 4,080 episodes. Pilot observations can inform planning, but the predictive model we tested did not transfer in both directions between PromptEval and Mizrahi. It improved multiclass Brier and log loss on held-out tasks within a mixed dataset, yet a PromptEval-trained model worsened Brier when applied to Mizrahi. At a 50-task horizon PromptEval supplied no efficacy decisions for that transfer fit, whereas Mizrahi supplied 58. We therefore do not offer a validated general tasks-to-decision calculator or promise a fixed episode-saving percentage.
 
-\todo{Practitioner rule: measure deconvolved spread with replicates before searching; flat $\Rightarrow$ small fixed
-set; tail $\Rightarrow$ budget-scaled $K$; never always-search. Limits: one agent configuration; two apps; 30 tasks
-per pool ($\pm 0.015$--$0.02$ resolution); 40--50 prompts cannot exclude rare excellent prompts below about 2\%
-frequency, precisely the regime \S\ref{sec:heterogeneity} shows matters most; replay rather than live runs; synthetic
-simulation families; no DP optimum. Future work: prompt sensitivity of weaker or more constrained agents.}
+For practice, a concurrent incumbent on every sampled task is the cleanest comparison when model behavior or task conditions may drift. A small pilot can reveal discordance and rough effect sizes, but a weak pilot should lead to a larger task budget or an unresolved result, not a forced winner. A futility margin should express a gain worth deploying, since the procedure can reasonably find evidence of a small improvement and evidence that every improvement is below the chosen margin. If a public fixed benchmark is used, results should be described as historical replay evidence and checked on new tasks before deployment.
+
+The study has several limits. The live web-agent evidence comes from one model and a small number of applications; its controls and repetitions vary by leg. Public prompt matrices lack reruns, and their many model settings share examples. Original-template status in Mizrahi supplies a natural reference but not proof it was the best deployment default. The SWE-bench pairs compare complete systems with different attempt budgets. Nominal e-process guarantees require assumptions about future paired tasks and fixed candidate selection that historical benchmark matrices may not meet. Our protocols separate prospective live use, retrospective conditional checks, and fixed-matrix replays rather than pooling them into a single error-rate claim.
+
+\section{Conclusion}
+Incumbent-relative monitoring yields three useful answers: a candidate pool has evidence of an improvement, it lacks a gain as large as a chosen practical margin, or the task budget is insufficient. In our replays all three occur. Best-of-many selection inflates search-half gains in both prompt datasets, but the natural-incumbent paraphrase benchmark also contains substantial held-out improvements. The choice of incumbent and its stability across sessions are therefore part of the statistical design, not merely reporting details.
 
 \bibliographystyle{plainnat}
 \bibliography{refs}
 
 \appendix
-\section{Setup and harness}\todo{}
-\section{Oracle labels, commitment horizons, and the e-process ablation}\todo{}
-\section{Learned policies and the registration ladder}\todo{}
-\section{Breadth caps and generalization}\todo{}
-\section{Calibration details}\todo{}
-\section{Real-pool protocol, diagnostics, and deviations}\todo{}
-\section{Uniform versus adaptive allocation over fixed hand-written prompts}\todo{}
-\section{Pre-registration index}\todo{}
-\section{Reproduction}\todo{}
-
+\section{Reproduction and evidence ledger}
+The registered source-specific protocols and results are in \url{../docs/paper/}. Main scripts are \url{../experiments/growing_bandits/audit/public_replay_01.py}, \url{../experiments/growing_bandits/audit/public_replay_02.py}, \url{../experiments/growing_bandits/audit/public_replay_03.py}, \url{../experiments/growing_bandits/audit/own_repeat_drift.py}, and \url{../experiments/growing_bandits/audit/mizrahi_replay.py}. Derived JSON summaries under \url{../results/paper/} record the exact setting counts, exclusions, crossings, and task-order seeds. The historical prompt-search study remains as \url{prompt_search_legacy.tex}; it is a separate analysis of search breadth rather than evidence for the present protocol's error control.
 \end{document}

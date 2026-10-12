@@ -42,3 +42,11 @@ def test_record_carries_model():
     cfg = collect.WorkerConfig(worker=0, n_workers=1, log_dir=None, budget_usd=1.0, llm_model="claude-sonnet-5-5")
     assert cfg.llm_model == "claude-sonnet-5-5"
     assert collect.WorkerConfig(worker=0, n_workers=1, log_dir=None, budget_usd=1.0).llm_model == "gpt-5.4-mini"
+
+
+def test_credit_exhaustion_is_a_provider_error():
+    msg = ("Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Your credit "
+           "balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase "
+           "credits.'}}")
+    assert collect._is_provider_error(msg)
+    assert collect._ends_in_provider_streak([None] + [msg] * 6, 5)

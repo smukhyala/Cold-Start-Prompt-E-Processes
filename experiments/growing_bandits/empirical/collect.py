@@ -126,6 +126,9 @@ API_ERROR_MARKERS: tuple[str, ...] = (
     # browser-use wraps openai's APIConnectionError/APITimeoutError as ModelProviderError(message=str(e)),
     # which collapses to just these two sentences (openai/_exceptions.py APIConnectionError/APITimeoutError).
     "Connection error", "Request timed out", "Rate limit",
+    # Anthropic's exhausted-prepaid-credit refusal (HTTP 400, invalid_request_error): every call fails until the
+    # account is topped up, so it is a provider outage, never a task outcome (Pre-reg 16 Amendment 2).
+    "credit balance is too low",
 )
 #: Any provider 5xx (500, 502-504, Cloudflare's 520-529, Anthropic's 529 "overloaded").
 PROVIDER_5XX = re.compile(r"Error code: 5\d\d")

@@ -1666,3 +1666,29 @@ model family uses the answers, and whether that changes the headroom. Everything
     - `task_h9`: O 1/1, D 0/1.
   - The amendment changes only the budget, which does not depend on these outcomes. All 10 records stay in the log
     and the analysis; nothing is re-run.
+
+### Pre-registration 16, Amendment 2: credit-exhaustion records are infrastructure artifacts (registered 2026-10-11, before any analysis)
+
+- **What happened:**
+  1. The 18:30 hand-stop of Amendment 1 killed only the collector's parent process. Its 4 workers kept running the
+     registered queue under the original $35 stop until they were killed at 18:31, 2 records later (12 in all).
+  2. The restart under `--budget 75` (18:32) ran normally until **18:35 PDT, when the Anthropic account's prepaid
+     credit ran out**. From then on every model call returned HTTP 400 ("Your credit balance is too low…").
+  3. The agent gave up within seconds on each episode. The collector did not recognise that message as a provider
+     error, so it logged each as an `ok` task failure. It burned through the rest of the queue by 18:43: 240
+     records, of which **224 carry the credit refusal**.
+- **Rule, by the logic of Pre-reg 13 Amendment 1:** a record whose text contains `credit balance is too low` was never
+  a real episode. It is archived verbatim to `logs/headroom_haiku_gmail/archive/worker_<w>.credit_exhausted.jsonl` by
+  `archive_credit_exhausted.py` (sha256 1119edfc…) and re-run with the same command once credit is restored.
+- **Archiving order:** done at 18:45 PDT, before this text was written. It reads only the refusal text, not outcomes,
+  and is reversible. Result: 224 archived, 16 kept.
+  - Of the 4 archived records that made some model calls before the refusal, all are re-run.
+- **Collector fix (collect.py sha256 1fb937b6…):** `credit balance is too low` joins `API_ERROR_MARKERS`. A future
+  exhaustion is then classified as a provider error, gets the registered backoff, and ends in `provider_down` instead
+  of logging task failures.
+- **Disclosed:**
+  - The 16 kept records are the 10 listed in Amendment 1 plus 6 completed before 18:35.
+  - During the diagnosis, an aggregate tally of (steps, success) over all records after 18:33 was printed. It mixed
+    those 6 with refused records; their individual outcomes were not examined.
+  - No analysis has been run. Nothing else changes: queue, prompts, model, analyzer (sha256 b4b214d4…), and the $75
+    hard stop.

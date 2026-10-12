@@ -1648,18 +1648,21 @@ model family uses the answers, and whether that changes the headroom. Everything
      - Haiku has no thinking field, so the reference rate is less sensitive for it. The direct-URL rate is
        behavioural and comparable across models.
 
-### Pre-registration 16, Amendment 1: budget only (registered 2026-10-11, after 5 of 240 episodes)
+### Pre-registration 16, Amendment 1: budget only (registered 2026-10-11, after 10 of 240 episodes)
 
-- **What happened:** the run started at 18:23 PDT and was stopped by hand at 18:30, after 5 episodes and $1.31.
-- **Why:** the observed cost was about $0.26 per episode, against the registered assumption of $0.08–0.10. At that
-  rate the $35 hard stop would end the run at about episode 135. Under the registration a stopped run is partial and
-  gets no primary analysis.
+- **What happened:** the run started at 18:23 PDT and was stopped by hand at 18:30.
+- **Why:** the first 5 episodes cost about $0.26 each, against the registered assumption of $0.08–0.10. At that rate
+  the $35 hard stop would end the run partway, and under the registration a stopped run is partial and gets no
+  primary analysis.
 - **Change:** `--budget 35` becomes **`--budget 75`**. Nothing else changes: queue, prompts, model, settings and
   analyzer (sha256 b4b214d4…) are all as registered.
-- **Disclosed:** the 5 completed episodes were seen before this amendment.
-  - O on `task_e18`, both replicates: failure, 30 steps, clock. The agent repeatedly toggled a setting while trying
-    to verify it.
-  - D on `task_e18`, both replicates: success (one at 5 steps).
-  - D on `task_e16`, replicate 0: success.
-  - The amendment changes only the budget, which does not depend on these outcomes. The 5 records stay in the log and
-    the analysis; nothing is re-run.
+- **Disclosed:** 10 episodes were completed and seen before this amendment, costing $2.63. The decision to stop was
+  taken after 5; the workers finished 5 more before the stop took effect. A first version of this amendment
+  (commit 951c8cf) wrongly said 5.
+  - Results at the 30-step rescore:
+    - `task_e18`: O 0/2 (both 30 steps, clock; the agent repeatedly toggled a setting while trying to verify it);
+      D 2/2.
+    - `task_e16`: O 1/2, D 1/2.
+    - `task_h9`: O 1/1, D 0/1.
+  - The amendment changes only the budget, which does not depend on these outcomes. All 10 records stay in the log
+    and the analysis; nothing is re-run.

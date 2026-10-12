@@ -1,0 +1,27 @@
+pool: fixed_pair
+template: configs/template.jinja
+meta:
+  study: prospective Linear fixed pair
+arms:
+- arm_id: linear_baseline
+  name: linear_baseline
+  vector:
+    planning: 0
+    verification: 0
+    agency: 0
+    expertise: 1
+    format: 0
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: ae8c7c7fb6984ed82d52d8dd454e6672e8d7a1bf544cd727affdb35cb539ef82
+- arm_id: linear_explorer
+  name: linear_explorer
+  vector:
+    planning: 1
+    verification: 0
+    agency: 2
+    expertise: 2
+    format: 0
+    goal: 0
+  prompt_guidance: ''
+  prompt_sha256: 5e4ee37361c08c0a0282fc548c5d8f6467ea4fed7c4211252b4440241a05c024

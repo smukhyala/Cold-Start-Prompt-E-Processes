@@ -162,6 +162,8 @@ _HET_PROFILES: dict[str, dict] = {
               "pools": ("pools/GMK.yaml", "pools/anchors_gmail.yaml"), "base_port": 8201},
     "bridge": {"web_app": "apps/gmail", "timeout_s": 600, "n_bank_tasks": 60,
                "pools": ("pools/GMB.yaml",), "base_port": 8301},
+    "linear": {"web_app": "apps/linear-account-settings", "timeout_s": 180, "n_bank_tasks": 120,
+               "pools": ("pools/fixed_pair.yaml",), "base_port": 8401},
 }
 
 

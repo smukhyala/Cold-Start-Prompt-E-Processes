@@ -28,3 +28,7 @@ Random reordering of a fixed benchmark yields a distribution of *replay stopping
 ## Feasibility contingencies
 
 Inspect a small number of `result.json` files only after this file is committed. If schema or directory structure differs from the documented layout, adapt the parser without changing the analysis choices. Document every mapping. If a job-level result contains a complete task/trial list, it may be used as an index, but per-trial results remain the outcome source. No candidate, task, replicate, alpha, delta, or seed may be chosen using outcomes.
+
+## Amendment 1: model identifiers (2026-10-12, before aggregate analysis)
+
+The initial per-trial schema audit found that metadata model labels can differ from the actual `config.agent.model_name`. All Crux trials checked identify `claude-opus-4-5`; Droid identifies `aurora-01-21`; WozCode identifies only `opus`. These three submissions are excluded by the original model-identity rule. Terminus-KIRA identifies `vertex_ai/claude-opus-4-6`, an explicit Opus 4.6 version string routed through Vertex AI. It is retained as the same model version, with the provider-route difference stated as a limitation. Capy and Terminus 2 identify `anthropic/claude-opus-4-6`. No aggregate task rewards or arm gains were inspected before this amendment. The same fixed task-intersection, trial, seed, and test rules apply to the retained arms.

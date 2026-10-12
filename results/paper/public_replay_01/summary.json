@@ -1,0 +1,32 @@
+{
+  "revision": "572b2614be2c0cb2527e14f5b1e4026f1072e6c1",
+  "tasks": 68,
+  "arms": [
+    "Terminus2__Claude-Opus-4.6",
+    "Capy__Claude-Opus-4.6",
+    "Terminus-KIRA__Claude-Opus-4.6"
+  ],
+  "r1_crossings": 4,
+  "r1_replays": 2000,
+  "r1_fraction": 0.002,
+  "r1_binomial_ci": [
+    0.0005451931252070058,
+    0.005112808605346166
+  ],
+  "r1_unswapped_cross_tasks": [
+    0,
+    0
+  ],
+  "r3_crossings": 0,
+  "r3_replays": 2000,
+  "r3_fraction": 0.0,
+  "r3_median_cross_task_among_hits": null,
+  "r3_full_grid_episodes": 204,
+  "r3_mean_episodes": 204.0,
+  "confirmation": {
+    "primary_cross_task": 0,
+    "selected_arm": null,
+    "rerun_cross_task": 0,
+    "rerun_gain": null
+  }
+}

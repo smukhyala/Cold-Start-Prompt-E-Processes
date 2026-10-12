@@ -1,0 +1,32 @@
+{
+  "revision": "1639d5ea14c362f6964f260ae81bd903af760187",
+  "settings": 855,
+  "subjects": 57,
+  "models": 15,
+  "excluded": 0,
+  "mean_shrinkage": 0.044833189502241355,
+  "mean_shrinkage_ci": [
+    0.040533144386491714,
+    0.04918740991911288
+  ],
+  "median_shrinkage": 0.039215686274509776,
+  "median_shrinkage_ci": [
+    0.03361344537815136,
+    0.04166666666666663
+  ],
+  "positive_heldout_share": 0.4830409356725146,
+  "positive_heldout_share_ci": [
+    0.4502923976608187,
+    0.5169590643274854
+  ],
+  "decisions": {
+    "unresolved": 430,
+    "futility": 421,
+    "efficacy": 4
+  },
+  "double_crossings": 4,
+  "full_episodes": 10515000,
+  "efficacy_stopped_episodes": 10385000,
+  "drop_futility_certifications": 436,
+  "drop_futility_episodes": 4300530
+}

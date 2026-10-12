@@ -6,6 +6,8 @@ R1--R3 and R5 have now been run as registered or, for the own-repeat audit, expl
 
 The active paper claim is conditional on task sampling and a stable, fixed incumbent. It separates prospective live studies from historical public replays. Historical benchmark reuse does not itself establish a future-task error guarantee. The [dated SWE-bench audit](SWE_LEADERBOARD_RESULTS.md) is now complete as a descriptive, post-inspection source-semantic extension: 32 displayed leader increases, four nominal efficacy crossings, one entrant-spending crossing. The registered strict-coverage rule yielded only 12 eligible entries and is reported alongside it. The two prespecified matched SWE-bench pairs remain narrower evidence that large whole-system gains can cross early. See [current next steps](NEXT_STEPS.md) for the prospective evidence gap. The HAL/DOVE breadth extensions remain optional.
 
+The [prospective Linear fixed-pair run](PROSPECTIVE_LINEAR_RESULTS.md) has since completed: all 120 pairs, no missing episodes, a 1.67-point observed explorer gain, and a registered 15-point futility crossing at pair 93. It provides a live, concurrently controlled boundary result. Its public fixed task bank does not by itself justify a conditional future-task error claim, so the remaining sampling gap is stated in [current next steps](NEXT_STEPS.md).
+
 ## Update: first public replays (2026-10-12)
 
 The remainder of this document preserves the original planning ledger and intermediate update for provenance; the current disposition above supersedes its proposed next steps and projected claims.

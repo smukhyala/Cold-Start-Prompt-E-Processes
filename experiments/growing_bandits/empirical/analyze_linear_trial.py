@@ -80,7 +80,8 @@ def summarize(log_dir: Path) -> tuple[dict, list[dict]]:
                        "futility_max_e": float(np.exp(fut.max())),
                        "efficacy_final_e": float(np.exp(eff[-1])),
                        "futility_final_e": float(np.exp(fut[-1]))})
-    result["inferential_claim_ready"] = bool(len(prefix) == 120 and result["missing_episodes"] == 0)
+    # Completeness is an observable data check; conditional task-sampling validity is a separate assumption.
+    result["complete_pairs_without_missing"] = bool(len(prefix) == 120 and result["missing_episodes"] == 0)
     return result, table
 
 
@@ -88,14 +89,33 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--log-dir", type=Path, default=LOGS)
     parser.add_argument("--table", type=Path)
+    parser.add_argument("--attempts", type=Path)
     args = parser.parse_args()
     result, table = summarize(args.log_dir)
     if args.table:
         args.table.parent.mkdir(parents=True, exist_ok=True)
         with args.table.open("w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=list(table[0]))
+            writer = csv.DictWriter(f, fieldnames=list(table[0]), lineterminator="\n")
             writer.writeheader()
             writer.writerows(table)
+    if args.attempts:
+        fields = ("queue_index", "task_id", "arm_id", "attempt", "status", "success",
+                  "infra_reason", "cost_usd", "steps", "wallclock_s", "timed_out",
+                  "prompt_sha256", "llm_model", "timestamp_utc")
+        attempts = collect.load_all(args.log_dir)
+        records = attempts.sort_values(["queue_index", "attempt"]).to_dict("records")
+        args.attempts.parent.mkdir(parents=True, exist_ok=True)
+        with args.attempts.open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fields, lineterminator="\n")
+            writer.writeheader()
+            for row in records:
+                clean = {k: row.get(k) for k in fields}
+                for key, value in clean.items():
+                    if value is None or (isinstance(value, float) and math.isnan(value)):
+                        clean[key] = ""
+                if clean["success"] != "":
+                    clean["success"] = int(clean["success"])
+                writer.writerow(clean)
     print(json.dumps(result, indent=2))
 
 

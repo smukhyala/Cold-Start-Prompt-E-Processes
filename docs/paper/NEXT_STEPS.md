@@ -1,4 +1,4 @@
-# Framework paper: next steps after the dated leaderboard audit
+# Framework paper: next steps after the Linear trial
 
 Updated 2026-10-12. This is the operational plan; `FRAMEWORK_GAP_PLAN.md` preserves the original gap inventory and its intermediate updates.
 
@@ -6,10 +6,11 @@ Updated 2026-10-12. This is the operational plan; `FRAMEWORK_GAP_PLAN.md` preser
 
 1. Reconstructed the dated SWE-bench Verified score-leader sequence at pinned revision `40f164d`. The registered dense-file rule retained only 12 entries; the post-inspection, source-semantic extension covered 135 itemwise entries and showed 32 score-leader claims, four nominal crossings, and one entrant-spending crossing. The other 47 metadata-only entries did not become score leaders. The protocol, source-format amendment, code, derived rows, and results are recorded in `SWE_LEADERBOARD_{PROTOCOL,RESULTS}.md` and `results/paper/swe_leaderboard/`.
 2. Integrated that descriptive audit and a reproducible chronology figure into `paper/main.tex`. Added `METHOD_VALIDITY_NOTE.md` and a manuscript appendix that state the conditional nulls and explain why a fixed-benchmark replay does not inherit a prospective error guarantee.
+3. Completed the registered 120-pair Linear trial frozen at `30fcc9a`: futility for a 15-point gain crossed at pair 93, with an observed 1.67-point gain across all 120 pairs, no missing episodes, and $16.51 spent. The [result and scope](PROSPECTIVE_LINEAR_RESULTS.md), task-level data, and manuscript now report the fixed public-bank limitation.
 
 ## Highest-priority remaining evidence
 
-**Complete the prospective, concurrently controlled Linear trial now underway.** The fixed incumbent/challenger pair, all 120 Linear account-settings tasks, queue, hashes, margin, error allocation, and missing-run rule were frozen at commit `30fcc9a` before collection. See `PROSPECTIVE_LINEAR_PROTOCOL.md`. The 240-episode run started on 2026-10-12 with a $35 collector cap. When it ends, preserve all attempts, produce the complete task-level table with `experiments/growing_bandits/empirical/analyze_linear_trial.py`, check missingness and the registered decision paths, and update `paper/main.tex` with the result, including unresolved or incomplete status if applicable. Do not change the pair after seeing outcomes.
+**Test the conditional future-task claim on a genuinely sampled task stream.** The Linear study collected outcomes after registration but used a fixed public bank, so seeded order does not itself justify the e-process null for future tasks. A next study should create or sample tasks prospectively from a defined population, freeze systems and scoring before outcomes, and run the incumbent concurrently. Its protocol should state why the conditional null is credible under the sampling mechanism. The current Linear crossing remains a registered result on its executed cohort, not a future-task population certificate.
 
 ## Before external submission
 

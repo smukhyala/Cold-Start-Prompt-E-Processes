@@ -1,5 +1,15 @@
 # Making it a framework: what our runs show, and which public data fills the gaps (2026-10-11)
 
+## Update: first public replays (2026-10-12)
+
+The ledger below records the state when this plan was written. Three frozen public-data replays have since been run:
+
+- [Terminal-Bench replay 01](PUBLIC_REPLAY_01_RESULTS.md): the A/A label-swap check crossed 4/2,000 times on 68 complete real-noise tasks. Capy showed a +8.8 pp paired gain and +10.3 pp on reruns, but efficacy crossed in 0/2,000 orders. Three nominated submissions had misleading or unverifiable per-trial model IDs and were excluded; one same-model submission used Vertex routing.
+- [PromptEval replay 02](PUBLIC_REPLAY_02_RESULTS.md): across 855 model × subject settings, the best-of-99 search lead averaged +5.02 pp and shrank to +0.54 pp held out. Mean shrinkage was 4.48 pp [4.05, 4.92]; the first sequential boundary was 421 futility, 4 efficacy, 430 unresolved. Row 0 is positional, not a verified default.
+- [SWE-bench matched replay 03](PUBLIC_REPLAY_03_RESULTS.md): two prespecified same-date, same-model whole-system comparisons crossed the Bonferroni-adjusted efficacy boundary after 92 and 95 of roughly 500 tasks. Paired gains were +20.0 pp (GPT-4) and +8.9 pp (Claude 3 Opus). This closes the narrow "no real winner detected" gap for historical replays, with different attempt policies and benchmark reuse as limits. It is a fixed-pair check, not the full dated-leaderboard R4.
+
+**Revised next steps.** R1 on our own repeat cells and R2 on measured drift test whether the real-noise result transfers to live sessions. R5 on Mizrahi supplies a natural incumbent before making a general claim about prompt-search payoff. Then R6 can fit a design calculator using these heterogeneous settings. The old [prompt-search manuscript](../../paper/main.tex) has not yet been rewritten around the framework; it should be revised only with these distinctions between prospective study, historical replay, and fixed-benchmark assumptions kept explicit.
+
 **The paper's claim, stated generally.** An anytime-valid sequential procedure, modeled on multi-arm clinical trials
 (efficacy and futility stopping, drop-the-loser, known-baseline designs), tells a practitioner, for any model, agent,
 or benchmark, whether any of K candidate configurations beats their incumbent default. It stops early with guaranteed

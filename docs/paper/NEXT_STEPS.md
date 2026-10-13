@@ -2,6 +2,8 @@
 
 Updated 2026-10-12. This is the operational plan; `FRAMEWORK_GAP_PLAN.md` preserves the original gap inventory and its intermediate updates.
 
+The [2026-10-12 novelty and progress update](NOVELTY_PROGRESS_2026-10-12.md) positions this as an empirical study using existing sequential methods. New data collection is paused while the paper's claims, related work, and reproducibility package are completed.
+
 ## Completed in this pass
 
 1. Reconstructed the dated SWE-bench Verified score-leader sequence at pinned revision `40f164d`. The registered dense-file rule retained only 12 entries; the post-inspection, source-semantic extension covered 135 itemwise entries and showed 32 score-leader claims, four nominal crossings, and one entrant-spending crossing. The other 47 metadata-only entries did not become score leaders. The protocol, source-format amendment, code, derived rows, and results are recorded in `SWE_LEADERBOARD_{PROTOCOL,RESULTS}.md` and `results/paper/swe_leaderboard/`.
@@ -9,9 +11,9 @@ Updated 2026-10-12. This is the operational plan; `FRAMEWORK_GAP_PLAN.md` preser
 3. Completed the registered 120-pair Linear trial frozen at `30fcc9a`: futility for a 15-point gain crossed at pair 93, with an observed 1.67-point gain across all 120 pairs, no missing episodes, and $16.51 spent. The [result and scope](PROSPECTIVE_LINEAR_RESULTS.md), task-level data, and manuscript now report the fixed public-bank limitation.
 4. Completed the [prospectively sampled profile-edit trial](PROSPECTIVE_SAMPLED_LINEAR_RESULTS.md): 120 new task draws, no missing episodes, $23.60 spent, incumbent 3/120 versus challenger 1/120, and the registered 15-point futility boundary crossed at pair 44. The task distribution was frozen before its seed and the realized bank before outcomes. Both agents were near the capability floor.
 
-## Highest-priority remaining evidence
+## Next work
 
-**Design a broader sampled task trial with nontrivial agent success.** First use an outcome-independent pilot to choose a task generator and agent budget that avoid the profile-edit floor, then freeze the target population, prompt pair or candidate pool, stopping rule, missingness policy, and cost cap before drawing the confirmatory task seed. Evaluate both arms concurrently on each fresh draw and report every attempt. The sampled Linear result supports futility only for its narrow profile-edit distribution under stability assumptions; it does not establish that the framework can discriminate capable agents on general web tasks. Independent review of the conditional assumptions remains necessary before stronger validity claims.
+**Finish the scoped empirical paper.** State the overlap with TRIPLE, PACE, SERPANT, and adaptive model-evaluation work; locate the contribution in the comparative evidence and its task-sampling audit. Then obtain independent review of the conditional assumptions and complete the reproducibility pass. A broader sampled trial with nontrivial success is warranted if a desired claim or venue requires evidence that the method discriminates capable agents across general web tasks. Such a study would need an outcome-independent pilot followed by a frozen population, candidate pool, decision rule, missingness policy, and cost cap before confirmatory task draws.
 
 ## Before external submission
 

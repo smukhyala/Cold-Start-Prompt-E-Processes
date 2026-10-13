@@ -8,6 +8,8 @@ The active paper claim is conditional on task sampling and a stable, fixed incum
 
 The [prospective Linear fixed-pair run](PROSPECTIVE_LINEAR_RESULTS.md) has since completed: all 120 pairs, no missing episodes, a 1.67-point observed explorer gain, and a registered 15-point futility crossing at pair 93. It provides a live, concurrently controlled boundary result. Its public fixed task bank does not by itself justify a conditional future-task error claim, so the remaining sampling gap is stated in [current next steps](NEXT_STEPS.md).
 
+The [prospectively sampled Linear profile-edit run](PROSPECTIVE_SAMPLED_LINEAR_RESULTS.md) then completed on 120 new tasks drawn after registration. It crossed 15-point futility at pair 44, with three incumbent successes and one challenger success, no missing episodes, and $23.60 spent. This addresses the fresh-task sampling gap for the explicitly defined four-family profile-edit population, conditional on stable model and app behavior. Its near-zero success rate leaves the broader capable-agent discrimination question open; see [current next steps](NEXT_STEPS.md).
+
 ## Update: first public replays (2026-10-12)
 
 The remainder of this document preserves the original planning ledger and intermediate update for provenance; the current disposition above supersedes its proposed next steps and projected claims.

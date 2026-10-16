@@ -18,6 +18,8 @@ Efficacy / futility evidence & $1.000 / 2.136$ \\
 Evidence threshold (each direction) & $40$ \\
 First statistical crossing & None \\
 Actual episode attempts / planned maximum & $28/240$ \\
+Valid episode outcomes & $27$ \\
+API requests started / usage receipts & $458/457$ \\
 Known API usage cost & \$1.76231 \\
 Unknown additional charge bound & $[\$0,\;\$0.318432]$ \\
 Known input / output tokens & $4{,}625{,}255 / 173{,}209$ \\
@@ -36,5 +38,7 @@ pair was excluded without replacement. Costs and tokens exclude unknown usage
 for one request. The charge bound assumes the frozen standard pricing and token
 limits; invoice reconciliation was unavailable. The 212 unstarted episodes do
 not demonstrate statistical early-stopping savings.
+A subsequent resume audit confirmed that the invalid half-pair was terminal
+under the frozen protocol; no resumed inference was performed.
 \end{minipage}
 \end{table}

@@ -26,6 +26,10 @@ operationally incomplete run verifies live evidence updates and automatic failur
 handling, but demonstrates no inference savings attributable to statistical
 early stopping.
 
+A subsequent resume audit confirmed that the frozen protocol required termination
+at the invalid half-pair. No resumed inference was performed, and the 13-pair
+trajectory and statistical conclusions are unchanged.
+
 # Figure caption
 
 Natural-log efficacy and practical-futility evidence from the 13 complete pairs
@@ -47,3 +51,12 @@ real outcomes only; the incomplete pair is not imputed or included.
 
 The exact total charge and total token usage are unknown for one request. Dollar
 projections for unexecuted work are hypothetical and must not be called realized savings.
+
+# Limitations addition
+
+The registered infrastructure rule ended the experiment before either a statistical
+decision or the maximum evaluation budget. The saved-half resume mechanism did not
+permit retrying the finalized invalid challenger episode. Consequently, this run
+does not empirically demonstrate statistical early-stopping savings. One request's
+charge and token usage remain unknown, and the required conditional sampling and
+backend-stability assumptions were not independently established.

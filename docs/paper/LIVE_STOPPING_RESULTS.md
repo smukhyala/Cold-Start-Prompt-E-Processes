@@ -7,6 +7,12 @@ This is an **operationally incomplete, unresolved experiment**, not a completed
 120-pair unresolved trial and not a demonstration of statistical early-stopping
 savings. No replacement task, episode retry, or second experiment was run.
 
+**Resume review, 2026-10-16:** Paid continuation was blocked by the registered
+terminal infrastructure stop. Independent code, statistical, and infrastructure
+reviews agreed that the invalid challenger episode cannot be resumed as a valid
+saved half-pair. No new inference requests or agent episodes were initiated.
+The original result remains unchanged; this is not a completed 120-pair trial.
+
 ## Registration and execution
 
 The [protocol](LIVE_STOPPING_PROTOCOL.md), controller, sampler, runner, analysis,
@@ -148,6 +154,77 @@ exporter's full-budget-axis figure is also retained.
 
 ## Audit and reproducibility artifacts
 
+### Resume review and execution timeline
+
+The frozen protocol's **Rewards, errors, and interruption** section requires an
+unresolved operational stop at the first invalid half-pair. Its saved-half resume
+rule applies to a valid durable result followed by interruption between episodes.
+Here, both controller and runner receipts already record pair 14's challenger as
+`infrastructure_error`, `success: null`, and `timed_out: false`. The request-level
+timeout is not the registered legitimate 180-second agent timeout. The incomplete
+episode's verifier failure therefore cannot be recoded as a binary zero.
+
+Request `request_000458` has a durable intent, `ReadTimeout`, and invocation-error
+record, but no returned completion ID, provider request ID, or usage. The original
+requests did not enable stored completions. No supported response-retrieval path
+was identified from the saved records and installed SDK. No administrative usage
+credential was available. Invoice reconciliation might resolve the charge; it
+would not undo the provider error or produce a completed browser trajectory.
+
+The read-only audit reproduced the published numerical summary exactly and
+verified all 229 frozen file hashes. Replaying the controller on disposable copies
+returned its existing terminal decision with **zero evaluator callbacks**. A
+second disposable-copy check reconstructed the same infrastructure stop directly
+from the receipts, even without a saved terminal file. The original logs were
+byte-identical before and after both checks. The 66 controller, runner, sampler,
+and analyzer tests were rerun successfully; no test used paid inference.
+
+| UTC on 2026-10-16 | Session | Event |
+|---|---|---|
+| 18:17:57 | Registration | Protocol and execution code committed |
+| 18:18:18 | Registration | Realized task schedule committed |
+| 18:18:26.670970 | Original inference run | First episode intent |
+| 18:48:37.153498 | Original inference run | Request 458 started in pair 14 challenger |
+| 18:50:11.592023 | Original inference run | Request timeout, no usage response |
+| 18:50:13.219839 | Original inference run | Terminal infrastructure stop, 13 complete pairs |
+| 19:41:05.597877–19:41:06.475920 | Resume review only | Reanalysis and disposable-copy controller checks; zero evaluations |
+
+There was **no resumed inference session**. Review and reporting time is excluded
+from the original 31 min 46.55 s experimental elapsed time. The complete observed
+trajectory remains the same 13 pairs; the publication figure was regenerated
+from that trajectory, without imputing pair 14 or extending the curves.
+
+The spending cap remains $75. Known charges plus the full unknown-request reserve
+are $2.08074015, leaving **$72.91925985** of conservative authorization. The 212
+unstarted episodes project $13.62440 from the prior valid-episode mean. Completing
+107 additional pairs would require 213 additional valid episodes, including an
+unpermitted repeat of the failed challenger, projecting $13.68866; this is an
+accounting illustration, not an authorized continuation or savings claim.
+Spending authorization is not the blocker, and the cap was not increased.
+
+Credentials and non-inference access to the frozen model were confirmed. The
+registered app port was free and no collector remained active. `caffeinate` was
+available, but idle-sleep prevention does not establish protection against lid
+closure; system-sleep prevention requires AC power. At inspection the host was
+on battery (51%, estimated 2 h 06 min remaining), shorter than the approximately
+3 h 50 min projection for 212 additional episodes. Reliable uninterrupted
+execution was therefore not established. No power settings or frozen timeout,
+retry, model, or execution settings were changed.
+
+Retrying the invalid challenger, imputing its outcome, or skipping pair 14 would
+change the registered error/missingness handling after outcomes were observed.
+Such continuation cannot be labeled completion of this unchanged preregistration.
+Optional-stopping validity alone does not justify those changes. The current
+request prohibited protocol changes, so the audit stopped before new inference.
+
+The original publication artifacts and report are preserved byte-for-byte in
+`results/paper/live_stopping/history/2026-10-16_initial_halt/`, including their
+original checksum manifest. The resume review is in
+`results/paper/live_stopping/resume_review/2026-10-16/`; its audit can be reproduced
+without provider calls using `experiments/growing_bandits/empirical/audit_live_stopping_resume.py`.
+
+### Original execution artifacts
+
 - `data/prospective_live_stopping/`: immutable prompts, source bank, sampled tasks,
   configuration, seed, hashes, package versions, and registration manifest.
 - `results/paper/live_stopping/summary.json`: frozen export's numerical findings.
@@ -210,3 +287,15 @@ registered pricing assumptions. Host sleep overlapped that request. The remainin
 operationally incomplete run verifies live evidence updates and automatic failure
 handling, but demonstrates no inference savings attributable to statistical
 early stopping.
+
+## Required limitations language for the paper
+
+This experiment ended at a preregistered infrastructure stopping condition before
+a statistical or maximum-pair endpoint. A later resume audit did not authorize
+continuation: the failed challenger had no valid outcome, and the frozen protocol
+did not permit retrying or replacing that invalid half-pair. Thus this run supplies
+no empirical demonstration of inference savings from statistical stopping. One
+request's cost and tokens remain unknown. Any future claim of directional error
+control still requires the specified conditional sampling and stable execution
+assumptions; frozen source hashes and a dated model identifier do not verify
+backend invariance. No changes were made to `paper/main.tex`.

@@ -25,3 +25,22 @@ Exact source, model settings, prompt hashes, seed, and realized tasks are in
 `data/prospective_live_stopping/`. The original browser traces are under
 `logs/prospective_live_stopping/`. Dollar projections are not realized savings.
 No data after the operational halt were collected.
+
+## Resume review, 2026-10-16
+
+Continuation was blocked by the registered terminal infrastructure stop. No new
+agent episodes or inference requests were made. The full 13-pair trajectory and
+original summary remain unchanged.
+
+- `resume_review/2026-10-16/resume_audit.json`: exact reanalysis, no-callback
+  controller replay on temporary copies, unchanged log hashes, and spending balance.
+- `resume_review/2026-10-16/README.md`: independent review and the specific blocker.
+- `execution_timeline.json`: original run and later review; no resumed inference session.
+- `history/2026-10-16_initial_halt/`: original artifacts, report, and checksum manifest.
+
+Reproduce the review without inference:
+
+```bash
+.venv/bin/python experiments/growing_bandits/empirical/audit_live_stopping_resume.py \
+  --out /tmp/live-stopping-resume-review
+```

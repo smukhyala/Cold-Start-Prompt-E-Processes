@@ -1,0 +1,667 @@
+[
+  {
+    "baseline_episode_id": "pair_000001_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000001_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T18:22:18.569758+00:00",
+    "cost_usd": 0.19845315000000002,
+    "pair_index": 1,
+    "task": {
+      "difficulty": "medium",
+      "draw_index": 1,
+      "id": "live_001",
+      "instruction": "Change the email to 'alex.morgan@newcompany.com'.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_m3",
+      "task_id": "live_001",
+      "verify": "real-tasks/task_m3.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000002_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000002_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T18:23:36.951858+00:00",
+    "cost_usd": 0.066258,
+    "pair_index": 2,
+    "task": {
+      "difficulty": "medium",
+      "draw_index": 2,
+      "id": "live_002",
+      "instruction": "Disable mobile notifications entirely.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_m9",
+      "task_id": "live_002",
+      "verify": "real-tasks/task_m9.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000003_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000003_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T18:24:06.982952+00:00",
+    "cost_usd": 0.022529550000000002,
+    "pair_index": 3,
+    "task": {
+      "difficulty": "medium",
+      "draw_index": 3,
+      "id": "live_003",
+      "instruction": "Disconnect the GitLab account.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_m12",
+      "task_id": "live_003",
+      "verify": "real-tasks/task_m12.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000004_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000004_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T18:26:05.602491+00:00",
+    "cost_usd": 0.09727365,
+    "pair_index": 4,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 4,
+      "id": "live_004",
+      "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h8",
+      "task_id": "live_004",
+      "verify": "real-tasks/task_h8.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000005_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000005_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T18:28:35.672547+00:00",
+    "cost_usd": 0.16061235000000001,
+    "pair_index": 5,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 5,
+      "id": "live_005",
+      "instruction": "Set your username to the local part of your current email address (the part before the @), then disable full name display.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h29",
+      "task_id": "live_005",
+      "verify": "real-tasks/task_h29.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000006_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000006_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T18:30:10.306109+00:00",
+    "cost_usd": 0.10111995,
+    "pair_index": 6,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 6,
+      "id": "live_006",
+      "instruction": "Perform a security audit: revoke all non-current sessions signed in more than 90 days ago, remove any passkeys not used in the last 7 days, and revoke any API keys not used in the last 7 days.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h80",
+      "task_id": "live_006",
+      "verify": "real-tasks/task_h80.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000007_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000007_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T18:33:13.348533+00:00",
+    "cost_usd": 0.19406849999999998,
+    "pair_index": 7,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 7,
+      "id": "live_007",
+      "instruction": "Disconnect all connected accounts that have any write-level permission scope, revoke the most recently accessed OAuth application, and switch the interface theme to Light - Contrast.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h79",
+      "task_id": "live_007",
+      "verify": "real-tasks/task_h79.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000008_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000008_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T18:34:18.885631+00:00",
+    "cost_usd": 0.05637675,
+    "pair_index": 8,
+    "task": {
+      "difficulty": "medium",
+      "draw_index": 8,
+      "id": "live_008",
+      "instruction": "Stop the auto-assign behavior when copying a git branch name.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_m15",
+      "task_id": "live_008",
+      "verify": "real-tasks/task_m15.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000009_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000009_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T18:36:23.652921+00:00",
+    "cost_usd": 0.1424187,
+    "pair_index": 9,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 9,
+      "id": "live_009",
+      "instruction": "Revoke the API key whose label contains the name of one of your connected account providers, then disconnect that provider's connected account.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h63",
+      "task_id": "live_009",
+      "verify": "real-tasks/task_h63.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000010_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000010_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T18:40:31.211642+00:00",
+    "cost_usd": 0.31195320000000004,
+    "pair_index": 10,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 10,
+      "id": "live_010",
+      "instruction": "Enable the Slack notification channel and configure it with the exact opposite notification types of the email channel \u2014 for each type, if email has it on, set Slack to off, and vice versa.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h56",
+      "task_id": "live_010",
+      "verify": "real-tasks/task_h56.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000011_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000011_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T18:45:23.240934+00:00",
+    "cost_usd": 0.24851055,
+    "pair_index": 11,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 11,
+      "id": "live_011",
+      "instruction": "Perform a full account lockdown: disable all four notification channels, disconnect all connected accounts, and revoke all authorized applications.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h27",
+      "task_id": "live_011",
+      "verify": "real-tasks/task_h27.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000012_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000012_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T18:46:52.317202+00:00",
+    "cost_usd": 0.0744975,
+    "pair_index": 12,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 12,
+      "id": "live_012",
+      "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h8",
+      "task_id": "live_012",
+      "verify": "real-tasks/task_h8.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000013_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000013_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T18:47:22.799369+00:00",
+    "cost_usd": 0.028829550000000002,
+    "pair_index": 13,
+    "task": {
+      "difficulty": "easy",
+      "draw_index": 13,
+      "id": "live_013",
+      "instruction": "Revoke the Mobile App Testing API key.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_e14",
+      "task_id": "live_013",
+      "verify": "real-tasks/task_e14.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000014_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000014_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:08:47.624981+00:00",
+    "cost_usd": 0.07022265,
+    "pair_index": 14,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 14,
+      "id": "live_014",
+      "instruction": "Revoke the two OAuth applications that were authorized most recently, then register a new passkey named after the workspace where you are an admin.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h40",
+      "task_id": "live_014",
+      "verify": "real-tasks/task_h40.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000015_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000015_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:09:17.173574+00:00",
+    "cost_usd": 0.030462450000000002,
+    "pair_index": 15,
+    "task": {
+      "difficulty": "medium",
+      "draw_index": 15,
+      "id": "live_015",
+      "instruction": "Register a new passkey called 'Windows Hello'.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_m5",
+      "task_id": "live_015",
+      "verify": "real-tasks/task_m5.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000016_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000016_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:12:01.641011+00:00",
+    "cost_usd": 0.21637935,
+    "pair_index": 16,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 16,
+      "id": "live_016",
+      "instruction": "Revoke all OAuth applications that have fewer permissions than the number of connected accounts you have, then disconnect all connected accounts that share your Linear account's email domain.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h53",
+      "task_id": "live_016",
+      "verify": "real-tasks/task_h53.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000017_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000017_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:15:08.913856+00:00",
+    "cost_usd": 0.2256642,
+    "pair_index": 17,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 17,
+      "id": "live_017",
+      "instruction": "For each currently enabled notification channel, turn off all notification types but keep the channel itself enabled. Do not touch disabled channels.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h44",
+      "task_id": "live_017",
+      "verify": "real-tasks/task_h44.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000018_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000018_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:17:31.707368+00:00",
+    "cost_usd": 0.1908039,
+    "pair_index": 18,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 18,
+      "id": "live_018",
+      "instruction": "Set your username to the URL key of the workspace you joined most recently, then leave that workspace.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h41",
+      "task_id": "live_018",
+      "verify": "real-tasks/task_h41.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000019_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000019_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:18:23.004038+00:00",
+    "cost_usd": 0.0664737,
+    "pair_index": 19,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 19,
+      "id": "live_019",
+      "instruction": "Create a new API key named after the authorized application that has the most permissions, then revoke that application.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h42",
+      "task_id": "live_019",
+      "verify": "real-tasks/task_h42.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000020_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000020_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:20:09.388391+00:00",
+    "cost_usd": 0.11309295,
+    "pair_index": 20,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 20,
+      "id": "live_020",
+      "instruction": "Turn off all git-related automations: disable move to started on branch copy, disable auto-assign on branch copy, and switch git attachment format to show the repository name.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h7",
+      "task_id": "live_020",
+      "verify": "real-tasks/task_h7.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000021_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000021_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:20:53.633106+00:00",
+    "cost_usd": 0.05240985,
+    "pair_index": 21,
+    "task": {
+      "difficulty": "easy",
+      "draw_index": 21,
+      "id": "live_021",
+      "instruction": "Revoke the Zapier integration.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_e9",
+      "task_id": "live_021",
+      "verify": "real-tasks/task_e9.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000022_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000022_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:23:17.762424+00:00",
+    "cost_usd": 0.1592625,
+    "pair_index": 22,
+    "task": {
+      "difficulty": "easy",
+      "draw_index": 22,
+      "id": "live_022",
+      "instruction": "Turn off the desktop app notification badge.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_e12",
+      "task_id": "live_022",
+      "verify": "real-tasks/task_e12.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000023_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000023_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:26:34.991597+00:00",
+    "cost_usd": 0.2571261,
+    "pair_index": 23,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 23,
+      "id": "live_023",
+      "instruction": "Enable all four notification channels, then turn off all notification types for the desktop and email channels, and turn on all notification types for the mobile and Slack channels.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h76",
+      "task_id": "live_023",
+      "verify": "real-tasks/task_h76.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000024_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000024_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:27:12.402574+00:00",
+    "cost_usd": 0.04740735,
+    "pair_index": 24,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 24,
+      "id": "live_024",
+      "instruction": "Revoke the OAuth application that has the most permissions, and remove the passkey that was registered most recently.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h26",
+      "task_id": "live_024",
+      "verify": "real-tasks/task_h26.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000025_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000025_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:30:18.656915+00:00",
+    "cost_usd": 0.31095075,
+    "pair_index": 25,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 25,
+      "id": "live_025",
+      "instruction": "Create a new API key with a label matching your role at the Acme Corp workspace, then enable both auto-assign settings.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h33",
+      "task_id": "live_025",
+      "verify": "real-tasks/task_h33.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000026_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000026_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:34:28.817501+00:00",
+    "cost_usd": 0.3464391,
+    "pair_index": 26,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 26,
+      "id": "live_026",
+      "instruction": "Enable all four notification channels, then turn off all notification types for the desktop and email channels, and turn on all notification types for the mobile and Slack channels.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h76",
+      "task_id": "live_026",
+      "verify": "real-tasks/task_h76.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000027_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000027_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:36:51.446299+00:00",
+    "cost_usd": 0.16320405,
+    "pair_index": 27,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 27,
+      "id": "live_027",
+      "instruction": "Disconnect all connected accounts that are not source code management providers, and unsubscribe from all communication notifications.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h25",
+      "task_id": "live_027",
+      "verify": "real-tasks/task_h25.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000028_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000028_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:39:56.169288+00:00",
+    "cost_usd": 0.22664430000000002,
+    "pair_index": 28,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 28,
+      "id": "live_028",
+      "instruction": "Revoke all non-current desktop-type sessions, then disable the desktop notification channel, and turn off all three desktop application settings in preferences.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h30",
+      "task_id": "live_028",
+      "verify": "real-tasks/task_h30.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000029_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000029_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:40:28.978219+00:00",
+    "cost_usd": 0.0367914,
+    "pair_index": 29,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 29,
+      "id": "live_029",
+      "instruction": "Revoke every OAuth application whose number of permissions exactly equals the number of connected accounts that share your Linear account's email domain.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h62",
+      "task_id": "live_029",
+      "verify": "real-tasks/task_h62.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000030_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000030_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:41:18.672436+00:00",
+    "cost_usd": 0.05724795,
+    "pair_index": 30,
+    "task": {
+      "difficulty": "easy",
+      "draw_index": 30,
+      "id": "live_030",
+      "instruction": "Turn on auto-assign when creating issues.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_e5",
+      "task_id": "live_030",
+      "verify": "real-tasks/task_e5.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000031_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000031_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:42:15.129185+00:00",
+    "cost_usd": 0.0617637,
+    "pair_index": 31,
+    "task": {
+      "difficulty": "easy",
+      "draw_index": 31,
+      "id": "live_031",
+      "instruction": "Opt in to product update communications.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_e19",
+      "task_id": "live_031",
+      "verify": "real-tasks/task_e19.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000032_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000032_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:43:58.214844+00:00",
+    "cost_usd": 0.1187709,
+    "pair_index": 32,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 32,
+      "id": "live_032",
+      "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h8",
+      "task_id": "live_032",
+      "verify": "real-tasks/task_h8.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000033_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000033_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:44:47.610320+00:00",
+    "cost_usd": 0.04879335,
+    "pair_index": 33,
+    "task": {
+      "difficulty": "medium",
+      "draw_index": 33,
+      "id": "live_033",
+      "instruction": "Switch to the high-contrast dark theme and make the font size small.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_m7",
+      "task_id": "live_033",
+      "verify": "real-tasks/task_m7.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000034_baseline",
+    "baseline_success": 1,
+    "challenger_episode_id": "pair_000034_challenger",
+    "challenger_success": 1,
+    "completed_at": "2026-10-16T23:46:33.320804+00:00",
+    "cost_usd": 0.12416459999999999,
+    "pair_index": 34,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 34,
+      "id": "live_034",
+      "instruction": "Turn off all desktop application settings: open in desktop app, notification badge, and spell check.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h19",
+      "task_id": "live_034",
+      "verify": "real-tasks/task_h19.py"
+    }
+  },
+  {
+    "baseline_episode_id": "pair_000035_baseline",
+    "baseline_success": 0,
+    "challenger_episode_id": "pair_000035_challenger",
+    "challenger_success": 0,
+    "completed_at": "2026-10-16T23:51:03.178249+00:00",
+    "cost_usd": 0.26060985,
+    "pair_index": 35,
+    "task": {
+      "difficulty": "hard",
+      "draw_index": 35,
+      "id": "live_035",
+      "instruction": "Invert the notification type settings for both the mobile and desktop channels \u2014 enable every type that is currently off and disable every type that is currently on.",
+      "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+      "source_task_id": "task_h49",
+      "task_id": "live_035",
+      "verify": "real-tasks/task_h49.py"
+    }
+  }
+]

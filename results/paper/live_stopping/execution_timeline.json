@@ -25,6 +25,29 @@
     "new_inference_cost_usd": 0,
     "status": "blocked_by_registered_terminal_infrastructure_stop"
   },
-  "resumed_inference_session": null,
-  "accounting_note": "Review and reporting time is not experimental elapsed execution time. No hypothetical resumed or full-budget costs are measured spending."
+  "resumed_inference_session": {
+    "amendment_recorded_utc": "2026-10-16T23:07:32.863702+00:00",
+    "launch_utc": "2026-10-16T23:08:10.913049+00:00",
+    "first_controller_intent_utc": "2026-10-16T23:08:13.221071+00:00",
+    "terminal_utc": "2026-10-16T23:51:03.196557+00:00",
+    "completed_pairs_total": 35,
+    "new_physical_attempts": 43,
+    "decision": "futility",
+    "first_crossing": 35,
+    "preserved_original_pairs": 13,
+    "saved_pair14_baseline_reused": true
+  },
+  "accounting_note": "The original run, blocked resume review, and later explicitly authorized amendment are distinct events. Review/gap time is excluded from summed execution sessions.",
+  "authorized_amended_continuation": {
+    "amendment_recorded_utc": "2026-10-16T23:07:32.863702+00:00",
+    "launch_utc": "2026-10-16T23:08:10.913049+00:00",
+    "first_controller_intent_utc": "2026-10-16T23:08:13.221071+00:00",
+    "terminal_utc": "2026-10-16T23:51:03.196557+00:00",
+    "completed_pairs_total": 35,
+    "new_physical_attempts": 43,
+    "decision": "futility",
+    "first_crossing": 35,
+    "preserved_original_pairs": 13,
+    "saved_pair14_baseline_reused": true
+  }
 }

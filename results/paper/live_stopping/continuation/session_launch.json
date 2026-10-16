@@ -1,0 +1,20 @@
+{
+  "launched_utc": "2026-10-16T23:08:10.913049+00:00",
+  "pid": 29933,
+  "command": [
+    "/usr/bin/caffeinate",
+    "-i",
+    "/Users/sanjay/projects/BerkeleyProjects/Research/IanWaudbySmith/coldStartPrompts/.venv/bin/python",
+    "/Users/sanjay/projects/BerkeleyProjects/Research/IanWaudbySmith/coldStartPrompts/experiments/growing_bandits/empirical/resume_live_stopping_runner.py",
+    "--manifest",
+    "/Users/sanjay/projects/BerkeleyProjects/Research/IanWaudbySmith/coldStartPrompts/data/prospective_live_stopping_resume/amendment.json",
+    "--manifest-sha256",
+    "016e10492d77035580426a7dacbf070c5dc0e7be5fab263f03958947ec133248",
+    "--execute"
+  ],
+  "cwd": "/Users/sanjay/projects/BerkeleyProjects/Research/IanWaudbySmith/coldStartPrompts",
+  "manifest_sha256": "016e10492d77035580426a7dacbf070c5dc0e7be5fab263f03958947ec133248",
+  "detached_session": true,
+  "sleep_protection": "caffeinate -i; lid must remain open",
+  "preflight_commit": "2d65d92"
+}

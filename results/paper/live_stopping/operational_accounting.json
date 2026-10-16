@@ -1,27 +1,35 @@
 {
-  "known_api_usage_cost_usd": 1.76230815,
-  "unacknowledged_requests": 1,
-  "unknown_charge_bound_usd": [
+  "known_api_cost_usd": 4.9147119,
+  "unknown_charge_interval_usd": [
     0,
     0.318432
   ],
-  "total_api_cost_interval_usd": [
-    1.76230815,
-    2.08074015
+  "total_cost_interval_usd": [
+    4.9147119,
+    5.2331439
   ],
-  "invoice_reconciled": false,
-  "fully_accounted_valid_episodes": 27,
-  "fully_accounted_valid_episode_cost_usd": 1.7351826,
-  "mean_fully_accounted_episode_cost_usd": 0.06426602222222222,
-  "planned_episodes": 240,
-  "attempted_episodes": 28,
-  "not_started_due_to_infrastructure_halt": 212,
-  "episodes_avoided_by_statistical_boundary": 0,
-  "projected_cost_of_212_unstarted_episodes_usd": 13.62439671111111,
-  "projection_basis": "Mean cost of 27 fully accounted valid episodes, multiplied by 212 unstarted episodes; assumes comparable future costs. Hypothetical workload, not realized savings and not evidence of statistical stopping.",
-  "known_input_tokens": 4625255,
-  "known_output_tokens": 173209,
-  "known_total_tokens": 4798464,
-  "known_cache_read_tokens_included_in_input": 3683072,
-  "total_token_accounting_complete": false
+  "known_total_tokens": 13066991,
+  "known_reasoning_tokens_included_in_output": 162464,
+  "original_controller_start_utc": "2026-10-16T18:18:26.670970+00:00",
+  "original_terminal_utc": "2026-10-16T18:50:13.219839+00:00",
+  "continuation_controller_start_utc": "2026-10-16T23:08:13.221071+00:00",
+  "continuation_terminal_utc": "2026-10-16T23:51:03.196557+00:00",
+  "original_controller_session_s": 1906.548869,
+  "continuation_controller_session_s": 2569.975486,
+  "sum_controller_session_s": 4476.524355,
+  "calendar_from_first_controller_intent_s": 19956.525587,
+  "between_session_gap_s": 15480.001232,
+  "sum_physical_episode_session_s": 4469.645306,
+  "duration_note": "Controller session time includes browser startup after the first controller intent. Frozen analyzer summary uses first physical episode intent, excluding this startup. Both exclude the between-session gap when summed; neither excludes sleep within the original session.",
+  "planned_original_episodes": 240,
+  "amended_full_budget_attempts": 241,
+  "actual_attempts": 71,
+  "valid_outcomes": 70,
+  "episodes_genuinely_avoided_after_statistical_boundary": 170,
+  "projected_additional_unexecuted_cost_usd": 11.869852564285715,
+  "projected_full_amended_budget_cost_interval_usd": [
+    16.784564464285715,
+    17.102996464285717
+  ],
+  "projection_note": "Uses observed mean known cost of 70 valid episodes for 170 unexecuted episodes; hypothetical workload, not measured savings or a guaranteed budget."
 }

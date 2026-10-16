@@ -1,93 +1,247 @@
 [
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 1,
     "log_efficacy": 0.0,
     "log_futility": 0.2623642644674913,
-    "pair_index": 1
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 2,
     "log_efficacy": 0.0,
     "log_futility": 0.6446363891270217,
-    "pair_index": 2
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 3,
     "log_efficacy": 0.0,
     "log_futility": 0.7098164841047441,
-    "pair_index": 3
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 4,
     "log_efficacy": 0.0,
     "log_futility": 0.21856003790993772,
-    "pair_index": 4
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 5,
     "log_efficacy": 0.0,
     "log_futility": 0.27397821430737546,
-    "pair_index": 5
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 6,
     "log_efficacy": 0.0,
     "log_futility": 0.3307849789881345,
-    "pair_index": 6
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 7,
     "log_efficacy": 0.0,
     "log_futility": 0.38868591460757207,
-    "pair_index": 7
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 8,
     "log_efficacy": 0.0,
     "log_futility": 0.44768133015642797,
-    "pair_index": 8
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 9,
     "log_efficacy": 0.0,
     "log_futility": 0.5077696534266247,
-    "pair_index": 9
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 10,
     "log_efficacy": 0.0,
     "log_futility": 0.5689474390664506,
-    "pair_index": 10
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 11,
     "log_efficacy": 0.0,
     "log_futility": 0.6312093906344247,
-    "pair_index": 11
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 12,
     "log_efficacy": 0.0,
     "log_futility": 0.69454839630762,
-    "pair_index": 12
+    "efficacy_crossed": false,
+    "futility_crossed": false
   },
   {
-    "efficacy_crossed": false,
-    "futility_crossed": false,
+    "pair_index": 13,
     "log_efficacy": 0.0,
     "log_futility": 0.7589555776847441,
-    "pair_index": 13
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 14,
+    "log_efficacy": 0.0,
+    "log_futility": 0.8244203509241059,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 15,
+    "log_efficacy": 0.0,
+    "log_futility": 0.890930499276765,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 16,
+    "log_efficacy": 0.0,
+    "log_futility": 0.9584722559200898,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 17,
+    "log_efficacy": 0.0,
+    "log_futility": 1.0270303958699583,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 18,
+    "log_efficacy": 0.0,
+    "log_futility": 1.0965883356531732,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 19,
+    "log_efficacy": 0.0,
+    "log_futility": 1.1671282393565183,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 20,
+    "log_efficacy": 0.0,
+    "log_futility": 1.61709684912789,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 21,
+    "log_efficacy": 0.0,
+    "log_futility": 1.6935414332473113,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 22,
+    "log_efficacy": 0.0,
+    "log_futility": 1.7708003737013056,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 23,
+    "log_efficacy": 0.0,
+    "log_futility": 1.848850079469145,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 24,
+    "log_efficacy": 0.0,
+    "log_futility": 1.927666780011027,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 25,
+    "log_efficacy": 0.0,
+    "log_futility": 2.4192358023966563,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 26,
+    "log_efficacy": 0.0,
+    "log_futility": 2.5024426757610927,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 27,
+    "log_efficacy": 0.0,
+    "log_futility": 3.0153362422112764,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 28,
+    "log_efficacy": 0.0,
+    "log_futility": 3.1019578945948165,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 29,
+    "log_efficacy": 0.0,
+    "log_futility": 3.189033567727848,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 30,
+    "log_efficacy": 0.0,
+    "log_futility": 3.276545000107955,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 31,
+    "log_efficacy": 0.0,
+    "log_futility": 3.364474509332269,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 32,
+    "log_efficacy": 0.0,
+    "log_futility": 3.452804996960327,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 33,
+    "log_efficacy": 0.0,
+    "log_futility": 3.5415199502014696,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 34,
+    "log_efficacy": 0.0,
+    "log_futility": 3.6306034407537258,
+    "efficacy_crossed": false,
+    "futility_crossed": false
+  },
+  {
+    "pair_index": 35,
+    "log_efficacy": 0.0,
+    "log_futility": 3.7200401211084815,
+    "efficacy_crossed": false,
+    "futility_crossed": true
   }
 ]

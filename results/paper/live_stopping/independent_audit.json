@@ -1,162 +1,365 @@
 {
-  "audit_utc": "2026-10-16T18:55:46.116910+00:00",
-  "audit_scope": "Independent read-only verification of registered sources, commits, generated tasks, all raw episode/API records, saved outcomes, and exported statistics. Only these audit artifacts were written.",
-  "audit_result": "passed_with_explicit_unknown_billing_and_environment_limits",
-  "checks": {
-    "candidate_pair_fixed_before_first_inference": true,
-    "population_generator_and_order_frozen_before_inference": true,
-    "all_229_frozen_files_match": true,
-    "protocol_and_implementation_match_preregistration_commit": true,
-    "seed_reproduces_exact_order_with_replacement": true,
-    "all_task_data_match_second_commit": true,
-    "all_85_preexecution_tests_passed": true,
-    "all_registered_parameters_unchanged": true,
-    "manuscript_unchanged": true,
-    "sequential_baseline_then_challenger_no_episode_overlap": true,
-    "raw_environment_verifiers_match_all_27_valid_outcomes": true,
-    "incomplete_pair_14_excluded_without_imputation_or_replacement": true,
-    "saved_paths_bit_exact_offline_reproduction": true,
-    "no_statistical_boundary_crossing": true,
-    "automatic_halt_on_first_unacknowledged_request": true,
-    "no_physical_api_retry_after_failure": true,
-    "no_episode_or_api_request_after_terminal": true,
-    "all_episode_receipts_match_execution_wrapper_receipts": true,
-    "all_457_completed_requests_reprice_exactly_from_raw_usage": true,
-    "request_episode_and_controller_cost_totals_reconcile": true,
-    "recorded_tokens_reconcile": true,
-    "unknown_billing_retained_and_accounting_marked_incomplete": true,
-    "every_request_reservation_within_75_dollar_limit": true,
-    "exported_data_match_raw_logs": true,
-    "no_statistical_execution_savings_claimed": true,
-    "saved_host_sleep_wake_events_overlap_unacknowledged_request": true
-  },
-  "protocol_commit": "6ffc20fdd8315fdf20286837094f94e9cfe993a3",
-  "task_commit": "6c2719a9219cd82a6bf2746496d6f06226a282b1",
-  "preregistration_times": {
-    "protocol_commit": "2026-10-16T11:17:57-07:00",
-    "task_registration": "2026-10-16T18:18:04.955556+00:00",
-    "task_commit": "2026-10-16T11:18:18-07:00",
-    "preflight": "2026-10-16T18:18:18.165504+00:00",
-    "controller_registration": "2026-10-16T18:18:26.646048+00:00",
-    "first_episode_intent": "2026-10-16T18:18:26.670970+00:00",
-    "first_api_request": "2026-10-16T18:18:34.680545+00:00",
-    "last_api_request_start": "2026-10-16T18:48:37.153498+00:00",
-    "unknown_request": "2026-10-16T18:50:11.592023+00:00",
-    "terminal": "2026-10-16T18:50:13.219839+00:00"
-  },
-  "frozen_file_count": 229,
-  "preregistered_root_sources": [
-    "configs/axes.yaml",
-    "configs/template.jinja",
-    "docs/paper/LIVE_STOPPING_PROTOCOL.md",
-    "experiments/growing_bandits/audit/flatness_eprocess.py",
-    "experiments/growing_bandits/audit/futility_eprocess.py",
-    "experiments/growing_bandits/empirical/analyze_live_stopping.py",
-    "experiments/growing_bandits/empirical/collect.py",
-    "experiments/growing_bandits/empirical/live_stopping.py",
-    "experiments/growing_bandits/empirical/live_stopping_runner.py",
-    "experiments/growing_bandits/empirical/make_pools.py",
-    "experiments/growing_bandits/empirical/prepare_live_stopping.py",
-    "src/cold_start/tasks/webarena.py"
-  ],
-  "seed_hex": "16907f20ad5c78a18cca90759d59838a",
-  "planned_pairs": 120,
-  "planned_unique_source_tasks": 82,
-  "max_source_repetitions": 5,
-  "completed_pairs": 13,
-  "baseline_successes": 8,
-  "challenger_successes": 7,
-  "baseline_rate": 0.6153846153846154,
-  "challenger_rate": 0.5384615384615384,
-  "paired_difference": -0.07692307692307693,
-  "challenger_only_wins": 1,
-  "baseline_only_wins": 2,
-  "ties": 10,
-  "final_log_efficacy": 0.0,
-  "final_log_futility": 0.7589555776847441,
-  "final_efficacy": 1.0,
-  "final_futility": 2.1360441229251084,
-  "evidence_threshold": 40,
-  "first_statistical_crossing": null,
-  "decision": "unresolved",
-  "terminal_reason": "infrastructure_error: ReadTimeout with unknown billing",
-  "episode_executions": 28,
-  "valid_outcome_episodes": 27,
-  "paid_request_starts": 458,
-  "completed_provider_responses": 457,
-  "unknown_provider_requests": [
-    "request_000458"
-  ],
-  "known_token_priced_api_cost_usd": "1.762308150",
-  "unknown_additional_api_cost_interval_usd": [
-    "0",
-    "0.318432"
-  ],
-  "total_token_priced_api_cost_interval_usd": [
-    "1.762308150",
-    "2.080740150"
-  ],
-  "cost_interval_assumptions": "Frozen standard token prices, model context/output bounds, one physical request per guarded invocation; excludes taxes and invoice adjustments. Unknown usage means exact total cost cannot be claimed.",
-  "known_input_tokens": 4625255,
-  "known_output_tokens": 173209,
-  "known_total_tokens": 4798464,
-  "known_cached_input_tokens": 3683072,
-  "known_reasoning_output_tokens": 50482,
-  "maximum_possible_additional_input_tokens": 400000,
-  "maximum_possible_additional_output_tokens": 4096,
-  "peak_measured_spend_plus_request_reservations_usd": "2.080740150",
-  "wallclock_s": 1906.548869,
-  "last_episode_utc_duration_s": 138.182022,
-  "last_episode_monotonic_duration_s": 95.14606512599858,
-  "unexecuted_planned_episodes": 212,
-  "executions_avoided_by_statistical_stopping": 0,
-  "projected_dollar_savings": null,
-  "limitations": [
-    "The realized run did not cross a statistical boundary and supplies no real-run demonstration of statistical stopping savings.",
-    "Only the 13 complete pairs support the descriptive evidence path; the operational halt precludes a confirmatory efficacy or futility conclusion.",
-    "One unacknowledged request has unknown token usage and charge; known totals are lower bounds, and the reservation gives only a conditional upper bound.",
-    "The returned snapshot model matches all 457 responses, but absent provider fingerprints and provider-side observability prevent proving backend stability or independence.",
-    "Public finite-bank sampling with replacement supports a narrow conditional population interpretation under stable independent task draws, correct resets, and appropriate conditional outcome assumptions; neither PRNG sampling nor hashes proves these.",
-    "The fixed baseline-first order could interact with time drift; resets are executed by the audited adapter, but every backend reset state was not independently snapshotted.",
-    "The final half-pair overlaps host sleep/wake events reported from system power logs. UTC duration differs from monotonic duration by about 43 seconds; neither this audit nor a ReadTimeout isolates provider fault.",
-    "Local Git/timestamp records establish reproducible ordering, not an externally timestamped registration."
-  ],
-  "artifact_hashes": {
-    "logs/prospective_live_stopping/api_calls.jsonl": "317b0c09a83a9c094359a6fb4d94785fd555161b8d320e405654c7e3a30e856c",
-    "logs/prospective_live_stopping/state.json": "50c3e865d253ffcaa16583186c304e4fbdcfbd9321d62ba1375272ac9613dc9b",
-    "logs/prospective_live_stopping/terminal.json": "07eb5ae0846ee94198874067332ddcb4daace0d55e284a7d9c21fb38416441a1",
-    "logs/prospective_live_stopping/pairs.json": "8b9177f83956cdc43498362645ef408073d37f782ef91c4936d239506a97eccb",
-    "logs/prospective_live_stopping/evidence.json": "6a89aee521c0442b277cebd6d7975662eb3c72f3a080131b5cbeb7553eb2d164",
-    "data/prospective_live_stopping/manifest.json": "5415670f1199eb808c18593776a3ac4598ae59b8e10477a93e21d23daae0fb2a",
-    "data/prospective_live_stopping/config.json": "521d628ceef6b4bf2778a79c0df5d1867b30e1a57fc2e31501fcb0ff6c5ecaaa",
-    "data/prospective_live_stopping/tasks.json": "9fb033112d4af1cf06825bce7ecf56646bf2d2c16eb51db4b876a33d6784a003",
-    "results/paper/live_stopping/summary.json": "6bd47f070d882dea201093248874a6ddfa997aec4f9336ecc23d700405df6515",
-    "results/paper/live_stopping/environment_events.json": "1bdecf66f395d2358465d2362ff70d57f34e431a137b3e2afd34f56c98382275"
-  },
-  "host_power_events_during_unacknowledged_request": [
-    {
-      "timestamp_local": "2026-10-16T11:48:43-07:00",
-      "timestamp_utc": "2026-10-16T18:48:43+00:00",
-      "event": "Sleep",
-      "reason": "Maintenance Sleep"
+  "scope": "Final authorized amended continuation; original audits retained in history",
+  "statistical_audit": {
+    "audit_utc": "2026-10-16T23:55:22.807466+00:00",
+    "auditor": "independent statistics subagent",
+    "status": "passed_with_stated_assumptions",
+    "no_paid_calls_performed_by_audit": true,
+    "method": "Direct original e1b_log_paths and futility_log_paths calls on raw paired outcomes; independent Decimal repricing of raw provider usage; raw physical intents, receipts and verifier results; local Git and SHA256 provenance. Controller/analyzer evidence wrappers were not used.",
+    "checks": {
+      "original_frozen_files_unchanged": true,
+      "original_execution_files_unchanged": true,
+      "amendment_files_unchanged": true,
+      "manifest_digest_matches_continuation_marker": true,
+      "exact_original_registration_reused": true,
+      "frozen_registration_digest_matches": true,
+      "original_13_pairs_retained_exactly": true,
+      "original_terminal_preserved": true,
+      "all_27_original_valid_receipts_and_intents_copied_exactly": true,
+      "original_invalid_receipt_archived_not_recoded": true,
+      "unchanged_statistical_parameters": true,
+      "efficacy_precedence_and_zero_automatic_retries": true,
+      "prompt_text_hashes_match": true,
+      "full_bank_and_frozen_independent_draws_reconstruct": true,
+      "pairs_follow_original_draw_order": true,
+      "exact_efficacy_online_offline_parity": true,
+      "exact_futility_online_offline_parity": true,
+      "first_crossing_pair_35_not_34": true,
+      "live_terminal_agrees_with_first_crossing": true,
+      "pair14_uses_saved_baseline_and_authorized_retry": true,
+      "original_only_expected_physical_attempts": true,
+      "original_sequential_episode_execution": true,
+      "original_metadata_and_raw_verifier_agree": true,
+      "original_raw_api_ledger_repriced_and_receipts_reconciled": true,
+      "original_no_requests_or_attempts_after_terminal": true,
+      "continuation_only_expected_physical_attempts": true,
+      "continuation_sequential_episode_execution": true,
+      "continuation_metadata_and_raw_verifier_agree": true,
+      "continuation_raw_api_ledger_repriced_and_receipts_reconciled": true,
+      "continuation_no_requests_or_attempts_after_terminal": true,
+      "only_original_unknown_charge_remains": true,
+      "one_failed_attempt_and_one_retry": true,
+      "no_pair_36_scheduled": true,
+      "opening_balance_preserves_full_original_spend_and_reserve": true,
+      "amendment_file_bytes_present_in_pre_inference_commit": true,
+      "manifest_committed_exactly_before_new_inference": true,
+      "manuscript_unchanged": true,
+      "published_summary_matches_independent_reconciliation": true,
+      "avoided_executions_match_amended_full_workload": true
     },
-    {
-      "timestamp_local": "2026-10-16T11:48:50-07:00",
-      "timestamp_utc": "2026-10-16T18:48:50+00:00",
-      "event": "DarkWake",
-      "reason": "Wake from Deep Idle"
+    "hash_counts": {
+      "original_frozen_files": 229,
+      "original_execution_files": 121,
+      "amendment_files": 8
     },
-    {
-      "timestamp_local": "2026-10-16T11:48:56-07:00",
-      "timestamp_utc": "2026-10-16T18:48:56+00:00",
-      "event": "Sleep",
-      "reason": "Maintenance Sleep"
+    "source_hashes": {
+      "original_api_ledger_sha256": "317b0c09a83a9c094359a6fb4d94785fd555161b8d320e405654c7e3a30e856c",
+      "original_terminal_sha256": "07eb5ae0846ee94198874067332ddcb4daace0d55e284a7d9c21fb38416441a1",
+      "continuation_api_ledger_sha256": "98f27b617b2f2f8d4d809f3e6d1e146be8823bb5b4f8bde98f271dbaed701342",
+      "continuation_terminal_sha256": "adbbcdb0b8dd1d7a292124d8b8798bc01f6c0d811a768e36f9d8a4d7dd2cb84e",
+      "amendment_manifest_sha256": "016e10492d77035580426a7dacbf070c5dc0e7be5fab263f03958947ec133248",
+      "original_frozen_sha256": "74228e82cfbb1320abc297bf7100d1446bcea16169d8e6936e0fd53a89ffe1e9"
     },
-    {
-      "timestamp_local": "2026-10-16T11:49:25-07:00",
-      "timestamp_utc": "2026-10-16T18:49:25+00:00",
-      "event": "Wake",
-      "reason": "Wake from Deep Idle"
-    }
-  ]
+    "pre_inference_freeze": {
+      "amendment_commit": "390b63597038b6045a153c7dc0e0cde5b71b5297",
+      "amendment_commit_utc": "2026-10-16T23:07:18+00:00",
+      "manifest_recorded_utc": "2026-10-16T23:07:32.863702+00:00",
+      "manifest_commit": "2d65d9225c9a58dbe43e4a20236ceb3475532019",
+      "manifest_commit_utc": "2026-10-16T23:07:59+00:00",
+      "first_new_request_utc": "2026-10-16T23:08:20.947657+00:00",
+      "caveat": "Git timestamps and local logs are internally consistent; no external trusted timestamp attestation was checked."
+    },
+    "statistical_results": {
+      "decision": "futility",
+      "completed_pairs": 35,
+      "first_crossing_pair": 35,
+      "threshold": 40,
+      "log_threshold": 3.6888794541139363,
+      "efficacy_at_34": 1.0,
+      "futility_at_34": 37.73558093543424,
+      "log_futility_at_34": 3.6306034407537258,
+      "efficacy_at_35": 1.0,
+      "futility_at_35": 41.26604971505541,
+      "log_futility_at_35": 3.7200401211084815,
+      "max_futility_before_35": 37.73558093543424,
+      "baseline_successes": 20,
+      "challenger_successes": 16,
+      "baseline_rate": 0.5714285714285714,
+      "challenger_rate": 0.45714285714285713,
+      "paired_difference": -0.11428571428571428,
+      "discordant_pairs": 6,
+      "challenger_only_successes": 1,
+      "baseline_only_successes": 5,
+      "delta": 0.15,
+      "alpha_e": 0.025,
+      "alpha_f": 0.025,
+      "futility_fixed_lambdas": [
+        0.1739130434782609,
+        0.3478260869565218,
+        0.6956521739130436,
+        1.3913043478260871
+      ],
+      "precedence": "efficacy"
+    },
+    "operational_results": {
+      "sessions": {
+        "original": {
+          "attempts": 28,
+          "requests_started": 458,
+          "responses_with_usage": 457,
+          "known_cost_usd": "1.762308150",
+          "unknown_reserved_usd": "0.318432",
+          "input_tokens": 4625255,
+          "output_tokens": 173209
+        },
+        "continuation": {
+          "attempts": 43,
+          "requests_started": 754,
+          "responses_with_usage": 754,
+          "known_cost_usd": "3.152403750",
+          "unknown_reserved_usd": "0",
+          "input_tokens": 7945489,
+          "output_tokens": 323038
+        }
+      },
+      "actual_attempts": 71,
+      "valid_outcome_episodes": 70,
+      "excluded_invalid_attempts": 1,
+      "authorized_retries_performed": 1,
+      "api_requests_started": 1212,
+      "responses_with_usage": 1211,
+      "known_response_cost_usd": "4.914711900",
+      "unknown_reserved_usd": "0.318432",
+      "total_cost_interval_usd": [
+        "4.914711900",
+        "5.233143900"
+      ],
+      "cost_is_invoice_verified": false,
+      "known_input_tokens": 12570744,
+      "known_output_tokens": 496247,
+      "known_total_tokens": 13066991,
+      "known_cached_input_tokens": 9994752,
+      "known_reasoning_tokens_included_in_output": 162464,
+      "unknown_requests": [
+        {
+          "session": "original",
+          "request_id": "request_000458",
+          "reserved_usd": 0.318432
+        }
+      ],
+      "max_authorized_cost_plus_pending_reserves_usd": "5.540806650",
+      "full_original_planned_episodes": 240,
+      "full_amended_workload_attempts": 241,
+      "future_episodes_genuinely_avoided": 170,
+      "mean_known_cost_valid_episode_usd": "0.06982266214285714285714285714",
+      "projected_unexecuted_workload_cost_usd": "11.86985256428571428571428571",
+      "projection_is_realized_savings": false
+    },
+    "timeline": {
+      "original": {
+        "controller_start_utc": "2026-10-16T18:18:26.670970+00:00",
+        "first_physical_episode_utc": "2026-10-16T18:18:30.306529+00:00",
+        "first_request_utc": "2026-10-16T18:18:34.680545+00:00",
+        "last_request_start_utc": "2026-10-16T18:48:37.153498+00:00",
+        "last_response_utc": "2026-10-16T18:48:35.954440+00:00",
+        "last_receipt_utc": "2026-10-16T18:50:13.211407+00:00",
+        "terminal_utc": "2026-10-16T18:50:13.219839+00:00",
+        "controller_session_seconds": 1906.548869,
+        "physical_episode_session_seconds": 1902.91331
+      },
+      "continuation": {
+        "controller_start_utc": "2026-10-16T23:08:13.221071+00:00",
+        "first_physical_episode_utc": "2026-10-16T23:08:16.464561+00:00",
+        "first_request_utc": "2026-10-16T23:08:20.947657+00:00",
+        "last_request_start_utc": "2026-10-16T23:50:59.995766+00:00",
+        "last_response_utc": "2026-10-16T23:51:02.971421+00:00",
+        "last_receipt_utc": "2026-10-16T23:51:03.177700+00:00",
+        "terminal_utc": "2026-10-16T23:51:03.196557+00:00",
+        "controller_session_seconds": 2569.975486,
+        "physical_episode_session_seconds": 2566.731996
+      }
+    },
+    "limitations": [
+      "The original preregistered run ended unresolved after 13 pairs. This combined 35-pair result follows an explicitly authorized post-outcome amendment; it is not an unchanged wholly preregistered experiment.",
+      "Population-level directional error interpretation is conditional on the original conditional null assumptions also holding under selective retry, the observed prefix and mixed-time pair 14. The available logs do not establish outcome-ignorable missingness or those conditional assumptions. No unconditional confirmatory guarantee is claimed.",
+      "Host sleep overlapped the original timeout; it is not established as the sole cause. The original failed attempt and its unknown charge are retained in accounting.",
+      "All 1211 usage-bearing responses reported the frozen model identifier, but absent system fingerprints do not establish unchanged backend weights or serving behavior across the time gap.",
+      "The full public finite task bank and deterministic prospective draws are reproducible. Inference generalizes only to this task sampling and execution regime under the stated sampling/reset/stability assumptions, not all web-agent tasks.",
+      "The $4.91471190 is response-usage-based API cost at frozen list prices, not an invoice reconciliation. The unobserved original response adds unknown tokens and up to $0.318432 under the transport bound.",
+      "The 170 avoided future executions are an audited scheduling outcome. Their projected dollar cost is not measured or realized dollar savings.",
+      "Local Git and log timestamps establish internally consistent chronology, not an independent timestamp attestation."
+    ]
+  },
+  "operational_audit": {
+    "schema": "live_stopping/independent_operational_audit/1",
+    "audited_utc": "2026-10-16T23:53:22.070286+00:00",
+    "status": "pass",
+    "issues": [],
+    "scope": "Original execution plus user-authorized continuation; all physical attempts included.",
+    "segments": {
+      "original": {
+        "physical_episode_attempts": 28,
+        "valid_outcomes": 27,
+        "invalid_outcomes": 1,
+        "api_requests_started": 458,
+        "api_usage_responses": 457,
+        "known_cost_usd": "1.762308150",
+        "unknown_reserved_usd": "0.318432",
+        "unknown_request_ids": [
+          "request_000458"
+        ],
+        "tokens": {
+          "input": 4625255,
+          "output": 173209,
+          "cached_input": 3683072,
+          "reasoning_in_output": 50482
+        },
+        "all_returned_models_match": true,
+        "error_events": [
+          {
+            "request_id": "request_000458",
+            "event": "request_unknown",
+            "timestamp_utc": "2026-10-16T18:50:11.592023+00:00"
+          },
+          {
+            "request_id": "request_000458",
+            "event": "invocation_failed",
+            "timestamp_utc": "2026-10-16T18:50:11.592615+00:00"
+          }
+        ],
+        "first_episode_intent_utc": "2026-10-16T18:18:30.306529+00:00",
+        "terminal_utc": "2026-10-16T18:50:13.219839+00:00",
+        "session_wall_seconds_first_intent_to_terminal": 1902.91331,
+        "last_request_started_utc": "2026-10-16T18:48:37.153498+00:00",
+        "last_response_utc": "2026-10-16T18:48:35.954440+00:00",
+        "api_ledger_sha256": "317b0c09a83a9c094359a6fb4d94785fd555161b8d320e405654c7e3a30e856c",
+        "first_controller_episode_intent_utc": "2026-10-16T18:18:26.670970+00:00",
+        "controller_first_intent_to_terminal_seconds": 1906.548869,
+        "per_request_global_budget_bound_verified": true,
+        "maximum_known_plus_outstanding_reservations_usd": "2.08074015",
+        "maximum_simultaneous_started_unreceipted_requests": 1
+      },
+      "continuation": {
+        "physical_episode_attempts": 43,
+        "valid_outcomes": 43,
+        "invalid_outcomes": 0,
+        "api_requests_started": 754,
+        "api_usage_responses": 754,
+        "known_cost_usd": "3.152403750",
+        "unknown_reserved_usd": "0",
+        "unknown_request_ids": [],
+        "tokens": {
+          "input": 7945489,
+          "output": 323038,
+          "cached_input": 6311680,
+          "reasoning_in_output": 111982
+        },
+        "all_returned_models_match": true,
+        "error_events": [],
+        "first_episode_intent_utc": "2026-10-16T23:08:16.464561+00:00",
+        "terminal_utc": "2026-10-16T23:51:03.196557+00:00",
+        "session_wall_seconds_first_intent_to_terminal": 2566.731996,
+        "last_request_started_utc": "2026-10-16T23:50:59.995766+00:00",
+        "last_response_utc": "2026-10-16T23:51:02.971421+00:00",
+        "api_ledger_sha256": "98f27b617b2f2f8d4d809f3e6d1e146be8823bb5b4f8bde98f271dbaed701342",
+        "first_controller_episode_intent_utc": "2026-10-16T23:08:13.221071+00:00",
+        "controller_first_intent_to_terminal_seconds": 2569.975486,
+        "per_request_global_budget_bound_verified": true,
+        "maximum_known_plus_outstanding_reservations_usd": "5.540806650",
+        "maximum_simultaneous_started_unreceipted_requests": 1
+      }
+    },
+    "combined": {
+      "physical_episode_attempts": 71,
+      "valid_outcomes": 70,
+      "invalid_outcomes": 1,
+      "known_cost_usd": "4.914711900",
+      "unknown_reserved_usd": "0.318432",
+      "maximum_charge_under_frozen_bounds_usd": "5.233143900",
+      "cost_accounting_complete": false,
+      "known_tokens": {
+        "input": 12570744,
+        "output": 496247,
+        "cached_input": 9994752,
+        "reasoning_in_output": 162464
+      },
+      "known_total_tokens": 13066991,
+      "api_requests_started": 1212,
+      "api_usage_responses": 1211,
+      "sum_execution_session_wall_seconds": 4469.645306,
+      "calendar_first_intent_to_final_terminal_seconds": 19952.890028,
+      "sum_controller_execution_session_wall_seconds": 4476.524355,
+      "calendar_first_controller_intent_to_final_terminal_seconds": 19956.525587
+    },
+    "stopping": {
+      "decision": "futility",
+      "completed_pairs": 35,
+      "terminal_recorded_utc": "2026-10-16T23:51:03.196557+00:00",
+      "no_intents_beyond_pair_35": true,
+      "no_api_events_after_terminal": true,
+      "planned_executions_avoided_by_statistical_stop": 170,
+      "extra_invalid_original_attempts": 1,
+      "net_fewer_physical_attempts_than_240_no_retry_plan": 169,
+      "sole_authorized_retry_physical_id": "pair_000014_challenger_retry1"
+    },
+    "budget": {
+      "global_cap_usd": 75,
+      "opening_allocation_reconciled": true,
+      "known_plus_reservations_below_cap": true,
+      "original_api_ledger_unchanged": true,
+      "every_request_reservation_within_global_cap": true
+    },
+    "host": {
+      "session_launch_utc": "2026-10-16T23:08:10.913049+00:00",
+      "launch_to_terminal_seconds": 2572.283508,
+      "remaining_launch_process_ids": [],
+      "runner_exited": true,
+      "caffeinate_exited": true,
+      "caffeinate_assertion_released": true,
+      "caffeinate_assertion_events": [
+        {
+          "timestamp_utc": "2026-10-16T23:16:34+00:00",
+          "pid": 29935,
+          "action": "Summary",
+          "assertion_type": "PreventUserIdleSystemSleep"
+        },
+        {
+          "timestamp_utc": "2026-10-16T23:31:34+00:00",
+          "pid": 29935,
+          "action": "Summary",
+          "assertion_type": "PreventUserIdleSystemSleep"
+        },
+        {
+          "timestamp_utc": "2026-10-16T23:46:34+00:00",
+          "pid": 29935,
+          "action": "Summary",
+          "assertion_type": "PreventUserIdleSystemSleep"
+        },
+        {
+          "timestamp_utc": "2026-10-16T23:51:04+00:00",
+          "pid": 29935,
+          "action": "ClientDied",
+          "assertion_type": "PreventUserIdleSystemSleep"
+        }
+      ],
+      "recorded_sleep_wake_events_during_continuation": [],
+      "no_recorded_system_sleep_or_wake_during_continuation": true,
+      "caffeinate_assertion_release_utc": "2026-10-16T23:51:04+00:00"
+    },
+    "limitations": [
+      "Original request_000458 remains unacknowledged; exact invoice cost and token totals remain unknown.",
+      "Known API charges are independently recomputed from provider usage at frozen standard prices, not invoice totals.",
+      "Absence of system sleep/wake entries is evidence from available host logs, not proof of uninterrupted network or provider stability.",
+      "The continuation is an authorized post-outcome protocol amendment; the original terminal result is preserved."
+    ]
+  },
+  "controller_review": {
+    "passed": true,
+    "original_source_hashes_match": 121,
+    "amendment_file_hashes_match": 8,
+    "original_frozen_file_hashes_match": 229,
+    "first_crossing_pair": 35,
+    "no_later_pairs": true,
+    "terminal_latency_after_last_core_receipt_ms": 18.308
+  }
 }

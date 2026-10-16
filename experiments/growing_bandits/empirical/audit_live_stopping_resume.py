@@ -131,7 +131,11 @@ def audit(directory: Path, results: Path, out: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log-dir", type=Path, default=ROOT / "logs/prospective_live_stopping")
-    parser.add_argument("--results", type=Path, default=ROOT / "results/paper/live_stopping")
+    parser.add_argument(
+        "--results", type=Path,
+        default=ROOT / "results/paper/live_stopping/history/2026-10-16_initial_halt",
+        help="Original-result archive; the primary results now contain the amended continuation.",
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     audit(args.log_dir, args.results, args.out)

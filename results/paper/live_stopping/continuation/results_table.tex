@@ -1,0 +1,42 @@
+% Requires booktabs. Fragment only; paper/main.tex is unchanged.
+\begin{table}[t]
+\centering
+\small
+\caption{Live stopping in the authorized amended Linear continuation.
+One infrastructure retry was authorized after the original 13-pair halt.}
+\label{tab:prospective-live-stopping}
+\begin{tabular}{lr}
+\toprule
+Quantity & Observed value \\
+\midrule
+Decision / first crossing pair & Futility / $35$ \\
+Complete pairs / maximum & $35/120$ \\
+Baseline success & $20/35\;(57.14\%)$ \\
+Challenger success & $16/35\;(45.71\%)$ \\
+Paired gain (percentage points) & $-11.43$ \\
+Efficacy / futility evidence & $1.000 / 41.266$ \\
+Threshold (each direction) & $40$ \\
+Valid outcomes / all attempts & $70/71$ \\
+Authorized episode retries & $1$ \\
+API requests / usage responses & $1{,}212/1{,}211$ \\
+Known API usage cost & \$4.91471 \\
+Unknown additional charge bound & $[\$0,\;\$0.318432]$ \\
+Known total tokens & $13{,}066{,}991$ \\
+Combined session wall time & $74\,\mathrm{min}\;36.52\,\mathrm{s}$ \\
+Amended full-budget attempts & $241$ \\
+Planned episodes avoided after crossing & $170$ \\
+Projected cost of unexecuted work & \$11.86985 \\
+\bottomrule
+\end{tabular}
+\par\smallskip
+\begin{minipage}{0.97\linewidth}
+\footnotesize
+The margin was $\delta=0.15$, with $\alpha_E=\alpha_F=0.025$.
+The 71 attempts include the original invalid episode; the 241-attempt comparison
+includes its authorized retry. No pair 36 was scheduled. Unknown usage from
+one original request remains excluded from measured totals. Projected dollars
+are hypothetical workload costs, not realized savings. The amendment followed
+observed outcomes; nominal inference requires the recovery mechanism to preserve
+the stated conditional null assumptions.
+\end{minipage}
+\end{table}

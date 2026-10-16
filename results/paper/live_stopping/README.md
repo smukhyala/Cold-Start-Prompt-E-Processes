@@ -1,46 +1,48 @@
-# Live-stopping experiment artifacts
+# Live-stopping experiment: final amended result
 
-Final result: **unresolved, operationally incomplete**, 13 complete pairs,
-28 attempted episodes, no statistical crossing. The next pair was not replaced.
+**Futility boundary crossed online at pair 35; 170 planned executions avoided.**
+Baseline successes: 20/35. Challenger successes: 16/35. Efficacy evidence: 1.000;
+futility evidence: 41.266; threshold: 40. Total physical attempts: 71, including
+one original failure and one authorized retry. Known API charges: $4.91471190,
+plus an unresolved original charge bounded by $0.318432.
 
-Read the [full report](../../../docs/paper/LIVE_STOPPING_RESULTS.md) for the
-interpretation, or `paper_ready.md` for manuscript text. Primary files:
+The user authorized one retry after the original 13-pair infrastructure halt.
+The amended trajectory retains that prefix and its saved pair-14 baseline.
+It must not be described as an unchanged wholly preregistered experiment.
+See [the full report](../../../docs/paper/LIVE_STOPPING_RESULTS.md) and
+[the amendment](../../../docs/paper/LIVE_STOPPING_RESUME_AMENDMENT.md).
 
-- `summary.json`: exact frozen-export statistical findings and known resources.
-- `operational_accounting.json`: known-charge interval and hypothetical remaining-work cost.
-- `pairs.csv`, `evidence.csv`, `episodes.csv`: portable tabular results.
-- `pairs.json`, `evidence.json`, `episode_receipts.json`, `episode_intents.json`:
-  complete outcome/evidence/execution metadata.
-- `api_calls.jsonl`: physical request ledger, with one unresolved charge.
-- `registration.json`, `terminal.json`, `state.json`: frozen design and durable decision.
-- `independent_audit.json`, `independent_audit.md`: 26 independent audit checks.
-- `environment_events.json`: sleep/wake times overlapping the final request.
-- `preflight*`, `browser_preflight.json`: 85 passing tests and zero-inference setup checks.
-- `live_stopping_observed_prefix.pdf`: primary publication figure; SVG and PNG also supplied.
-- `live_stopping_evidence.pdf`: original full-budget-axis figure from the frozen exporter.
-- `results_table.tex`, `figure_caption.tex`: LaTeX fragments.
+## Latest combined artifacts
+
+- `summary.json`, `operational_accounting.json`: final statistics and resources.
+- `pairs.{json,csv}`, `evidence.{json,csv}`, `episodes.csv`: all observed pairs and attempts.
+- `episode_receipts.json`, `episode_intents.json`, `api_calls.jsonl`: both execution sessions;
+  request IDs are namespaced by the `session` field. The invalid attempt is retained.
+- `state.json`: effective controller view of 70 valid episode records. Physical attempt
+  counts and all-attempt costs, including the original invalid attempt, are in `summary.json`.
+- `registration.json`: unchanged original design; `amendment.json` records the retry exception.
+- `terminal.json`: actual first-boundary terminal, not a retrospective reconstruction.
+- `live_stopping_continuation.{pdf,svg,png}`: complete real-data figure. The older figure
+  filenames also point to this updated plot; original figures remain in history.
+- `paper_ready.md`, `results_table.tex`, `figure_caption.tex`: manuscript fragments.
+- `execution_timeline.json`: original run, blocked review, and later authorized continuation.
+- `independent_audit.{json,md}`: final independent verification.
+- `continuation/`: self-contained final export, detailed audits, opening balance,
+  launch metadata, sleep-prevention evidence, and 101 passing preflight tests.
 - `sha256.json`: final artifact checksums.
 
-Exact source, model settings, prompt hashes, seed, and realized tasks are in
-`data/prospective_live_stopping/`. The original browser traces are under
-`logs/prospective_live_stopping/`. Dollar projections are not realized savings.
-No data after the operational halt were collected.
+## Preserved history
 
-## Resume review, 2026-10-16
+- `history/2026-10-16_initial_halt/`: original 13-pair result, receipts, figures,
+  report, and its unchanged checksum manifest.
+- `history/2026-10-16_blocked_resume_review/`: report and publication fragments
+  from the subsequent blocked review, before the user authorized an amendment.
+- `resume_review/2026-10-16/`: read-only review showing why the original rule blocked resume.
+- Original `preflight*`, `browser_preflight.json`, and `environment_events.json`
+  at this directory's root document the initial run; current preflight/audits are under `continuation/`.
 
-Continuation was blocked by the registered terminal infrastructure stop. No new
-agent episodes or inference requests were made. The full 13-pair trajectory and
-original summary remain unchanged.
-
-- `resume_review/2026-10-16/resume_audit.json`: exact reanalysis, no-callback
-  controller replay on temporary copies, unchanged log hashes, and spending balance.
-- `resume_review/2026-10-16/README.md`: independent review and the specific blocker.
-- `execution_timeline.json`: original run and later review; no resumed inference session.
-- `history/2026-10-16_initial_halt/`: original artifacts, report, and checksum manifest.
-
-Reproduce the review without inference:
-
-```bash
-.venv/bin/python experiments/growing_bandits/empirical/audit_live_stopping_resume.py \
-  --out /tmp/live-stopping-resume-review
-```
+Raw execution logs are in `logs/prospective_live_stopping/` (unchanged original)
+and `logs/prospective_live_stopping_resume_20261016/` (continued physical attempts).
+The original protocol and `paper/main.tex` were not edited. The projected $11.86985
+cost of unexecuted work is hypothetical, not realized dollar savings. Population-level
+error control requires the conditional recovery assumptions stated in the report.

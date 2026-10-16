@@ -1,14 +1,36 @@
-pair_index,task_id,source_task_id,seed_hex,difficulty,instruction,verify,baseline_success,challenger_success,cost_usd,completed_at
-1,live_001,task_m3,16907f20ad5c78a18cca90759d59838a,medium,Change the email to 'alex.morgan@newcompany.com'.,real-tasks/task_m3.py,1,0,0.19845315000000002,2026-10-16T18:22:18.569758+00:00
-2,live_002,task_m9,16907f20ad5c78a18cca90759d59838a,medium,Disable mobile notifications entirely.,real-tasks/task_m9.py,1,0,0.066258,2026-10-16T18:23:36.951858+00:00
-3,live_003,task_m12,16907f20ad5c78a18cca90759d59838a,medium,Disconnect the GitLab account.,real-tasks/task_m12.py,1,1,0.022529550000000002,2026-10-16T18:24:06.982952+00:00
-4,live_004,task_h8,16907f20ad5c78a18cca90759d59838a,hard,"Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",real-tasks/task_h8.py,0,1,0.09727365,2026-10-16T18:26:05.602491+00:00
-5,live_005,task_h29,16907f20ad5c78a18cca90759d59838a,hard,"Set your username to the local part of your current email address (the part before the @), then disable full name display.",real-tasks/task_h29.py,1,1,0.16061235000000001,2026-10-16T18:28:35.672547+00:00
-6,live_006,task_h80,16907f20ad5c78a18cca90759d59838a,hard,"Perform a security audit: revoke all non-current sessions signed in more than 90 days ago, remove any passkeys not used in the last 7 days, and revoke any API keys not used in the last 7 days.",real-tasks/task_h80.py,0,0,0.10111995,2026-10-16T18:30:10.306109+00:00
-7,live_007,task_h79,16907f20ad5c78a18cca90759d59838a,hard,"Disconnect all connected accounts that have any write-level permission scope, revoke the most recently accessed OAuth application, and switch the interface theme to Light - Contrast.",real-tasks/task_h79.py,0,0,0.19406849999999998,2026-10-16T18:33:13.348533+00:00
-8,live_008,task_m15,16907f20ad5c78a18cca90759d59838a,medium,Stop the auto-assign behavior when copying a git branch name.,real-tasks/task_m15.py,1,1,0.05637675,2026-10-16T18:34:18.885631+00:00
-9,live_009,task_h63,16907f20ad5c78a18cca90759d59838a,hard,"Revoke the API key whose label contains the name of one of your connected account providers, then disconnect that provider's connected account.",real-tasks/task_h63.py,1,1,0.1424187,2026-10-16T18:36:23.652921+00:00
-10,live_010,task_h56,16907f20ad5c78a18cca90759d59838a,hard,"Enable the Slack notification channel and configure it with the exact opposite notification types of the email channel — for each type, if email has it on, set Slack to off, and vice versa.",real-tasks/task_h56.py,0,0,0.31195320000000004,2026-10-16T18:40:31.211642+00:00
-11,live_011,task_h27,16907f20ad5c78a18cca90759d59838a,hard,"Perform a full account lockdown: disable all four notification channels, disconnect all connected accounts, and revoke all authorized applications.",real-tasks/task_h27.py,0,0,0.24851055,2026-10-16T18:45:23.240934+00:00
-12,live_012,task_h8,16907f20ad5c78a18cca90759d59838a,hard,"Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",real-tasks/task_h8.py,1,1,0.0744975,2026-10-16T18:46:52.317202+00:00
-13,live_013,task_e14,16907f20ad5c78a18cca90759d59838a,easy,Revoke the Mobile App Testing API key.,real-tasks/task_e14.py,1,1,0.028829550000000002,2026-10-16T18:47:22.799369+00:00
+pair_index,baseline_success,challenger_success,baseline_episode_id,challenger_episode_id,completed_at,cost_usd
+1,1,0,pair_000001_baseline,pair_000001_challenger,2026-10-16T18:22:18.569758+00:00,0.19845315000000002
+2,1,0,pair_000002_baseline,pair_000002_challenger,2026-10-16T18:23:36.951858+00:00,0.066258
+3,1,1,pair_000003_baseline,pair_000003_challenger,2026-10-16T18:24:06.982952+00:00,0.022529550000000002
+4,0,1,pair_000004_baseline,pair_000004_challenger,2026-10-16T18:26:05.602491+00:00,0.09727365
+5,1,1,pair_000005_baseline,pair_000005_challenger,2026-10-16T18:28:35.672547+00:00,0.16061235000000001
+6,0,0,pair_000006_baseline,pair_000006_challenger,2026-10-16T18:30:10.306109+00:00,0.10111995
+7,0,0,pair_000007_baseline,pair_000007_challenger,2026-10-16T18:33:13.348533+00:00,0.19406849999999998
+8,1,1,pair_000008_baseline,pair_000008_challenger,2026-10-16T18:34:18.885631+00:00,0.05637675
+9,1,1,pair_000009_baseline,pair_000009_challenger,2026-10-16T18:36:23.652921+00:00,0.1424187
+10,0,0,pair_000010_baseline,pair_000010_challenger,2026-10-16T18:40:31.211642+00:00,0.31195320000000004
+11,0,0,pair_000011_baseline,pair_000011_challenger,2026-10-16T18:45:23.240934+00:00,0.24851055
+12,1,1,pair_000012_baseline,pair_000012_challenger,2026-10-16T18:46:52.317202+00:00,0.0744975
+13,1,1,pair_000013_baseline,pair_000013_challenger,2026-10-16T18:47:22.799369+00:00,0.028829550000000002
+14,0,0,pair_000014_baseline,pair_000014_challenger,2026-10-16T23:08:47.624981+00:00,0.07022265
+15,1,1,pair_000015_baseline,pair_000015_challenger,2026-10-16T23:09:17.173574+00:00,0.030462450000000002
+16,0,0,pair_000016_baseline,pair_000016_challenger,2026-10-16T23:12:01.641011+00:00,0.21637935
+17,0,0,pair_000017_baseline,pair_000017_challenger,2026-10-16T23:15:08.913856+00:00,0.2256642
+18,0,0,pair_000018_baseline,pair_000018_challenger,2026-10-16T23:17:31.707368+00:00,0.1908039
+19,1,1,pair_000019_baseline,pair_000019_challenger,2026-10-16T23:18:23.004038+00:00,0.0664737
+20,1,0,pair_000020_baseline,pair_000020_challenger,2026-10-16T23:20:09.388391+00:00,0.11309295
+21,1,1,pair_000021_baseline,pair_000021_challenger,2026-10-16T23:20:53.633106+00:00,0.05240985
+22,0,0,pair_000022_baseline,pair_000022_challenger,2026-10-16T23:23:17.762424+00:00,0.1592625
+23,0,0,pair_000023_baseline,pair_000023_challenger,2026-10-16T23:26:34.991597+00:00,0.2571261
+24,1,1,pair_000024_baseline,pair_000024_challenger,2026-10-16T23:27:12.402574+00:00,0.04740735
+25,1,0,pair_000025_baseline,pair_000025_challenger,2026-10-16T23:30:18.656915+00:00,0.31095075
+26,0,0,pair_000026_baseline,pair_000026_challenger,2026-10-16T23:34:28.817501+00:00,0.3464391
+27,1,0,pair_000027_baseline,pair_000027_challenger,2026-10-16T23:36:51.446299+00:00,0.16320405
+28,0,0,pair_000028_baseline,pair_000028_challenger,2026-10-16T23:39:56.169288+00:00,0.22664430000000002
+29,0,0,pair_000029_baseline,pair_000029_challenger,2026-10-16T23:40:28.978219+00:00,0.0367914
+30,1,1,pair_000030_baseline,pair_000030_challenger,2026-10-16T23:41:18.672436+00:00,0.05724795
+31,1,1,pair_000031_baseline,pair_000031_challenger,2026-10-16T23:42:15.129185+00:00,0.0617637
+32,1,1,pair_000032_baseline,pair_000032_challenger,2026-10-16T23:43:58.214844+00:00,0.1187709
+33,1,1,pair_000033_baseline,pair_000033_challenger,2026-10-16T23:44:47.610320+00:00,0.04879335
+34,1,1,pair_000034_baseline,pair_000034_challenger,2026-10-16T23:46:33.320804+00:00,0.12416459999999999
+35,0,0,pair_000035_baseline,pair_000035_challenger,2026-10-16T23:51:03.178249+00:00,0.26060985

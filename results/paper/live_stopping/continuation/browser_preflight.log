@@ -1,0 +1,10 @@
+INFO     [BrowserSession] Setting viewport to 1512x982 with device scale factor 1.0 whereas original device scale factor was 1.0
+INFO     [BrowserSession] 📢 on_BrowserStopEvent - Calling reset() (force=True, keep_alive=True)
+INFO     [BrowserSession] [SessionManager] Cleared all owned data (targets, sessions, mappings)
+INFO     [BrowserSession] ✅ Browser session reset complete
+INFO     [BrowserSession] ✅ Browser session reset complete
+{
+  "ready": true,
+  "task_count": 120,
+  "llm_calls": 0
+}

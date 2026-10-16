@@ -1,0 +1,14 @@
+{
+  "checked_at_utc": "2026-10-16T23:06:09.787942+00:00",
+  "model_id": "gpt-5.4-mini-2026-03-17",
+  "credential_present": true,
+  "api_generation_requests": 0,
+  "caffeinate_path": "/usr/bin/caffeinate",
+  "power_assertion_created": false,
+  "battery_status": "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=22610019)\t100%; discharging; 7:09 remaining present: true",
+  "port_8601_available": true,
+  "model_access_status": "ok",
+  "returned_model_id": "gpt-5.4-mini-2026-03-17",
+  "completed_at_utc": "2026-10-16T23:06:10.829584+00:00",
+  "readiness_status": "ready"
+}

@@ -1,0 +1,42 @@
+{
+  "source": "pmset -g log, restricted to Sleep/DarkWake/Wake event times within this experiment; unrelated system details omitted",
+  "events": [
+    {
+      "timestamp_local": "2026-10-16T11:48:19-07:00",
+      "timestamp_utc": "2026-10-16T18:48:19+00:00",
+      "event": "Sleep",
+      "reason": "Clamshell Sleep"
+    },
+    {
+      "timestamp_local": "2026-10-16T11:48:33-07:00",
+      "timestamp_utc": "2026-10-16T18:48:33+00:00",
+      "event": "DarkWake",
+      "reason": "Wake from Deep Idle"
+    },
+    {
+      "timestamp_local": "2026-10-16T11:48:43-07:00",
+      "timestamp_utc": "2026-10-16T18:48:43+00:00",
+      "event": "Sleep",
+      "reason": "Maintenance Sleep"
+    },
+    {
+      "timestamp_local": "2026-10-16T11:48:50-07:00",
+      "timestamp_utc": "2026-10-16T18:48:50+00:00",
+      "event": "DarkWake",
+      "reason": "Wake from Deep Idle"
+    },
+    {
+      "timestamp_local": "2026-10-16T11:48:56-07:00",
+      "timestamp_utc": "2026-10-16T18:48:56+00:00",
+      "event": "Sleep",
+      "reason": "Maintenance Sleep"
+    },
+    {
+      "timestamp_local": "2026-10-16T11:49:25-07:00",
+      "timestamp_utc": "2026-10-16T18:49:25+00:00",
+      "event": "Wake",
+      "reason": "Wake from Deep Idle"
+    }
+  ],
+  "interpretation": "Host sleep overlapped the final episode and its unacknowledged API request. This supports a local interruption explanation, but does not establish sole causality or the provider billing outcome."
+}

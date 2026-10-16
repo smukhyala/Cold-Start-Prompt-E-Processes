@@ -1,0 +1,9 @@
+{
+  "config_sha256": "521d628ceef6b4bf2778a79c0df5d1867b30e1a57fc2e31501fcb0ff6c5ecaaa",
+  "tasks_sha256": "9fb033112d4af1cf06825bce7ecf56646bf2d2c16eb51db4b876a33d6784a003",
+  "protocol_commit": "6ffc20fdd8315fdf20286837094f94e9cfe993a3",
+  "registered_utc": "2026-10-16T18:18:04.955556+00:00",
+  "seed_hex": "16907f20ad5c78a18cca90759d59838a",
+  "n_pairs": 120,
+  "source_bank_sha256": "77c541faf9b60cd5881d91757a80f201bb6324d47a18ebea15e4e9b5c14c46d0"
+}

@@ -1,0 +1,722 @@
+[
+  {
+    "id": "task_e1",
+    "difficulty": "easy",
+    "instruction": "Switch the interface to dark mode.",
+    "verify": "real-tasks/task_e1.py"
+  },
+  {
+    "id": "task_e2",
+    "difficulty": "easy",
+    "instruction": "Turn off the emoji conversion for text emoticons.",
+    "verify": "real-tasks/task_e2.py"
+  },
+  {
+    "id": "task_e3",
+    "difficulty": "easy",
+    "instruction": "Disable desktop notifications.",
+    "verify": "real-tasks/task_e3.py"
+  },
+  {
+    "id": "task_e4",
+    "difficulty": "easy",
+    "instruction": "Change the username to 'amorgan'.",
+    "verify": "real-tasks/task_e4.py"
+  },
+  {
+    "id": "task_e5",
+    "difficulty": "easy",
+    "instruction": "Turn on auto-assign when creating issues.",
+    "verify": "real-tasks/task_e5.py"
+  },
+  {
+    "id": "task_e6",
+    "difficulty": "easy",
+    "instruction": "Stop receiving changelog notifications.",
+    "verify": "real-tasks/task_e6.py"
+  },
+  {
+    "id": "task_e7",
+    "difficulty": "easy",
+    "instruction": "Set the default home view to My Issues.",
+    "verify": "real-tasks/task_e7.py"
+  },
+  {
+    "id": "task_e8",
+    "difficulty": "easy",
+    "instruction": "Remove the YubiKey passkey.",
+    "verify": "real-tasks/task_e8.py"
+  },
+  {
+    "id": "task_e9",
+    "difficulty": "easy",
+    "instruction": "Revoke the Zapier integration.",
+    "verify": "real-tasks/task_e9.py"
+  },
+  {
+    "id": "task_e10",
+    "difficulty": "easy",
+    "instruction": "Increase the font size to Large.",
+    "verify": "real-tasks/task_e10.py"
+  },
+  {
+    "id": "task_e11",
+    "difficulty": "easy",
+    "instruction": "Disconnect the Figma account.",
+    "verify": "real-tasks/task_e11.py"
+  },
+  {
+    "id": "task_e12",
+    "difficulty": "easy",
+    "instruction": "Turn off the desktop app notification badge.",
+    "verify": "real-tasks/task_e12.py"
+  },
+  {
+    "id": "task_e13",
+    "difficulty": "easy",
+    "instruction": "Enable Slack notifications.",
+    "verify": "real-tasks/task_e13.py"
+  },
+  {
+    "id": "task_e14",
+    "difficulty": "easy",
+    "instruction": "Revoke the Mobile App Testing API key.",
+    "verify": "real-tasks/task_e14.py"
+  },
+  {
+    "id": "task_e15",
+    "difficulty": "easy",
+    "instruction": "Disable spell check.",
+    "verify": "real-tasks/task_e15.py"
+  },
+  {
+    "id": "task_e16",
+    "difficulty": "easy",
+    "instruction": "Set Sunday as the first day of the week.",
+    "verify": "real-tasks/task_e16.py"
+  },
+  {
+    "id": "task_e17",
+    "difficulty": "easy",
+    "instruction": "Enable the pointer cursor for interactive elements.",
+    "verify": "real-tasks/task_e17.py"
+  },
+  {
+    "id": "task_e18",
+    "difficulty": "easy",
+    "instruction": "Turn off the open in desktop app setting.",
+    "verify": "real-tasks/task_e18.py"
+  },
+  {
+    "id": "task_e19",
+    "difficulty": "easy",
+    "instruction": "Opt in to product update communications.",
+    "verify": "real-tasks/task_e19.py"
+  },
+  {
+    "id": "task_e20",
+    "difficulty": "easy",
+    "instruction": "Stop showing full names and use usernames instead.",
+    "verify": "real-tasks/task_e20.py"
+  },
+  {
+    "id": "task_m1",
+    "difficulty": "medium",
+    "instruction": "Update the account name to 'Jordan Rivera' and change the username to 'jrivera'.",
+    "verify": "real-tasks/task_m1.py"
+  },
+  {
+    "id": "task_m2",
+    "difficulty": "medium",
+    "instruction": "Revoke the session from the Firefox on Windows device.",
+    "verify": "real-tasks/task_m2.py"
+  },
+  {
+    "id": "task_m3",
+    "difficulty": "medium",
+    "instruction": "Change the email to 'alex.morgan@newcompany.com'.",
+    "verify": "real-tasks/task_m3.py"
+  },
+  {
+    "id": "task_m4",
+    "difficulty": "medium",
+    "instruction": "Create a new API key labeled 'Staging Environment'.",
+    "verify": "real-tasks/task_m4.py"
+  },
+  {
+    "id": "task_m5",
+    "difficulty": "medium",
+    "instruction": "Register a new passkey called 'Windows Hello'.",
+    "verify": "real-tasks/task_m5.py"
+  },
+  {
+    "id": "task_m6",
+    "difficulty": "medium",
+    "instruction": "Turn off email notifications for status changes but turn on notifications for comments.",
+    "verify": "real-tasks/task_m6.py"
+  },
+  {
+    "id": "task_m7",
+    "difficulty": "medium",
+    "instruction": "Switch to the high-contrast dark theme and make the font size small.",
+    "verify": "real-tasks/task_m7.py"
+  },
+  {
+    "id": "task_m8",
+    "difficulty": "medium",
+    "instruction": "Leave the Side Project Labs workspace.",
+    "verify": "real-tasks/task_m8.py"
+  },
+  {
+    "id": "task_m9",
+    "difficulty": "medium",
+    "instruction": "Disable mobile notifications entirely.",
+    "verify": "real-tasks/task_m9.py"
+  },
+  {
+    "id": "task_m10",
+    "difficulty": "medium",
+    "instruction": "Show git attachments with the repository name and enable auto-assign when moving to started.",
+    "verify": "real-tasks/task_m10.py"
+  },
+  {
+    "id": "task_m11",
+    "difficulty": "medium",
+    "instruction": "Revoke access for the Notion integration and the Linear Exporter app.",
+    "verify": "real-tasks/task_m11.py"
+  },
+  {
+    "id": "task_m12",
+    "difficulty": "medium",
+    "instruction": "Disconnect the GitLab account.",
+    "verify": "real-tasks/task_m12.py"
+  },
+  {
+    "id": "task_m13",
+    "difficulty": "medium",
+    "instruction": "Enable desktop cycle update notifications.",
+    "verify": "real-tasks/task_m13.py"
+  },
+  {
+    "id": "task_m14",
+    "difficulty": "medium",
+    "instruction": "Turn off the setting that delays low-priority email notifications outside work hours.",
+    "verify": "real-tasks/task_m14.py"
+  },
+  {
+    "id": "task_m15",
+    "difficulty": "medium",
+    "instruction": "Stop the auto-assign behavior when copying a git branch name.",
+    "verify": "real-tasks/task_m15.py"
+  },
+  {
+    "id": "task_m16",
+    "difficulty": "medium",
+    "instruction": "Revoke the Data Export Script and Slack Bot Integration API keys.",
+    "verify": "real-tasks/task_m16.py"
+  },
+  {
+    "id": "task_m17",
+    "difficulty": "medium",
+    "instruction": "Stop sending urgent email notifications immediately.",
+    "verify": "real-tasks/task_m17.py"
+  },
+  {
+    "id": "task_m18",
+    "difficulty": "medium",
+    "instruction": "Remove the iPhone Face ID passkey.",
+    "verify": "real-tasks/task_m18.py"
+  },
+  {
+    "id": "task_m19",
+    "difficulty": "medium",
+    "instruction": "Set the home view to Inbox and make Wednesday the first day of the week.",
+    "verify": "real-tasks/task_m19.py"
+  },
+  {
+    "id": "task_m20",
+    "difficulty": "medium",
+    "instruction": "Revoke the session coming from the Linux machine.",
+    "verify": "real-tasks/task_m20.py"
+  },
+  {
+    "id": "task_h1",
+    "difficulty": "hard",
+    "instruction": "Switch to the high-contrast light theme, set the font to small, enable pointer cursor, and turn off emoticon conversion.",
+    "verify": "real-tasks/task_h1.py"
+  },
+  {
+    "id": "task_h2",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions except the current one.",
+    "verify": "real-tasks/task_h2.py"
+  },
+  {
+    "id": "task_h3",
+    "difficulty": "hard",
+    "instruction": "Disconnect all source code integrations (GitHub and GitLab).",
+    "verify": "real-tasks/task_h3.py"
+  },
+  {
+    "id": "task_h4",
+    "difficulty": "hard",
+    "instruction": "Disable all notification channels (desktop, mobile, email, and Slack).",
+    "verify": "real-tasks/task_h4.py"
+  },
+  {
+    "id": "task_h5",
+    "difficulty": "hard",
+    "instruction": "Revoke all authorized third-party applications.",
+    "verify": "real-tasks/task_h5.py"
+  },
+  {
+    "id": "task_h6",
+    "difficulty": "hard",
+    "instruction": "Change the name to 'Sam Chen', set the username to 'schen', and update the email to 'sam.chen@acmecorp.io'.",
+    "verify": "real-tasks/task_h6.py"
+  },
+  {
+    "id": "task_h7",
+    "difficulty": "hard",
+    "instruction": "Turn off all git-related automations: disable move to started on branch copy, disable auto-assign on branch copy, and switch git attachment format to show the repository name.",
+    "verify": "real-tasks/task_h7.py"
+  },
+  {
+    "id": "task_h8",
+    "difficulty": "hard",
+    "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+    "verify": "real-tasks/task_h8.py"
+  },
+  {
+    "id": "task_h9",
+    "difficulty": "hard",
+    "instruction": "Create a new API key called 'GitHub Actions' and revoke the old CI/CD Pipeline key.",
+    "verify": "real-tasks/task_h9.py"
+  },
+  {
+    "id": "task_h10",
+    "difficulty": "hard",
+    "instruction": "Leave both non-admin workspaces.",
+    "verify": "real-tasks/task_h10.py"
+  },
+  {
+    "id": "task_h11",
+    "difficulty": "hard",
+    "instruction": "Set up the preferences for a minimal workspace: dark theme, small font, home view set to Inbox, turn off full names, disable emoticon conversion, and turn off open in desktop app.",
+    "verify": "real-tasks/task_h11.py"
+  },
+  {
+    "id": "task_h12",
+    "difficulty": "hard",
+    "instruction": "Remove all passkeys from the account.",
+    "verify": "real-tasks/task_h12.py"
+  },
+  {
+    "id": "task_h13",
+    "difficulty": "hard",
+    "instruction": "Revoke the sessions from all mobile devices.",
+    "verify": "real-tasks/task_h13.py"
+  },
+  {
+    "id": "task_h14",
+    "difficulty": "hard",
+    "instruction": "Turn on auto-assign for both issue creation and moving to started, and switch the home view to Current cycle.",
+    "verify": "real-tasks/task_h14.py"
+  },
+  {
+    "id": "task_h15",
+    "difficulty": "hard",
+    "instruction": "Disconnect the Slack and Google connected accounts, then disable Slack notifications.",
+    "verify": "real-tasks/task_h15.py"
+  },
+  {
+    "id": "task_h16",
+    "difficulty": "hard",
+    "instruction": "Revoke all API keys that have an expiration date.",
+    "verify": "real-tasks/task_h16.py"
+  },
+  {
+    "id": "task_h17",
+    "difficulty": "hard",
+    "instruction": "Enable all notification types for desktop notifications, including cycle updates.",
+    "verify": "real-tasks/task_h17.py"
+  },
+  {
+    "id": "task_h18",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth apps that have write permissions.",
+    "verify": "real-tasks/task_h18.py"
+  },
+  {
+    "id": "task_h19",
+    "difficulty": "hard",
+    "instruction": "Turn off all desktop application settings: open in desktop app, notification badge, and spell check.",
+    "verify": "real-tasks/task_h19.py"
+  },
+  {
+    "id": "task_h20",
+    "difficulty": "hard",
+    "instruction": "Revoke the sessions from New York and Seattle, then register a new passkey called 'Security Key Backup'.",
+    "verify": "real-tasks/task_h20.py"
+  },
+  {
+    "id": "task_h21",
+    "difficulty": "hard",
+    "instruction": "Update your email address to match your Google connected account's email, then disconnect the Google account.",
+    "verify": "real-tasks/task_h21.py"
+  },
+  {
+    "id": "task_h22",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions from locations outside of California, then create a new API key called 'West Coast Only'.",
+    "verify": "real-tasks/task_h22.py"
+  },
+  {
+    "id": "task_h23",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key that was last used the longest ago, and revoke the OAuth app that was authorized the earliest.",
+    "verify": "real-tasks/task_h23.py"
+  },
+  {
+    "id": "task_h24",
+    "difficulty": "hard",
+    "instruction": "For every notification channel that is currently enabled, turn on cycle update notifications. Do not modify any disabled channels.",
+    "verify": "real-tasks/task_h24.py"
+  },
+  {
+    "id": "task_h25",
+    "difficulty": "hard",
+    "instruction": "Disconnect all connected accounts that are not source code management providers, and unsubscribe from all communication notifications.",
+    "verify": "real-tasks/task_h25.py"
+  },
+  {
+    "id": "task_h26",
+    "difficulty": "hard",
+    "instruction": "Revoke the OAuth application that has the most permissions, and remove the passkey that was registered most recently.",
+    "verify": "real-tasks/task_h26.py"
+  },
+  {
+    "id": "task_h27",
+    "difficulty": "hard",
+    "instruction": "Perform a full account lockdown: disable all four notification channels, disconnect all connected accounts, and revoke all authorized applications.",
+    "verify": "real-tasks/task_h27.py"
+  },
+  {
+    "id": "task_h28",
+    "difficulty": "hard",
+    "instruction": "Invert all email notification type settings — enable every type that is currently off, and disable every type that is currently on.",
+    "verify": "real-tasks/task_h28.py"
+  },
+  {
+    "id": "task_h29",
+    "difficulty": "hard",
+    "instruction": "Set your username to the local part of your current email address (the part before the @), then disable full name display.",
+    "verify": "real-tasks/task_h29.py"
+  },
+  {
+    "id": "task_h30",
+    "difficulty": "hard",
+    "instruction": "Revoke all non-current desktop-type sessions, then disable the desktop notification channel, and turn off all three desktop application settings in preferences.",
+    "verify": "real-tasks/task_h30.py"
+  },
+  {
+    "id": "task_h31",
+    "difficulty": "hard",
+    "instruction": "Revoke the two non-current sessions at the extremes: the one signed in the longest ago and the one signed in most recently.",
+    "verify": "real-tasks/task_h31.py"
+  },
+  {
+    "id": "task_h32",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth applications that have permission to read team information, then leave the workspace with the fewest members.",
+    "verify": "real-tasks/task_h32.py"
+  },
+  {
+    "id": "task_h33",
+    "difficulty": "hard",
+    "instruction": "Create a new API key with a label matching your role at the Acme Corp workspace, then enable both auto-assign settings.",
+    "verify": "real-tasks/task_h33.py"
+  },
+  {
+    "id": "task_h34",
+    "difficulty": "hard",
+    "instruction": "Enable the Slack notification channel and turn on all six notification types for it, then disable the email notification channel.",
+    "verify": "real-tasks/task_h34.py"
+  },
+  {
+    "id": "task_h35",
+    "difficulty": "hard",
+    "instruction": "Disconnect the connected account that uses a different email domain than your Linear account, then set the default home view to Favorited Views.",
+    "verify": "real-tasks/task_h35.py"
+  },
+  {
+    "id": "task_h36",
+    "difficulty": "hard",
+    "instruction": "Revoke all API keys except the one that was used most recently, then revoke all OAuth apps that have only read permissions.",
+    "verify": "real-tasks/task_h36.py"
+  },
+  {
+    "id": "task_h37",
+    "difficulty": "hard",
+    "instruction": "Configure all four notification channels to only send notifications for mentions — enable any disabled channels first, then ensure only the mentions type is on for each.",
+    "verify": "real-tasks/task_h37.py"
+  },
+  {
+    "id": "task_h38",
+    "difficulty": "hard",
+    "instruction": "Remove the passkey that was used least recently, disconnect the source code provider that was connected most recently, and revoke the session from the device running Windows 10.",
+    "verify": "real-tasks/task_h38.py"
+  },
+  {
+    "id": "task_h39",
+    "difficulty": "hard",
+    "instruction": "Set up maximum notifications: enable all four channels, turn on every notification type for each channel, and subscribe to all three communication notifications.",
+    "verify": "real-tasks/task_h39.py"
+  },
+  {
+    "id": "task_h40",
+    "difficulty": "hard",
+    "instruction": "Revoke the two OAuth applications that were authorized most recently, then register a new passkey named after the workspace where you are an admin.",
+    "verify": "real-tasks/task_h40.py"
+  },
+  {
+    "id": "task_h41",
+    "difficulty": "hard",
+    "instruction": "Set your username to the URL key of the workspace you joined most recently, then leave that workspace.",
+    "verify": "real-tasks/task_h41.py"
+  },
+  {
+    "id": "task_h42",
+    "difficulty": "hard",
+    "instruction": "Create a new API key named after the authorized application that has the most permissions, then revoke that application.",
+    "verify": "real-tasks/task_h42.py"
+  },
+  {
+    "id": "task_h43",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions from devices not running an Apple operating system, then remove the cross-platform passkey.",
+    "verify": "real-tasks/task_h43.py"
+  },
+  {
+    "id": "task_h44",
+    "difficulty": "hard",
+    "instruction": "For each currently enabled notification channel, turn off all notification types but keep the channel itself enabled. Do not touch disabled channels.",
+    "verify": "real-tasks/task_h44.py"
+  },
+  {
+    "id": "task_h45",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions from Texas and New York, then create a new passkey named after the city of your current session.",
+    "verify": "real-tasks/task_h45.py"
+  },
+  {
+    "id": "task_h46",
+    "difficulty": "hard",
+    "instruction": "Register a new passkey named after the provider of the connected account you have been linked to the longest, then remove the passkey that was last used the earliest.",
+    "verify": "real-tasks/task_h46.py"
+  },
+  {
+    "id": "task_h47",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions that were signed in before 2026, disable mobile notifications, and register a new passkey called 'Post-Cleanup Key'.",
+    "verify": "real-tasks/task_h47.py"
+  },
+  {
+    "id": "task_h48",
+    "difficulty": "hard",
+    "instruction": "Disconnect the connected account with the fewest permission scopes, revoke the authorized app that was last accessed the longest ago, and create a new API key labeled with the name of the provider you disconnected.",
+    "verify": "real-tasks/task_h48.py"
+  },
+  {
+    "id": "task_h49",
+    "difficulty": "hard",
+    "instruction": "Invert the notification type settings for both the mobile and desktop channels — enable every type that is currently off and disable every type that is currently on.",
+    "verify": "real-tasks/task_h49.py"
+  },
+  {
+    "id": "task_h50",
+    "difficulty": "hard",
+    "instruction": "Revoke all API keys that were created before 2026, then create two new API keys: one called 'Primary' and one called 'Backup'.",
+    "verify": "real-tasks/task_h50.py"
+  },
+  {
+    "id": "task_h51",
+    "difficulty": "hard",
+    "instruction": "Configure the email notification types to exactly match what the desktop channel currently has — for each notification type, set the email channel's value to whatever the desktop channel has.",
+    "verify": "real-tasks/task_h51.py"
+  },
+  {
+    "id": "task_h52",
+    "difficulty": "hard",
+    "instruction": "Revoke the non-current session that was signed in most recently, and revoke the most recently created API key.",
+    "verify": "real-tasks/task_h52.py"
+  },
+  {
+    "id": "task_h53",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth applications that have fewer permissions than the number of connected accounts you have, then disconnect all connected accounts that share your Linear account's email domain.",
+    "verify": "real-tasks/task_h53.py"
+  },
+  {
+    "id": "task_h54",
+    "difficulty": "hard",
+    "instruction": "Revoke all API keys that have no expiration date, create a new key called 'Replacement', and enable both auto-assign settings.",
+    "verify": "real-tasks/task_h54.py"
+  },
+  {
+    "id": "task_h55",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions that are not from the same city as your current session.",
+    "verify": "real-tasks/task_h55.py"
+  },
+  {
+    "id": "task_h56",
+    "difficulty": "hard",
+    "instruction": "Enable the Slack notification channel and configure it with the exact opposite notification types of the email channel — for each type, if email has it on, set Slack to off, and vice versa.",
+    "verify": "real-tasks/task_h56.py"
+  },
+  {
+    "id": "task_h57",
+    "difficulty": "hard",
+    "instruction": "Update your full name to include your Acme Corp workspace role in parentheses (e.g., 'Alex Morgan (Admin)'), then set the home view to All issues and disable the display full names setting.",
+    "verify": "real-tasks/task_h57.py"
+  },
+  {
+    "id": "task_h58",
+    "difficulty": "hard",
+    "instruction": "Remove the passkey that was created the earliest, revoke the OAuth application that was authorized the earliest, and disconnect the connected account that was connected most recently.",
+    "verify": "real-tasks/task_h58.py"
+  },
+  {
+    "id": "task_h59",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions from tablet devices, disconnect all connected accounts that have more than two permission scopes, and turn off all three communication notification subscriptions.",
+    "verify": "real-tasks/task_h59.py"
+  },
+  {
+    "id": "task_h60",
+    "difficulty": "hard",
+    "instruction": "Invert every notification channel's enabled state — enable the ones that are currently disabled and disable the ones that are currently enabled. Do not change any notification types.",
+    "verify": "real-tasks/task_h60.py"
+  },
+  {
+    "id": "task_h61",
+    "difficulty": "hard",
+    "instruction": "Set your username to the URL key of the workspace with the most members, and change the first day of the week to the day your current session was signed in.",
+    "verify": "real-tasks/task_h61.py"
+  },
+  {
+    "id": "task_h62",
+    "difficulty": "hard",
+    "instruction": "Revoke every OAuth application whose number of permissions exactly equals the number of connected accounts that share your Linear account's email domain.",
+    "verify": "real-tasks/task_h62.py"
+  },
+  {
+    "id": "task_h63",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key whose label contains the name of one of your connected account providers, then disconnect that provider's connected account.",
+    "verify": "real-tasks/task_h63.py"
+  },
+  {
+    "id": "task_h64",
+    "difficulty": "hard",
+    "instruction": "Revoke the non-current session running the browser with the lowest version number, then create an API key labeled with that session's city name.",
+    "verify": "real-tasks/task_h64.py"
+  },
+  {
+    "id": "task_h65",
+    "difficulty": "hard",
+    "instruction": "Revoke all read-only authorized applications (those without any write permissions), and create a new API key for each one you revoked, using the application's name as the label.",
+    "verify": "real-tasks/task_h65.py"
+  },
+  {
+    "id": "task_h66",
+    "difficulty": "hard",
+    "instruction": "For each notification channel: if it is currently enabled, disable it and turn on all six notification types; if it is currently disabled, enable it and turn off all six notification types.",
+    "verify": "real-tasks/task_h66.py"
+  },
+  {
+    "id": "task_h67",
+    "difficulty": "hard",
+    "instruction": "Disconnect the connected account that was linked on the same calendar date as your Linear account was created, then set the default home view to the option that comes last alphabetically.",
+    "verify": "real-tasks/task_h67.py"
+  },
+  {
+    "id": "task_h68",
+    "difficulty": "hard",
+    "instruction": "Count how many passkeys you have. Revoke that many of the most recently authorized OAuth applications.",
+    "verify": "real-tasks/task_h68.py"
+  },
+  {
+    "id": "task_h69",
+    "difficulty": "hard",
+    "instruction": "Revoke all non-current sessions that were signed in on a weekday, then register a passkey named after the day of the week your Linear account was created on.",
+    "verify": "real-tasks/task_h69.py"
+  },
+  {
+    "id": "task_h70",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth applications that were authorized in an odd-numbered month, then disconnect all connected accounts that were linked in an even-numbered month.",
+    "verify": "real-tasks/task_h70.py"
+  },
+  {
+    "id": "task_h71",
+    "difficulty": "hard",
+    "instruction": "Among the enabled notification channels, set the one with the most notification types currently turned on to mentions-only, and set the one with the fewest types turned on to all-on. Leave other channels unchanged.",
+    "verify": "real-tasks/task_h71.py"
+  },
+  {
+    "id": "task_h72",
+    "difficulty": "hard",
+    "instruction": "Create an API key whose label is your role at the Acme Corp workspace followed by a dash and the total number of authorized OAuth applications (e.g., 'Role-N'), then revoke all OAuth applications that have both read and write permissions on issues.",
+    "verify": "real-tasks/task_h72.py"
+  },
+  {
+    "id": "task_h73",
+    "difficulty": "hard",
+    "instruction": "Disconnect all connected accounts whose account name is an email address, then revoke the authorized application whose name contains a period.",
+    "verify": "real-tasks/task_h73.py"
+  },
+  {
+    "id": "task_h74",
+    "difficulty": "hard",
+    "instruction": "Change your display name to your current username with only the first letter capitalized, then set the home view to Current cycle and enable both auto-assign settings.",
+    "verify": "real-tasks/task_h74.py"
+  },
+  {
+    "id": "task_h75",
+    "difficulty": "hard",
+    "instruction": "Revoke all API keys that were created in the same year as any of your passkeys were registered, then remove the most recently registered passkey.",
+    "verify": "real-tasks/task_h75.py"
+  },
+  {
+    "id": "task_h76",
+    "difficulty": "hard",
+    "instruction": "Enable all four notification channels, then turn off all notification types for the desktop and email channels, and turn on all notification types for the mobile and Slack channels.",
+    "verify": "real-tasks/task_h76.py"
+  },
+  {
+    "id": "task_h77",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key that was created the earliest, then register a new passkey using that key's label as the passkey name.",
+    "verify": "real-tasks/task_h77.py"
+  },
+  {
+    "id": "task_h78",
+    "difficulty": "hard",
+    "instruction": "For each enabled notification channel: if it currently has more than 3 notification types turned on, set it to only comments and mentions; if it has 3 or fewer, turn on all six types. Do not modify disabled channels.",
+    "verify": "real-tasks/task_h78.py"
+  },
+  {
+    "id": "task_h79",
+    "difficulty": "hard",
+    "instruction": "Disconnect all connected accounts that have any write-level permission scope, revoke the most recently accessed OAuth application, and switch the interface theme to Light - Contrast.",
+    "verify": "real-tasks/task_h79.py"
+  },
+  {
+    "id": "task_h80",
+    "difficulty": "hard",
+    "instruction": "Perform a security audit: revoke all non-current sessions signed in more than 90 days ago, remove any passkeys not used in the last 7 days, and revoke any API keys not used in the last 7 days.",
+    "verify": "real-tasks/task_h80.py"
+  }
+]

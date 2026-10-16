@@ -1,0 +1,1202 @@
+[
+  {
+    "id": "live_001",
+    "difficulty": "medium",
+    "instruction": "Change the email to 'alex.morgan@newcompany.com'.",
+    "verify": "real-tasks/task_m3.py",
+    "source_task_id": "task_m3",
+    "task_id": "live_001",
+    "draw_index": 1,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_002",
+    "difficulty": "medium",
+    "instruction": "Disable mobile notifications entirely.",
+    "verify": "real-tasks/task_m9.py",
+    "source_task_id": "task_m9",
+    "task_id": "live_002",
+    "draw_index": 2,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_003",
+    "difficulty": "medium",
+    "instruction": "Disconnect the GitLab account.",
+    "verify": "real-tasks/task_m12.py",
+    "source_task_id": "task_m12",
+    "task_id": "live_003",
+    "draw_index": 3,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_004",
+    "difficulty": "hard",
+    "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+    "verify": "real-tasks/task_h8.py",
+    "source_task_id": "task_h8",
+    "task_id": "live_004",
+    "draw_index": 4,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_005",
+    "difficulty": "hard",
+    "instruction": "Set your username to the local part of your current email address (the part before the @), then disable full name display.",
+    "verify": "real-tasks/task_h29.py",
+    "source_task_id": "task_h29",
+    "task_id": "live_005",
+    "draw_index": 5,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_006",
+    "difficulty": "hard",
+    "instruction": "Perform a security audit: revoke all non-current sessions signed in more than 90 days ago, remove any passkeys not used in the last 7 days, and revoke any API keys not used in the last 7 days.",
+    "verify": "real-tasks/task_h80.py",
+    "source_task_id": "task_h80",
+    "task_id": "live_006",
+    "draw_index": 6,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_007",
+    "difficulty": "hard",
+    "instruction": "Disconnect all connected accounts that have any write-level permission scope, revoke the most recently accessed OAuth application, and switch the interface theme to Light - Contrast.",
+    "verify": "real-tasks/task_h79.py",
+    "source_task_id": "task_h79",
+    "task_id": "live_007",
+    "draw_index": 7,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_008",
+    "difficulty": "medium",
+    "instruction": "Stop the auto-assign behavior when copying a git branch name.",
+    "verify": "real-tasks/task_m15.py",
+    "source_task_id": "task_m15",
+    "task_id": "live_008",
+    "draw_index": 8,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_009",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key whose label contains the name of one of your connected account providers, then disconnect that provider's connected account.",
+    "verify": "real-tasks/task_h63.py",
+    "source_task_id": "task_h63",
+    "task_id": "live_009",
+    "draw_index": 9,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_010",
+    "difficulty": "hard",
+    "instruction": "Enable the Slack notification channel and configure it with the exact opposite notification types of the email channel \u2014 for each type, if email has it on, set Slack to off, and vice versa.",
+    "verify": "real-tasks/task_h56.py",
+    "source_task_id": "task_h56",
+    "task_id": "live_010",
+    "draw_index": 10,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_011",
+    "difficulty": "hard",
+    "instruction": "Perform a full account lockdown: disable all four notification channels, disconnect all connected accounts, and revoke all authorized applications.",
+    "verify": "real-tasks/task_h27.py",
+    "source_task_id": "task_h27",
+    "task_id": "live_011",
+    "draw_index": 11,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_012",
+    "difficulty": "hard",
+    "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+    "verify": "real-tasks/task_h8.py",
+    "source_task_id": "task_h8",
+    "task_id": "live_012",
+    "draw_index": 12,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_013",
+    "difficulty": "easy",
+    "instruction": "Revoke the Mobile App Testing API key.",
+    "verify": "real-tasks/task_e14.py",
+    "source_task_id": "task_e14",
+    "task_id": "live_013",
+    "draw_index": 13,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_014",
+    "difficulty": "hard",
+    "instruction": "Revoke the two OAuth applications that were authorized most recently, then register a new passkey named after the workspace where you are an admin.",
+    "verify": "real-tasks/task_h40.py",
+    "source_task_id": "task_h40",
+    "task_id": "live_014",
+    "draw_index": 14,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_015",
+    "difficulty": "medium",
+    "instruction": "Register a new passkey called 'Windows Hello'.",
+    "verify": "real-tasks/task_m5.py",
+    "source_task_id": "task_m5",
+    "task_id": "live_015",
+    "draw_index": 15,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_016",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth applications that have fewer permissions than the number of connected accounts you have, then disconnect all connected accounts that share your Linear account's email domain.",
+    "verify": "real-tasks/task_h53.py",
+    "source_task_id": "task_h53",
+    "task_id": "live_016",
+    "draw_index": 16,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_017",
+    "difficulty": "hard",
+    "instruction": "For each currently enabled notification channel, turn off all notification types but keep the channel itself enabled. Do not touch disabled channels.",
+    "verify": "real-tasks/task_h44.py",
+    "source_task_id": "task_h44",
+    "task_id": "live_017",
+    "draw_index": 17,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_018",
+    "difficulty": "hard",
+    "instruction": "Set your username to the URL key of the workspace you joined most recently, then leave that workspace.",
+    "verify": "real-tasks/task_h41.py",
+    "source_task_id": "task_h41",
+    "task_id": "live_018",
+    "draw_index": 18,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_019",
+    "difficulty": "hard",
+    "instruction": "Create a new API key named after the authorized application that has the most permissions, then revoke that application.",
+    "verify": "real-tasks/task_h42.py",
+    "source_task_id": "task_h42",
+    "task_id": "live_019",
+    "draw_index": 19,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_020",
+    "difficulty": "hard",
+    "instruction": "Turn off all git-related automations: disable move to started on branch copy, disable auto-assign on branch copy, and switch git attachment format to show the repository name.",
+    "verify": "real-tasks/task_h7.py",
+    "source_task_id": "task_h7",
+    "task_id": "live_020",
+    "draw_index": 20,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_021",
+    "difficulty": "easy",
+    "instruction": "Revoke the Zapier integration.",
+    "verify": "real-tasks/task_e9.py",
+    "source_task_id": "task_e9",
+    "task_id": "live_021",
+    "draw_index": 21,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_022",
+    "difficulty": "easy",
+    "instruction": "Turn off the desktop app notification badge.",
+    "verify": "real-tasks/task_e12.py",
+    "source_task_id": "task_e12",
+    "task_id": "live_022",
+    "draw_index": 22,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_023",
+    "difficulty": "hard",
+    "instruction": "Enable all four notification channels, then turn off all notification types for the desktop and email channels, and turn on all notification types for the mobile and Slack channels.",
+    "verify": "real-tasks/task_h76.py",
+    "source_task_id": "task_h76",
+    "task_id": "live_023",
+    "draw_index": 23,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_024",
+    "difficulty": "hard",
+    "instruction": "Revoke the OAuth application that has the most permissions, and remove the passkey that was registered most recently.",
+    "verify": "real-tasks/task_h26.py",
+    "source_task_id": "task_h26",
+    "task_id": "live_024",
+    "draw_index": 24,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_025",
+    "difficulty": "hard",
+    "instruction": "Create a new API key with a label matching your role at the Acme Corp workspace, then enable both auto-assign settings.",
+    "verify": "real-tasks/task_h33.py",
+    "source_task_id": "task_h33",
+    "task_id": "live_025",
+    "draw_index": 25,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_026",
+    "difficulty": "hard",
+    "instruction": "Enable all four notification channels, then turn off all notification types for the desktop and email channels, and turn on all notification types for the mobile and Slack channels.",
+    "verify": "real-tasks/task_h76.py",
+    "source_task_id": "task_h76",
+    "task_id": "live_026",
+    "draw_index": 26,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_027",
+    "difficulty": "hard",
+    "instruction": "Disconnect all connected accounts that are not source code management providers, and unsubscribe from all communication notifications.",
+    "verify": "real-tasks/task_h25.py",
+    "source_task_id": "task_h25",
+    "task_id": "live_027",
+    "draw_index": 27,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_028",
+    "difficulty": "hard",
+    "instruction": "Revoke all non-current desktop-type sessions, then disable the desktop notification channel, and turn off all three desktop application settings in preferences.",
+    "verify": "real-tasks/task_h30.py",
+    "source_task_id": "task_h30",
+    "task_id": "live_028",
+    "draw_index": 28,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_029",
+    "difficulty": "hard",
+    "instruction": "Revoke every OAuth application whose number of permissions exactly equals the number of connected accounts that share your Linear account's email domain.",
+    "verify": "real-tasks/task_h62.py",
+    "source_task_id": "task_h62",
+    "task_id": "live_029",
+    "draw_index": 29,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_030",
+    "difficulty": "easy",
+    "instruction": "Turn on auto-assign when creating issues.",
+    "verify": "real-tasks/task_e5.py",
+    "source_task_id": "task_e5",
+    "task_id": "live_030",
+    "draw_index": 30,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_031",
+    "difficulty": "easy",
+    "instruction": "Opt in to product update communications.",
+    "verify": "real-tasks/task_e19.py",
+    "source_task_id": "task_e19",
+    "task_id": "live_031",
+    "draw_index": 31,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_032",
+    "difficulty": "hard",
+    "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+    "verify": "real-tasks/task_h8.py",
+    "source_task_id": "task_h8",
+    "task_id": "live_032",
+    "draw_index": 32,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_033",
+    "difficulty": "medium",
+    "instruction": "Switch to the high-contrast dark theme and make the font size small.",
+    "verify": "real-tasks/task_m7.py",
+    "source_task_id": "task_m7",
+    "task_id": "live_033",
+    "draw_index": 33,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_034",
+    "difficulty": "hard",
+    "instruction": "Turn off all desktop application settings: open in desktop app, notification badge, and spell check.",
+    "verify": "real-tasks/task_h19.py",
+    "source_task_id": "task_h19",
+    "task_id": "live_034",
+    "draw_index": 34,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_035",
+    "difficulty": "hard",
+    "instruction": "Invert the notification type settings for both the mobile and desktop channels \u2014 enable every type that is currently off and disable every type that is currently on.",
+    "verify": "real-tasks/task_h49.py",
+    "source_task_id": "task_h49",
+    "task_id": "live_035",
+    "draw_index": 35,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_036",
+    "difficulty": "hard",
+    "instruction": "For every notification channel that is currently enabled, turn on cycle update notifications. Do not modify any disabled channels.",
+    "verify": "real-tasks/task_h24.py",
+    "source_task_id": "task_h24",
+    "task_id": "live_036",
+    "draw_index": 36,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_037",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions that were signed in before 2026, disable mobile notifications, and register a new passkey called 'Post-Cleanup Key'.",
+    "verify": "real-tasks/task_h47.py",
+    "source_task_id": "task_h47",
+    "task_id": "live_037",
+    "draw_index": 37,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_038",
+    "difficulty": "medium",
+    "instruction": "Revoke the session coming from the Linux machine.",
+    "verify": "real-tasks/task_m20.py",
+    "source_task_id": "task_m20",
+    "task_id": "live_038",
+    "draw_index": 38,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_039",
+    "difficulty": "easy",
+    "instruction": "Enable Slack notifications.",
+    "verify": "real-tasks/task_e13.py",
+    "source_task_id": "task_e13",
+    "task_id": "live_039",
+    "draw_index": 39,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_040",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions from Texas and New York, then create a new passkey named after the city of your current session.",
+    "verify": "real-tasks/task_h45.py",
+    "source_task_id": "task_h45",
+    "task_id": "live_040",
+    "draw_index": 40,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_041",
+    "difficulty": "hard",
+    "instruction": "Disconnect all source code integrations (GitHub and GitLab).",
+    "verify": "real-tasks/task_h3.py",
+    "source_task_id": "task_h3",
+    "task_id": "live_041",
+    "draw_index": 41,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_042",
+    "difficulty": "hard",
+    "instruction": "Change the name to 'Sam Chen', set the username to 'schen', and update the email to 'sam.chen@acmecorp.io'.",
+    "verify": "real-tasks/task_h6.py",
+    "source_task_id": "task_h6",
+    "task_id": "live_042",
+    "draw_index": 42,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_043",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions from Texas and New York, then create a new passkey named after the city of your current session.",
+    "verify": "real-tasks/task_h45.py",
+    "source_task_id": "task_h45",
+    "task_id": "live_043",
+    "draw_index": 43,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_044",
+    "difficulty": "hard",
+    "instruction": "Turn on auto-assign for both issue creation and moving to started, and switch the home view to Current cycle.",
+    "verify": "real-tasks/task_h14.py",
+    "source_task_id": "task_h14",
+    "task_id": "live_044",
+    "draw_index": 44,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_045",
+    "difficulty": "hard",
+    "instruction": "Turn off all git-related automations: disable move to started on branch copy, disable auto-assign on branch copy, and switch git attachment format to show the repository name.",
+    "verify": "real-tasks/task_h7.py",
+    "source_task_id": "task_h7",
+    "task_id": "live_045",
+    "draw_index": 45,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_046",
+    "difficulty": "hard",
+    "instruction": "Revoke all non-current sessions that were signed in on a weekday, then register a passkey named after the day of the week your Linear account was created on.",
+    "verify": "real-tasks/task_h69.py",
+    "source_task_id": "task_h69",
+    "task_id": "live_046",
+    "draw_index": 46,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_047",
+    "difficulty": "easy",
+    "instruction": "Set the default home view to My Issues.",
+    "verify": "real-tasks/task_e7.py",
+    "source_task_id": "task_e7",
+    "task_id": "live_047",
+    "draw_index": 47,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_048",
+    "difficulty": "medium",
+    "instruction": "Remove the iPhone Face ID passkey.",
+    "verify": "real-tasks/task_m18.py",
+    "source_task_id": "task_m18",
+    "task_id": "live_048",
+    "draw_index": 48,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_049",
+    "difficulty": "hard",
+    "instruction": "Disconnect the Slack and Google connected accounts, then disable Slack notifications.",
+    "verify": "real-tasks/task_h15.py",
+    "source_task_id": "task_h15",
+    "task_id": "live_049",
+    "draw_index": 49,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_050",
+    "difficulty": "hard",
+    "instruction": "Revoke the sessions from all mobile devices.",
+    "verify": "real-tasks/task_h13.py",
+    "source_task_id": "task_h13",
+    "task_id": "live_050",
+    "draw_index": 50,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_051",
+    "difficulty": "hard",
+    "instruction": "Enable all notification types for desktop notifications, including cycle updates.",
+    "verify": "real-tasks/task_h17.py",
+    "source_task_id": "task_h17",
+    "task_id": "live_051",
+    "draw_index": 51,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_052",
+    "difficulty": "medium",
+    "instruction": "Remove the iPhone Face ID passkey.",
+    "verify": "real-tasks/task_m18.py",
+    "source_task_id": "task_m18",
+    "task_id": "live_052",
+    "draw_index": 52,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_053",
+    "difficulty": "hard",
+    "instruction": "Disconnect the connected account that was linked on the same calendar date as your Linear account was created, then set the default home view to the option that comes last alphabetically.",
+    "verify": "real-tasks/task_h67.py",
+    "source_task_id": "task_h67",
+    "task_id": "live_053",
+    "draw_index": 53,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_054",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key that was created the earliest, then register a new passkey using that key's label as the passkey name.",
+    "verify": "real-tasks/task_h77.py",
+    "source_task_id": "task_h77",
+    "task_id": "live_054",
+    "draw_index": 54,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_055",
+    "difficulty": "hard",
+    "instruction": "For each currently enabled notification channel, turn off all notification types but keep the channel itself enabled. Do not touch disabled channels.",
+    "verify": "real-tasks/task_h44.py",
+    "source_task_id": "task_h44",
+    "task_id": "live_055",
+    "draw_index": 55,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_056",
+    "difficulty": "medium",
+    "instruction": "Show git attachments with the repository name and enable auto-assign when moving to started.",
+    "verify": "real-tasks/task_m10.py",
+    "source_task_id": "task_m10",
+    "task_id": "live_056",
+    "draw_index": 56,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_057",
+    "difficulty": "hard",
+    "instruction": "Among the enabled notification channels, set the one with the most notification types currently turned on to mentions-only, and set the one with the fewest types turned on to all-on. Leave other channels unchanged.",
+    "verify": "real-tasks/task_h71.py",
+    "source_task_id": "task_h71",
+    "task_id": "live_057",
+    "draw_index": 57,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_058",
+    "difficulty": "hard",
+    "instruction": "Enable all four notification channels, then turn off all notification types for the desktop and email channels, and turn on all notification types for the mobile and Slack channels.",
+    "verify": "real-tasks/task_h76.py",
+    "source_task_id": "task_h76",
+    "task_id": "live_058",
+    "draw_index": 58,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_059",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key that was last used the longest ago, and revoke the OAuth app that was authorized the earliest.",
+    "verify": "real-tasks/task_h23.py",
+    "source_task_id": "task_h23",
+    "task_id": "live_059",
+    "draw_index": 59,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_060",
+    "difficulty": "hard",
+    "instruction": "Enable the Slack notification channel and turn on all six notification types for it, then disable the email notification channel.",
+    "verify": "real-tasks/task_h34.py",
+    "source_task_id": "task_h34",
+    "task_id": "live_060",
+    "draw_index": 60,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_061",
+    "difficulty": "medium",
+    "instruction": "Stop sending urgent email notifications immediately.",
+    "verify": "real-tasks/task_m17.py",
+    "source_task_id": "task_m17",
+    "task_id": "live_061",
+    "draw_index": 61,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_062",
+    "difficulty": "medium",
+    "instruction": "Remove the iPhone Face ID passkey.",
+    "verify": "real-tasks/task_m18.py",
+    "source_task_id": "task_m18",
+    "task_id": "live_062",
+    "draw_index": 62,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_063",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth applications that have fewer permissions than the number of connected accounts you have, then disconnect all connected accounts that share your Linear account's email domain.",
+    "verify": "real-tasks/task_h53.py",
+    "source_task_id": "task_h53",
+    "task_id": "live_063",
+    "draw_index": 63,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_064",
+    "difficulty": "easy",
+    "instruction": "Turn off the desktop app notification badge.",
+    "verify": "real-tasks/task_e12.py",
+    "source_task_id": "task_e12",
+    "task_id": "live_064",
+    "draw_index": 64,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_065",
+    "difficulty": "hard",
+    "instruction": "Revoke all API keys that were created in the same year as any of your passkeys were registered, then remove the most recently registered passkey.",
+    "verify": "real-tasks/task_h75.py",
+    "source_task_id": "task_h75",
+    "task_id": "live_065",
+    "draw_index": 65,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_066",
+    "difficulty": "medium",
+    "instruction": "Remove the iPhone Face ID passkey.",
+    "verify": "real-tasks/task_m18.py",
+    "source_task_id": "task_m18",
+    "task_id": "live_066",
+    "draw_index": 66,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_067",
+    "difficulty": "easy",
+    "instruction": "Stop showing full names and use usernames instead.",
+    "verify": "real-tasks/task_e20.py",
+    "source_task_id": "task_e20",
+    "task_id": "live_067",
+    "draw_index": 67,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_068",
+    "difficulty": "easy",
+    "instruction": "Increase the font size to Large.",
+    "verify": "real-tasks/task_e10.py",
+    "source_task_id": "task_e10",
+    "task_id": "live_068",
+    "draw_index": 68,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_069",
+    "difficulty": "hard",
+    "instruction": "Set up the preferences for a minimal workspace: dark theme, small font, home view set to Inbox, turn off full names, disable emoticon conversion, and turn off open in desktop app.",
+    "verify": "real-tasks/task_h11.py",
+    "source_task_id": "task_h11",
+    "task_id": "live_069",
+    "draw_index": 69,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_070",
+    "difficulty": "hard",
+    "instruction": "Create an API key whose label is your role at the Acme Corp workspace followed by a dash and the total number of authorized OAuth applications (e.g., 'Role-N'), then revoke all OAuth applications that have both read and write permissions on issues.",
+    "verify": "real-tasks/task_h72.py",
+    "source_task_id": "task_h72",
+    "task_id": "live_070",
+    "draw_index": 70,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_071",
+    "difficulty": "medium",
+    "instruction": "Disable mobile notifications entirely.",
+    "verify": "real-tasks/task_m9.py",
+    "source_task_id": "task_m9",
+    "task_id": "live_071",
+    "draw_index": 71,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_072",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth applications that were authorized in an odd-numbered month, then disconnect all connected accounts that were linked in an even-numbered month.",
+    "verify": "real-tasks/task_h70.py",
+    "source_task_id": "task_h70",
+    "task_id": "live_072",
+    "draw_index": 72,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_073",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth apps that have write permissions.",
+    "verify": "real-tasks/task_h18.py",
+    "source_task_id": "task_h18",
+    "task_id": "live_073",
+    "draw_index": 73,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_074",
+    "difficulty": "hard",
+    "instruction": "Remove the passkey that was created the earliest, revoke the OAuth application that was authorized the earliest, and disconnect the connected account that was connected most recently.",
+    "verify": "real-tasks/task_h58.py",
+    "source_task_id": "task_h58",
+    "task_id": "live_074",
+    "draw_index": 74,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_075",
+    "difficulty": "hard",
+    "instruction": "Revoke all OAuth applications that have permission to read team information, then leave the workspace with the fewest members.",
+    "verify": "real-tasks/task_h32.py",
+    "source_task_id": "task_h32",
+    "task_id": "live_075",
+    "draw_index": 75,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_076",
+    "difficulty": "medium",
+    "instruction": "Revoke the session from the Firefox on Windows device.",
+    "verify": "real-tasks/task_m2.py",
+    "source_task_id": "task_m2",
+    "task_id": "live_076",
+    "draw_index": 76,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_077",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions except the current one.",
+    "verify": "real-tasks/task_h2.py",
+    "source_task_id": "task_h2",
+    "task_id": "live_077",
+    "draw_index": 77,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_078",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions from tablet devices, disconnect all connected accounts that have more than two permission scopes, and turn off all three communication notification subscriptions.",
+    "verify": "real-tasks/task_h59.py",
+    "source_task_id": "task_h59",
+    "task_id": "live_078",
+    "draw_index": 78,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_079",
+    "difficulty": "hard",
+    "instruction": "Revoke the two OAuth applications that were authorized most recently, then register a new passkey named after the workspace where you are an admin.",
+    "verify": "real-tasks/task_h40.py",
+    "source_task_id": "task_h40",
+    "task_id": "live_079",
+    "draw_index": 79,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_080",
+    "difficulty": "medium",
+    "instruction": "Update the account name to 'Jordan Rivera' and change the username to 'jrivera'.",
+    "verify": "real-tasks/task_m1.py",
+    "source_task_id": "task_m1",
+    "task_id": "live_080",
+    "draw_index": 80,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_081",
+    "difficulty": "easy",
+    "instruction": "Enable the pointer cursor for interactive elements.",
+    "verify": "real-tasks/task_e17.py",
+    "source_task_id": "task_e17",
+    "task_id": "live_081",
+    "draw_index": 81,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_082",
+    "difficulty": "hard",
+    "instruction": "Remove all passkeys from the account.",
+    "verify": "real-tasks/task_h12.py",
+    "source_task_id": "task_h12",
+    "task_id": "live_082",
+    "draw_index": 82,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_083",
+    "difficulty": "easy",
+    "instruction": "Change the username to 'amorgan'.",
+    "verify": "real-tasks/task_e4.py",
+    "source_task_id": "task_e4",
+    "task_id": "live_083",
+    "draw_index": 83,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_084",
+    "difficulty": "hard",
+    "instruction": "Perform a full account lockdown: disable all four notification channels, disconnect all connected accounts, and revoke all authorized applications.",
+    "verify": "real-tasks/task_h27.py",
+    "source_task_id": "task_h27",
+    "task_id": "live_084",
+    "draw_index": 84,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_085",
+    "difficulty": "medium",
+    "instruction": "Stop sending urgent email notifications immediately.",
+    "verify": "real-tasks/task_m17.py",
+    "source_task_id": "task_m17",
+    "task_id": "live_085",
+    "draw_index": 85,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_086",
+    "difficulty": "easy",
+    "instruction": "Stop showing full names and use usernames instead.",
+    "verify": "real-tasks/task_e20.py",
+    "source_task_id": "task_e20",
+    "task_id": "live_086",
+    "draw_index": 86,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_087",
+    "difficulty": "hard",
+    "instruction": "Create an API key whose label is your role at the Acme Corp workspace followed by a dash and the total number of authorized OAuth applications (e.g., 'Role-N'), then revoke all OAuth applications that have both read and write permissions on issues.",
+    "verify": "real-tasks/task_h72.py",
+    "source_task_id": "task_h72",
+    "task_id": "live_087",
+    "draw_index": 87,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_088",
+    "difficulty": "medium",
+    "instruction": "Revoke the Data Export Script and Slack Bot Integration API keys.",
+    "verify": "real-tasks/task_m16.py",
+    "source_task_id": "task_m16",
+    "task_id": "live_088",
+    "draw_index": 88,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_089",
+    "difficulty": "medium",
+    "instruction": "Show git attachments with the repository name and enable auto-assign when moving to started.",
+    "verify": "real-tasks/task_m10.py",
+    "source_task_id": "task_m10",
+    "task_id": "live_089",
+    "draw_index": 89,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_090",
+    "difficulty": "hard",
+    "instruction": "Set your username to the local part of your current email address (the part before the @), then disable full name display.",
+    "verify": "real-tasks/task_h29.py",
+    "source_task_id": "task_h29",
+    "task_id": "live_090",
+    "draw_index": 90,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_091",
+    "difficulty": "hard",
+    "instruction": "Update your email address to match your Google connected account's email, then disconnect the Google account.",
+    "verify": "real-tasks/task_h21.py",
+    "source_task_id": "task_h21",
+    "task_id": "live_091",
+    "draw_index": 91,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_092",
+    "difficulty": "hard",
+    "instruction": "Enable the Slack notification channel and turn on all six notification types for it, then disable the email notification channel.",
+    "verify": "real-tasks/task_h34.py",
+    "source_task_id": "task_h34",
+    "task_id": "live_092",
+    "draw_index": 92,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_093",
+    "difficulty": "hard",
+    "instruction": "For every notification channel that is currently enabled, turn on cycle update notifications. Do not modify any disabled channels.",
+    "verify": "real-tasks/task_h24.py",
+    "source_task_id": "task_h24",
+    "task_id": "live_093",
+    "draw_index": 93,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_094",
+    "difficulty": "hard",
+    "instruction": "Leave both non-admin workspaces.",
+    "verify": "real-tasks/task_h10.py",
+    "source_task_id": "task_h10",
+    "task_id": "live_094",
+    "draw_index": 94,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_095",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key that was created the earliest, then register a new passkey using that key's label as the passkey name.",
+    "verify": "real-tasks/task_h77.py",
+    "source_task_id": "task_h77",
+    "task_id": "live_095",
+    "draw_index": 95,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_096",
+    "difficulty": "hard",
+    "instruction": "Revoke the OAuth application that has the most permissions, and remove the passkey that was registered most recently.",
+    "verify": "real-tasks/task_h26.py",
+    "source_task_id": "task_h26",
+    "task_id": "live_096",
+    "draw_index": 96,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_097",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key that was last used the longest ago, and revoke the OAuth app that was authorized the earliest.",
+    "verify": "real-tasks/task_h23.py",
+    "source_task_id": "task_h23",
+    "task_id": "live_097",
+    "draw_index": 97,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_098",
+    "difficulty": "hard",
+    "instruction": "Count how many passkeys you have. Revoke that many of the most recently authorized OAuth applications.",
+    "verify": "real-tasks/task_h68.py",
+    "source_task_id": "task_h68",
+    "task_id": "live_098",
+    "draw_index": 98,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_099",
+    "difficulty": "hard",
+    "instruction": "Update your full name to include your Acme Corp workspace role in parentheses (e.g., 'Alex Morgan (Admin)'), then set the home view to All issues and disable the display full names setting.",
+    "verify": "real-tasks/task_h57.py",
+    "source_task_id": "task_h57",
+    "task_id": "live_099",
+    "draw_index": 99,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_100",
+    "difficulty": "hard",
+    "instruction": "Revoke all sessions from locations outside of California, then create a new API key called 'West Coast Only'.",
+    "verify": "real-tasks/task_h22.py",
+    "source_task_id": "task_h22",
+    "task_id": "live_100",
+    "draw_index": 100,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_101",
+    "difficulty": "medium",
+    "instruction": "Enable desktop cycle update notifications.",
+    "verify": "real-tasks/task_m13.py",
+    "source_task_id": "task_m13",
+    "task_id": "live_101",
+    "draw_index": 101,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_102",
+    "difficulty": "hard",
+    "instruction": "Remove the passkey that was created the earliest, revoke the OAuth application that was authorized the earliest, and disconnect the connected account that was connected most recently.",
+    "verify": "real-tasks/task_h58.py",
+    "source_task_id": "task_h58",
+    "task_id": "live_102",
+    "draw_index": 102,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_103",
+    "difficulty": "medium",
+    "instruction": "Update the account name to 'Jordan Rivera' and change the username to 'jrivera'.",
+    "verify": "real-tasks/task_m1.py",
+    "source_task_id": "task_m1",
+    "task_id": "live_103",
+    "draw_index": 103,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_104",
+    "difficulty": "easy",
+    "instruction": "Revoke the Zapier integration.",
+    "verify": "real-tasks/task_e9.py",
+    "source_task_id": "task_e9",
+    "task_id": "live_104",
+    "draw_index": 104,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_105",
+    "difficulty": "hard",
+    "instruction": "Count how many passkeys you have. Revoke that many of the most recently authorized OAuth applications.",
+    "verify": "real-tasks/task_h68.py",
+    "source_task_id": "task_h68",
+    "task_id": "live_105",
+    "draw_index": 105,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_106",
+    "difficulty": "medium",
+    "instruction": "Disable mobile notifications entirely.",
+    "verify": "real-tasks/task_m9.py",
+    "source_task_id": "task_m9",
+    "task_id": "live_106",
+    "draw_index": 106,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_107",
+    "difficulty": "easy",
+    "instruction": "Remove the YubiKey passkey.",
+    "verify": "real-tasks/task_e8.py",
+    "source_task_id": "task_e8",
+    "task_id": "live_107",
+    "draw_index": 107,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_108",
+    "difficulty": "hard",
+    "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+    "verify": "real-tasks/task_h8.py",
+    "source_task_id": "task_h8",
+    "task_id": "live_108",
+    "draw_index": 108,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_109",
+    "difficulty": "hard",
+    "instruction": "Revoke the non-current session that was signed in most recently, and revoke the most recently created API key.",
+    "verify": "real-tasks/task_h52.py",
+    "source_task_id": "task_h52",
+    "task_id": "live_109",
+    "draw_index": 109,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_110",
+    "difficulty": "hard",
+    "instruction": "Invert the notification type settings for both the mobile and desktop channels \u2014 enable every type that is currently off and disable every type that is currently on.",
+    "verify": "real-tasks/task_h49.py",
+    "source_task_id": "task_h49",
+    "task_id": "live_110",
+    "draw_index": 110,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_111",
+    "difficulty": "hard",
+    "instruction": "Revoke the API key whose label contains the name of one of your connected account providers, then disconnect that provider's connected account.",
+    "verify": "real-tasks/task_h63.py",
+    "source_task_id": "task_h63",
+    "task_id": "live_111",
+    "draw_index": 111,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_112",
+    "difficulty": "hard",
+    "instruction": "Disconnect all connected accounts that have any write-level permission scope, revoke the most recently accessed OAuth application, and switch the interface theme to Light - Contrast.",
+    "verify": "real-tasks/task_h79.py",
+    "source_task_id": "task_h79",
+    "task_id": "live_112",
+    "draw_index": 112,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_113",
+    "difficulty": "hard",
+    "instruction": "Register a new passkey named after the provider of the connected account you have been linked to the longest, then remove the passkey that was last used the earliest.",
+    "verify": "real-tasks/task_h46.py",
+    "source_task_id": "task_h46",
+    "task_id": "live_113",
+    "draw_index": 113,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_114",
+    "difficulty": "easy",
+    "instruction": "Revoke the Zapier integration.",
+    "verify": "real-tasks/task_e9.py",
+    "source_task_id": "task_e9",
+    "task_id": "live_114",
+    "draw_index": 114,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_115",
+    "difficulty": "hard",
+    "instruction": "Revoke all authorized third-party applications.",
+    "verify": "real-tasks/task_h5.py",
+    "source_task_id": "task_h5",
+    "task_id": "live_115",
+    "draw_index": 115,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_116",
+    "difficulty": "easy",
+    "instruction": "Switch the interface to dark mode.",
+    "verify": "real-tasks/task_e1.py",
+    "source_task_id": "task_e1",
+    "task_id": "live_116",
+    "draw_index": 116,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_117",
+    "difficulty": "hard",
+    "instruction": "Revoke the OAuth application that has the most permissions, and remove the passkey that was registered most recently.",
+    "verify": "real-tasks/task_h26.py",
+    "source_task_id": "task_h26",
+    "task_id": "live_117",
+    "draw_index": 117,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_118",
+    "difficulty": "hard",
+    "instruction": "Revoke all API keys that have an expiration date.",
+    "verify": "real-tasks/task_h16.py",
+    "source_task_id": "task_h16",
+    "task_id": "live_118",
+    "draw_index": 118,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_119",
+    "difficulty": "hard",
+    "instruction": "Revoke all API keys that were created in the same year as any of your passkeys were registered, then remove the most recently registered passkey.",
+    "verify": "real-tasks/task_h75.py",
+    "source_task_id": "task_h75",
+    "task_id": "live_119",
+    "draw_index": 119,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  },
+  {
+    "id": "live_120",
+    "difficulty": "hard",
+    "instruction": "Unsubscribe from all communication notifications (changelogs, DPA updates, and product updates) and disable the email notification channel.",
+    "verify": "real-tasks/task_h8.py",
+    "source_task_id": "task_h8",
+    "task_id": "live_120",
+    "draw_index": 120,
+    "seed_hex": "16907f20ad5c78a18cca90759d59838a"
+  }
+]

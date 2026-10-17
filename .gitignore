@@ -48,15 +48,23 @@ secrets*.json
 # Local assistant/editor state
 .claude/*.lock
 .claude/settings.local.json
+/.superpowers/
+
+# Local manuscript workspace: drafts, bibliography, publication figures and TeX builds.
+# Figure-generation source belongs in scripts/ or experiments/ and stays versionable.
+/paper/
+
+# Disposable render/build scratch and local exploratory work (not src/cold_start/analysis/).
+/tmp/
+/scratchpad/
 
 # Experiment logs and generated reports/results can contain private task data.
 logs/
 reports/
 results/
 
-# Generated analysis artifacts derived from private logs.
-analysis/adaptive_framework_analysis/*.csv
-analysis/adaptive_framework_analysis/figures/
+# Legacy local analysis bundle, including its generated TeX and private-log summaries.
+/analysis/adaptive_framework_analysis/
 
 # Large generated replay artifacts.
 results/gitlab_strong_arm/replay_oracle_policy/

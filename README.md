@@ -57,6 +57,15 @@ cold-start-compare --base configs/pilot_toy_upward.yaml \
 ## Project structure
 
 See `docs/architecture.md` for the component map. Everything pluggable sits behind a registry; experiments are YAML-configured.
+See [Repository layout](docs/REPOSITORY_LAYOUT.md) for the tracked-code, evidence, and local-artifact boundaries.
+
+The current manuscript workspace is **`paper/`**, which is Git-ignored and kept locally:
+`paper/main.tex` and `paper/main.pdf` are the current draft; `paper/prompt_search_legacy.tex`
+is the older draft; `paper/figures/` contains publication figures, tables, and provenance;
+`paper/framework_figures/` contains the leaderboard figure. These files are not included
+in a fresh clone. Rebuild the results visuals with
+`.venv/bin/python scripts/build_paper_visuals.py`, then compile with
+`latexmk -cd -pdf -interaction=nonstopmode -halt-on-error paper/main.tex`.
 
 - `src/cold_start/prompts/` — prompt-vector → system-prompt rendering
 - `src/cold_start/inference/` — e-processes (`hedged_capital`, `upward_capital`), confidence sequences, global null

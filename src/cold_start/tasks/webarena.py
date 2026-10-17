@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,15 @@ from cold_start.types import Arm, RunResult, Task
 _DEFAULT_WEBARENA_ROOT = (
     Path(__file__).resolve().parents[4] / "webarena-infinity"
 )
+
+# `result_dict["errors"]` is browser-use's full, positional, one-per-step error list (`None`
+# for a step with no error); the collector's infra/genuine-failure classification cares about
+# whether the *end* of that list is a give-up streak, so we surface the last several steps
+# verbatim (untruncated) alongside the existing first-few `errors` field kept for back-compat.
+ERROR_TAIL_LEN = 8
+
+#: How long `close()` waits for a pipe-drain thread to see EOF after the server stops.
+DRAIN_JOIN_S = 2.0
 
 _PERSISTENT_LOOP: asyncio.AbstractEventLoop | None = None
 _ARMED_AGENT_CLS: type | None = None
@@ -63,6 +73,28 @@ def _import_webarena() -> tuple[Any, Any, Any]:
     import server  # type: ignore
     import tasks as wa_tasks  # type: ignore
     return agents, server, wa_tasks
+
+
+def _drain(pipe: Any, sink: Any, lock: threading.Lock) -> None:
+    """Copy `pipe` into `sink` until EOF, so the child never blocks on a full pipe.
+
+    webarena-infinity's ``start_server`` opens the server with ``stdout=stderr=PIPE`` and
+    never reads them; the Gmail server logs every ``/api/`` request, so an undrained pipe
+    fills after ~900 lines (~64 KB) and the server then blocks mid-request -- the historical
+    stall every ~15-25 episodes. Any error ends the drain quietly (the server is going away).
+    """
+    try:
+        for chunk in iter(lambda: pipe.readline(), b""):
+            with lock:
+                sink.write(chunk)
+                sink.flush()
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            pipe.close()
+        except (OSError, ValueError):
+            pass
 
 
 def _loop() -> asyncio.AbstractEventLoop:
@@ -282,6 +314,8 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         self._prompt_cache: dict[str, str] = {}
         self._tasks: list[dict] | None = None
         self._server_proc = None
+        self._drain_threads: list[threading.Thread] = []
+        self._server_log: Any = None
         self._agent: Any = None
         self._server_url = f"http://localhost:{port}"
         self._web_app_abs: str | None = None
@@ -296,8 +330,13 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
             self._tasks = self._tasks[: self._task_limit]
 
         self._server_proc = server_mod.start_server(self._web_app_abs, self._port)
+        self._start_drains()
         if not server_mod.wait_for_server(self._port, timeout=15):
-            server_mod.stop_server(self._server_proc)
+            try:
+                server_mod.stop_server(self._server_proc)
+            finally:
+                self._server_proc = None
+                self._stop_drains()
             raise RuntimeError(
                 f"webarena server for {self._web_app_rel} on :{self._port} "
                 "did not come up within 15s"
@@ -317,6 +356,34 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         )
         _loop().run_until_complete(self._agent.setup(self._server_url))
 
+    def _start_drains(self) -> None:
+        """Drain the server's stdout/stderr (whichever are pipes) into ``server_<port>.log``."""
+        self._stop_drains()  # a previous server's drains, if reset() ran without close()
+        proc = self._server_proc
+        pipes = [getattr(proc, name, None) for name in ("stdout", "stderr")]
+        pipes = [pipe for pipe in pipes if pipe is not None]
+        if not pipes:
+            return
+        self._artifacts_dir.mkdir(parents=True, exist_ok=True)
+        self._server_log = open(self._artifacts_dir / f"server_{self._port}.log", "ab")  # noqa: SIM115 -- closed in _stop_drains
+        lock = threading.Lock()
+        for pipe in pipes:
+            thread = threading.Thread(target=_drain, args=(pipe, self._server_log, lock), daemon=True,
+                                      name=f"webarena-drain-{self._port}")
+            thread.start()
+            self._drain_threads.append(thread)
+
+    def _stop_drains(self) -> None:
+        for thread in self._drain_threads:
+            thread.join(timeout=DRAIN_JOIN_S)
+        self._drain_threads = []
+        if self._server_log is not None:
+            try:
+                self._server_log.close()
+            except OSError:
+                pass
+            self._server_log = None
+
     def sample_task(self, t: int) -> Task:
         if self._tasks is None:
             raise RuntimeError("reset() must be called before sample_task()")
@@ -335,26 +402,58 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
             },
         )
 
+    def prompt_for(self, arm: Arm) -> str:
+        """The system-prompt extension sent for `arm`: pinned text if registered, else rendered."""
+        extension = self._prompt_cache.get(arm.arm_id)
+        if extension is None:
+            extension = render_arm_prompt(arm, self._axes, self._template_path)
+            self._prompt_cache[arm.arm_id] = extension
+        return extension
+
+    def register_prompt(self, arm_id: str, text: str) -> None:
+        """Pin the exact extension for `arm_id`, bypassing this adapter's template.
+
+        The empirical-pool collector renders each pool with its own template and freezes
+        the text by sha256; pinning it here means the agent receives those bytes and no
+        others, whichever template this adapter was built with.
+        """
+        self._prompt_cache[arm_id] = text
+
+    def task_ids(self) -> list[str]:
+        if self._tasks is None:
+            raise RuntimeError("reset() must be called before task_ids()")
+        return [str(raw["id"]) for raw in self._tasks]
+
+    def task_by_id(self, task_id: str) -> Task:
+        if self._tasks is None:
+            raise RuntimeError("reset() must be called before task_by_id()")
+        for idx, raw in enumerate(self._tasks):
+            if str(raw["id"]) == task_id:
+                return self.sample_task(idx + 1)
+        raise KeyError(f"task {task_id!r} is not in the {self._task_suite} bank")
+
     def run_arm(
         self,
         arm: Arm,
         task: Task,
         runner: AgentRunner,
         max_steps: int,
+        artifact_subdir: str | None = None,
     ) -> RunResult:
+        """Run `arm` on `task`. `artifact_subdir` (e.g. ``r0_a2``) keeps a replicate's or a
+        retry's artifacts from overwriting another's under the same arm/task directory."""
         del runner  # browser agent drives its own LLM; text-only runner is unused
         _, _, tasks_mod = _import_webarena()
 
-        extension = self._prompt_cache.get(arm.arm_id)
-        if extension is None:
-            extension = render_arm_prompt(arm, self._axes, self._template_path)
-            self._prompt_cache[arm.arm_id] = extension
+        extension = self.prompt_for(arm)
 
         assert self._agent is not None, "reset() must be called before run_arm()"
         self._agent.set_prompt_extension(extension)
         self._agent.max_steps = max_steps
 
         task_dir = self._artifacts_dir / arm.arm_id / task.task_id
+        if artifact_subdir:
+            task_dir = task_dir / artifact_subdir
         task_dir.mkdir(parents=True, exist_ok=True)
 
         raw_task = task.metadata["raw"]
@@ -395,6 +494,7 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
         # Token summary was stashed on the armed agent during `agent.run()`.
         tokens = dict(getattr(self._agent, "_last_token_summary", {}) or {})
 
+        raw_errors = result_dict.get("errors") or []
         return RunResult(
             success=bool(result_dict["passed"]),
             reward=float(bool(result_dict["passed"])),
@@ -404,7 +504,8 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
                 "env": "webarena",
                 "verifier_message": result_dict.get("verifier_message", ""),
                 "final_result": result_dict.get("final_result") or "",
-                "errors": (result_dict.get("errors") or [])[:5],
+                "errors": raw_errors[:5],
+                "error_tail": raw_errors[-ERROR_TAIL_LEN:],
                 "is_done": bool(result_dict.get("is_done", False)),
                 "task_dir": str(task_dir),
             },
@@ -420,5 +521,8 @@ class WebArenaInfinityAdapter(EnvironmentAdapter):
             self._agent = None
         if self._server_proc is not None:
             _, server_mod, _ = _import_webarena()
-            server_mod.stop_server(self._server_proc)
-            self._server_proc = None
+            try:
+                server_mod.stop_server(self._server_proc)
+            finally:
+                self._server_proc = None
+                self._stop_drains()

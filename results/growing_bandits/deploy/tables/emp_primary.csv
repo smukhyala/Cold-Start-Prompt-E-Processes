@@ -1,0 +1,2 @@
+row,policy,reference,test,horizon,delta,lo,hi,paired_lo,paired_hi,n_informative,informative_cells,n_boot,mei,rule,verdict,as_registered
+primary,p3_star,fixed_K_star,emp,all,,,,,,0,,0,0.002,noninferiority,uninformative,True

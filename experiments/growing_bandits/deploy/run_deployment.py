@@ -83,13 +83,15 @@ from cold_start.growing.deploy.pairwise_table import (  # noqa: E402
 from cold_start.growing.deploy.recommenders import RECOMMENDER_NAMES  # noqa: E402
 from cold_start.growing.recommend import oracle_prior_from_reservoir  # noqa: E402
 from cold_start.growing.reservoirs import build_reservoir  # noqa: E402
+import cold_start.growing.empirical_reservoir  # noqa: E402,F401  (registers "empirical" in every worker)
 from cold_start.growing.tables import CSTable  # noqa: E402
 
 log = logging.getLogger("deploy.run")
 
 DEFAULT_OUT_DIR = ROOT / "results" / "growing_bandits" / "deploy"
 
-TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch", "capp", "capc")
+TESTS: tuple[str, ...] = ("A", "B", "C", "D", "robust", "cap", "smoke", "capmatch", "capp", "capc",
+                          "emp", "emp_boot")
 REFERENCES: tuple[str, ...] = ("cp0", "p3_star")
 
 #: Episodes per cell by test (DEPLOYMENT_PLAN.md "Environments / horizons / episodes").
@@ -104,6 +106,8 @@ DEFAULT_REPLICATES: dict[str, int] = {
     "capmatch": 2000,
     "capp": 2000,
     "capc": 2000,
+    "emp": 1000,
+    "emp_boot": 250,
 }
 DEFAULT_CAP = 64
 D_HORIZONS: tuple[int, ...] = (200, 1000)
@@ -158,7 +162,7 @@ LOGGED_GROUPS: tuple[str, ...] = ("learned", "rule")
 STANDIN_SEED_BASE = 900_000_000
 STANDIN_SEED_STRIDE = 1_000
 
-FAMILY_OF_TYPE: dict[str, str] = {"beta": "A", "tail": "B", "mixture": "C"}
+FAMILY_OF_TYPE: dict[str, str] = {"beta": "A", "tail": "B", "mixture": "C", "empirical": "E"}
 
 MAX_TASKS_PER_CHILD = 8
 
@@ -242,14 +246,20 @@ def _cell_grid(test: str, cells_mod) -> list[tuple[str, int, int, int | None]]:
     elif test == "capc":
         # Pre-registration 8: the held-out family, uncapped, on Test C's cap-64 seeds.
         grid = [(e, T, T, None) for e in heldout for T in CAPP_HORIZON_CAPS]
+    elif test in ("emp", "emp_boot"):
+        raise RuntimeError(
+            f"--test {test} cells are built from the frozen real-prompt pools by "
+            "experiments/growing_bandits/empirical/replay.py, never from cells.py"
+        )
     else:
         raise ValueError(f"unknown test {test!r}; tests={TESTS}")
     return grid
 
 
 def seeds_may_repeat(test: str) -> bool:
-    """Whether cells of `test` may share a base_seed: only the paired cap sweep, by design."""
-    return test == "capp"
+    """Whether cells of `test` may share a base_seed: the paired cap sweep, and the empirical
+    replay, whose raw / npmle / parametric variants of one (pool, T) are CRN-paired by design."""
+    return test in ("capp", "emp")
 
 
 def matched_grid(

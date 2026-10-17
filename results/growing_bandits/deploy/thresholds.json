@@ -42,6 +42,46 @@
     ]
   },
   "by_cap": {
+    "100": {
+      "clock_quality_evidence_k4": {
+        "curve": {
+          "0.3": 0.12044807810831117,
+          "0.4": 0.11466810864704893,
+          "0.5": 0.11218841922981664,
+          "0.6": 0.11951623325265245,
+          "0.7": 0.13117349676630694
+        },
+        "envs": [
+          "beta_good_common",
+          "beta_rare_excellent",
+          "beta_mostly_mediocre",
+          "beta_skewed",
+          "tail_b0.5_mu1.0_c1.0",
+          "tail_b2.0_mu1.0_c1.0",
+          "tail_b8.0_mu1.0_c1.0",
+          "tail_b1.0_mu0.9_c2.0"
+        ],
+        "fingerprint": "96559e7dc01541df",
+        "horizons": [
+          100
+        ],
+        "k": 4,
+        "kind": "model",
+        "n_cells": 8,
+        "n_replicates": 500,
+        "recommender": "posterior_mean_shrunk",
+        "split": "val",
+        "tau_off": 0.61,
+        "tau_val": 0.5,
+        "taus": [
+          0.3,
+          0.4,
+          0.5,
+          0.6,
+          0.7
+        ]
+      }
+    },
     "1000": {
       "clock_quality_evidence_k16": {
         "curve": {
@@ -741,6 +781,86 @@
         "split": "val",
         "tau_off": 0.61,
         "tau_val": 0.4,
+        "taus": [
+          0.3,
+          0.4,
+          0.5,
+          0.6,
+          0.7
+        ]
+      }
+    },
+    "50": {
+      "clock_quality_evidence_k4": {
+        "curve": {
+          "0.3": 0.12578612821456045,
+          "0.4": 0.12531954604946077,
+          "0.5": 0.1323204570178641,
+          "0.6": 0.13593670977558941,
+          "0.7": 0.14875916339547984
+        },
+        "envs": [
+          "beta_good_common",
+          "beta_rare_excellent",
+          "beta_mostly_mediocre",
+          "beta_skewed",
+          "tail_b0.5_mu1.0_c1.0",
+          "tail_b2.0_mu1.0_c1.0",
+          "tail_b8.0_mu1.0_c1.0",
+          "tail_b1.0_mu0.9_c2.0"
+        ],
+        "fingerprint": "96559e7dc01541df",
+        "horizons": [
+          50
+        ],
+        "k": 4,
+        "kind": "model",
+        "n_cells": 8,
+        "n_replicates": 500,
+        "recommender": "posterior_mean_shrunk",
+        "split": "val",
+        "tau_off": 0.61,
+        "tau_val": 0.4,
+        "taus": [
+          0.3,
+          0.4,
+          0.5,
+          0.6,
+          0.7
+        ]
+      }
+    },
+    "500": {
+      "clock_quality_evidence_k4": {
+        "curve": {
+          "0.3": 0.2858004389575217,
+          "0.4": 0.23694106180965904,
+          "0.5": 0.17162313737673685,
+          "0.6": 0.12764657730888576,
+          "0.7": 0.1253243499165401
+        },
+        "envs": [
+          "beta_good_common",
+          "beta_rare_excellent",
+          "beta_mostly_mediocre",
+          "beta_skewed",
+          "tail_b0.5_mu1.0_c1.0",
+          "tail_b2.0_mu1.0_c1.0",
+          "tail_b8.0_mu1.0_c1.0",
+          "tail_b1.0_mu0.9_c2.0"
+        ],
+        "fingerprint": "96559e7dc01541df",
+        "horizons": [
+          500
+        ],
+        "k": 4,
+        "kind": "model",
+        "n_cells": 8,
+        "n_replicates": 500,
+        "recommender": "posterior_mean_shrunk",
+        "split": "val",
+        "tau_off": 0.61,
+        "tau_val": 0.7,
         "taus": [
           0.3,
           0.4,

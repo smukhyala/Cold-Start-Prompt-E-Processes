@@ -68,13 +68,24 @@ REGISTRATIONS: dict[str, dict] = {
                   "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_level.csv"},
     "h1b_level_secondary": {"policy": "level_star", "reference": "fixed_K_star", "test": "robust",
                             "horizons": (50, 100, 200), "mei": 0.002, "out": "h1b_level_secondary.csv"},
+    # Pre-registration 8: the held-out family, uncapped, n_envs = 3 -- rules on the PAIRED CI.
+    "capc_primary": {"policy": "p3_star", "reference": "fixed_K_star", "test": "capc",
+                     "horizons": (200, 1000), "mei": 0.002, "out": "capc_primary.csv", "rule": "noninferiority"},
+    "capc_level": {"policy": "level_star", "reference": "p3_star", "test": "capc",
+                   "horizons": (200, 1000), "mei": 0.002, "out": "capc_level.csv", "rule": "not_better"},
+    "capc_phi": {"policy": "phi_k4", "reference": "p3_star", "test": "capc",
+                 "horizons": (200, 1000), "mei": 0.002, "out": "capc_phi.csv", "rule": "not_better"},
 }
+#: Decision rules. ``superiority`` (the default) reads the environment-mean t interval and
+#: is the rule of Pre-registrations 2-6; the two paired-CI rules are Pre-registration 8's,
+#: for a panel below `CLUSTER_MIN_ENVS` where no environment-level interval exists.
+RULES: tuple[str, ...] = ("superiority", "noninferiority", "not_better")
 REGISTERED = REGISTRATIONS["h1b_prime"]
 ALL_HORIZONS: tuple[int, ...] = (50, 100, 200, 500, 1000)
 
 COLUMNS: tuple[str, ...] = (
     "row", "policy", "reference", "test", "horizon", "delta", "lo", "hi", "se", "win",
-    "n_cells", "n_episodes", "n_envs", *ad.CLUSTER_KEYS, "p_holm", "mei", "verdict",
+    "n_cells", "n_episodes", "n_envs", *ad.CLUSTER_KEYS, "p_holm", "mei", "rule", "verdict",
     "as_registered",
 )
 
@@ -135,6 +146,7 @@ def _stratum(diffs: dict[str, np.ndarray], env_of: dict[str, str], *, n_boot: in
 
 
 def verdict(delta: float, cluster_lo: float, cluster_hi: float, cluster_p: float, mei: float) -> str:
+    """The superiority rule of Pre-registrations 2-6, on the environment-mean t interval."""
     if not np.isfinite(cluster_p):
         return "inconclusive"
     if delta >= 0.0 or cluster_lo > -mei:
@@ -144,22 +156,52 @@ def verdict(delta: float, cluster_lo: float, cluster_hi: float, cluster_p: float
     return "inconclusive"
 
 
+def verdict_by_rule(rule: str, *, delta: float, lo: float, hi: float, mei: float, cluster_p: float = np.nan,
+                    cluster_lo: float = np.nan, cluster_hi: float = np.nan) -> str:
+    """`verdict` for ``superiority``; Pre-registration 8's paired-CI rules otherwise.
+
+    ``noninferiority``: the policy is not worse than the reference by more than `mei` --
+    supported iff the paired upper bound is below +mei, refuted iff the lower bound is at or
+    above +mei. ``not_better``: the policy is not better than the reference by more than
+    `mei` -- supported iff the paired lower bound is above -mei, refuted iff the upper
+    bound is at or below -mei. Anything else is inconclusive.
+    """
+    if rule == "superiority":
+        return verdict(delta, cluster_lo, cluster_hi, cluster_p, mei)
+    if rule == "noninferiority":
+        if hi < mei:
+            return "supported"
+        if lo >= mei:
+            return "refuted"
+        return "inconclusive"
+    if rule == "not_better":
+        if lo > -mei:
+            return "supported"
+        if hi <= -mei:
+            return "refuted"
+        return "inconclusive"
+    raise KeyError(f"unknown rule {rule!r}; rules={RULES}")
+
+
 def registered_contrast(
     policy: str, reference: str, *, test: str, horizons: tuple[int, ...], mei: float,
-    out_dir: Path, n_boot: int = 10_000,
+    out_dir: Path, n_boot: int = 10_000, rule: str = "superiority",
 ) -> pd.DataFrame:
     out_dir = Path(out_dir)
     horizons = tuple(int(h) for h in horizons)
+    if rule not in RULES:
+        raise KeyError(f"unknown rule {rule!r}; rules={RULES}")
     as_registered = any(
-        (policy, reference, test, horizons, float(mei)) == (
-            r["policy"], r["reference"], r["test"], tuple(r["horizons"]), float(r["mei"]))
+        (policy, reference, test, horizons, float(mei), rule) == (
+            r["policy"], r["reference"], r["test"], tuple(r["horizons"]), float(r["mei"]),
+            r.get("rule", "superiority"))
         for r in REGISTRATIONS.values()
     )
     if not as_registered:
         log.warning("NOT the registered contrast: %s vs %s on %s at %s, mei %s",
                     policy, reference, test, horizons, mei)
     diffs, env_of, horizon_of = _diffs(out_dir, test, policy, reference, ALL_HORIZONS)
-    base = {"policy": policy, "reference": reference, "test": test, "mei": float(mei),
+    base = {"policy": policy, "reference": reference, "test": test, "mei": float(mei), "rule": rule,
             "as_registered": as_registered}
     rows: list[dict] = []
 
@@ -168,7 +210,9 @@ def registered_contrast(
         raise FileNotFoundError(f"no cells of {test} at the registered horizons {horizons}")
     s = _stratum(primary_cells, env_of, n_boot=n_boot, seed=ad._seed("registered", policy, reference, test))
     rows.append({**base, "row": "primary", "horizon": "all", **s, "p_holm": np.nan,
-                 "verdict": verdict(s["delta"], s["cluster_lo"], s["cluster_hi"], s["cluster_p"], mei)})
+                 "verdict": verdict_by_rule(rule, delta=s["delta"], lo=s["lo"], hi=s["hi"], mei=mei,
+                                            cluster_p=s["cluster_p"], cluster_lo=s["cluster_lo"],
+                                            cluster_hi=s["cluster_hi"])})
 
     secondary = []
     for T in horizons:
@@ -214,7 +258,8 @@ def main(argv: list[str] | None = None) -> pd.DataFrame:
     horizons = (tuple(int(x) for x in args.horizons.split(",") if x.strip())
                 if args.horizons else tuple(reg["horizons"]))
     out = registered_contrast(args.policy, args.reference, test=args.test, horizons=horizons,
-                              mei=args.mei, out_dir=args.out_dir, n_boot=args.n_boot)
+                              mei=args.mei, out_dir=args.out_dir, n_boot=args.n_boot,
+                              rule=reg.get("rule", "superiority"))
     path = args.out or (args.out_dir / "tables" / reg["out"])
     path.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(path, index=False)

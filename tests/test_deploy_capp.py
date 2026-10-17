@@ -62,3 +62,16 @@ def test_cell_at_cap_uses_the_grid_seed_for_grid_caps_and_the_cap_64_seed_otherw
     ladder = cells.cell_at_cap("tune", "beta_good_common", 200, 48, 16)
     assert ladder.base_seed == cells.make_cell("tune", "beta_good_common", 200, 64, 16).base_seed and ladder.cap == 48
     assert cells.cell_at_cap("val", "beta_good_common", 1000, 512, 16).cap == 512
+
+
+def test_capc_is_the_held_out_family_uncapped_on_test_c_seeds():
+    grid = rd._cell_grid("capc", cells)
+    assert {e for e, *_ in grid} == set(cells.HELDOUT_ENVS)
+    assert {(T, cap) for _, T, cap, _ in grid} == {(200, 200), (1000, 1000)}
+    specs = rd.build_cells("capc", n_replicates=None, cells_mod=cells)
+    assert len(specs) == 6 and all(s.cap == s.horizon for s in specs)
+    env = next(iter(cells.HELDOUT_ENVS))
+    s = next(x for x in specs if x.env_id == env and x.horizon == 200)
+    assert s.base_seed == cells.base_seed("test", env, 200, 64), "paired with Test C's cap-64 cell"
+    assert pt.TEST_POLICIES["capc"] == pt.TEST_POLICIES["capp"]
+    assert rd.seeds_may_repeat("capc") is False

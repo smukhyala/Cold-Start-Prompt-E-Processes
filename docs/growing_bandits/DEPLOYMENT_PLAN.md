@@ -707,3 +707,46 @@ for X in 192 256 384 512 1000: horizon 1000   (tune_baselines, select_fixed_k, s
 .venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test capp --workers 12
 .venv/bin/python experiments/growing_bandits/deploy/analyze_capp.py
 ```
+
+---
+
+## Pre-registration 8 — the held-out family with the cap lifted (registered 2026-09-21, before any run)
+
+Test C (§7.2) is the study's only held-out environment family, and it ran under the 64-arm cap that §12.7
+shows makes every policy the same policy at T ≥ 200. The probe of §12.8 (unregistered, M = 1000) suggested
+that with the cap lifted a schedule tuned on the corpus is within 0.001 of the per-environment ceiling on
+those mixtures. This registers that statement.
+
+### Design
+
+- **Cells:** the 3 mixture environments × T ∈ {200, 1000} × cap = T (uncapped), M = 2000, test-split seeds,
+  each cell on its Test-C cap-64 seed (`cells.make_matched_cell`) so it is CRN-paired with §7.2's cells.
+  Test id `capc`. Policies: the eight of `--test capp`, every constant the cap-T one selected on the
+  **corpus** environments in Pre-registration 7 — the mixtures never voted on any constant.
+- **Inference at n_envs = 3.** No environment-level interval exists below `CLUSTER_MIN_ENVS`. Every rule
+  below is stated on the cell-stratified **paired** CI over the six cells, with the three-environment range
+  reported beside it. This is weaker than every other registration and is labelled so wherever quoted.
+  MEI = 0.002 throughout.
+
+### The registered contrasts
+
+1. **Primary — the schedule generalizes (a non-inferiority claim):** Δ = `p3_star` (corpus-tuned, cap-T
+   constants) − `fixed_K_star` (its corpus-selected K(T) at cap = T; "the best single K"). *Supported* iff the
+   paired CI's upper bound is below +MEI — the schedule is not worse off-family than the best single K by
+   more than the minimum effect of interest; *refuted* iff the paired CI's lower bound is at or above +MEI;
+   otherwise *inconclusive*.
+2. **Secondary — the signals do not help off-family (not-better claims):** Δ = `level_star` − `p3_star` and
+   Δ = `phi_k4` − `p3_star`. *Supported* iff the paired CI's lower bound is above −MEI — the level rule /
+   the learned policy is not better off-family than the schedule by more than the MEI; *refuted* iff the
+   paired CI's upper bound is at or below −MEI; otherwise *inconclusive*. Reported, not corrected.
+3. **Descriptive:** each rule's gap to the per-environment ceiling (`fixed_K` at the mixture's own K\*(T)
+   from `k_star_envelope_all33.csv`, a tune-split argmin, never a deployable policy).
+
+### Run
+
+```
+.venv/bin/python experiments/growing_bandits/deploy/run_deployment.py --test capc --workers 12
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration capc_primary
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration capc_level
+.venv/bin/python experiments/growing_bandits/deploy/registered_contrast.py --registration capc_phi
+```

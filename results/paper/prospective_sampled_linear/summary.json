@@ -1,0 +1,23 @@
+{
+  "protocol_commit": "f4d91f51288521a7e434ff10d4e29c42399568d7",
+  "seed_hex": "fa2b3af816156387ac1feb8a576a848e",
+  "planned_tasks": 120,
+  "attempts": 240,
+  "terminal_episodes": 240,
+  "paired_prefix_tasks": 120,
+  "missing_episodes": 0,
+  "cost_usd": 23.604327,
+  "status_file": "done",
+  "incumbent_rate": 0.025,
+  "challenger_rate": 0.008333333333333333,
+  "paired_gain": -0.016666666666666666,
+  "challenger_only_wins": 1,
+  "incumbent_only_wins": 3,
+  "efficacy_first_crossing": null,
+  "futility_first_crossing": 44,
+  "efficacy_max_e": 1.0,
+  "futility_max_e": 55268.29940396005,
+  "efficacy_final_e": 1.0,
+  "futility_final_e": 55268.29940396005,
+  "complete_pairs_without_missing": true
+}

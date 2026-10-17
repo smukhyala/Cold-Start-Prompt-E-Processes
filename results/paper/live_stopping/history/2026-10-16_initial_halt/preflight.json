@@ -1,0 +1,13 @@
+{
+  "timestamp_utc": "2026-10-16T18:18:18.165504+00:00",
+  "protocol_commit": "6ffc20fdd8315fdf20286837094f94e9cfe993a3",
+  "tests_passed": 85,
+  "model_credential_lookup": "nonbillable models.retrieve succeeded for gpt-5.4-mini-2026-03-17",
+  "preflight_api_calls": 0,
+  "preflight_cost_usd": 0,
+  "file_sha256": {
+    "preflight_tests.xml": "67e29ed00c9455c908a58c8de42435ed542041959be05d067861b68d7f9ce2d1",
+    "preflight_tests.txt": "9dff1b9f406470f1c63cfb56e9206ce2d9cf54c9b3d48b6b70425612a1b6762b",
+    "browser_preflight.json": "191b975178e19e7fe493c688d7c2a5bcb1cf95844dd574881e294baaa3bdf4a8"
+  }
+}

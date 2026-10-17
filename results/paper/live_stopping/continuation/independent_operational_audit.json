@@ -1,0 +1,163 @@
+{
+  "schema": "live_stopping/independent_operational_audit/1",
+  "audited_utc": "2026-10-16T23:53:22.070286+00:00",
+  "status": "pass",
+  "issues": [],
+  "scope": "Original execution plus user-authorized continuation; all physical attempts included.",
+  "segments": {
+    "original": {
+      "physical_episode_attempts": 28,
+      "valid_outcomes": 27,
+      "invalid_outcomes": 1,
+      "api_requests_started": 458,
+      "api_usage_responses": 457,
+      "known_cost_usd": "1.762308150",
+      "unknown_reserved_usd": "0.318432",
+      "unknown_request_ids": [
+        "request_000458"
+      ],
+      "tokens": {
+        "input": 4625255,
+        "output": 173209,
+        "cached_input": 3683072,
+        "reasoning_in_output": 50482
+      },
+      "all_returned_models_match": true,
+      "error_events": [
+        {
+          "request_id": "request_000458",
+          "event": "request_unknown",
+          "timestamp_utc": "2026-10-16T18:50:11.592023+00:00"
+        },
+        {
+          "request_id": "request_000458",
+          "event": "invocation_failed",
+          "timestamp_utc": "2026-10-16T18:50:11.592615+00:00"
+        }
+      ],
+      "first_episode_intent_utc": "2026-10-16T18:18:30.306529+00:00",
+      "terminal_utc": "2026-10-16T18:50:13.219839+00:00",
+      "session_wall_seconds_first_intent_to_terminal": 1902.91331,
+      "last_request_started_utc": "2026-10-16T18:48:37.153498+00:00",
+      "last_response_utc": "2026-10-16T18:48:35.954440+00:00",
+      "api_ledger_sha256": "317b0c09a83a9c094359a6fb4d94785fd555161b8d320e405654c7e3a30e856c",
+      "first_controller_episode_intent_utc": "2026-10-16T18:18:26.670970+00:00",
+      "controller_first_intent_to_terminal_seconds": 1906.548869,
+      "per_request_global_budget_bound_verified": true,
+      "maximum_known_plus_outstanding_reservations_usd": "2.08074015",
+      "maximum_simultaneous_started_unreceipted_requests": 1
+    },
+    "continuation": {
+      "physical_episode_attempts": 43,
+      "valid_outcomes": 43,
+      "invalid_outcomes": 0,
+      "api_requests_started": 754,
+      "api_usage_responses": 754,
+      "known_cost_usd": "3.152403750",
+      "unknown_reserved_usd": "0",
+      "unknown_request_ids": [],
+      "tokens": {
+        "input": 7945489,
+        "output": 323038,
+        "cached_input": 6311680,
+        "reasoning_in_output": 111982
+      },
+      "all_returned_models_match": true,
+      "error_events": [],
+      "first_episode_intent_utc": "2026-10-16T23:08:16.464561+00:00",
+      "terminal_utc": "2026-10-16T23:51:03.196557+00:00",
+      "session_wall_seconds_first_intent_to_terminal": 2566.731996,
+      "last_request_started_utc": "2026-10-16T23:50:59.995766+00:00",
+      "last_response_utc": "2026-10-16T23:51:02.971421+00:00",
+      "api_ledger_sha256": "98f27b617b2f2f8d4d809f3e6d1e146be8823bb5b4f8bde98f271dbaed701342",
+      "first_controller_episode_intent_utc": "2026-10-16T23:08:13.221071+00:00",
+      "controller_first_intent_to_terminal_seconds": 2569.975486,
+      "per_request_global_budget_bound_verified": true,
+      "maximum_known_plus_outstanding_reservations_usd": "5.540806650",
+      "maximum_simultaneous_started_unreceipted_requests": 1
+    }
+  },
+  "combined": {
+    "physical_episode_attempts": 71,
+    "valid_outcomes": 70,
+    "invalid_outcomes": 1,
+    "known_cost_usd": "4.914711900",
+    "unknown_reserved_usd": "0.318432",
+    "maximum_charge_under_frozen_bounds_usd": "5.233143900",
+    "cost_accounting_complete": false,
+    "known_tokens": {
+      "input": 12570744,
+      "output": 496247,
+      "cached_input": 9994752,
+      "reasoning_in_output": 162464
+    },
+    "known_total_tokens": 13066991,
+    "api_requests_started": 1212,
+    "api_usage_responses": 1211,
+    "sum_execution_session_wall_seconds": 4469.645306,
+    "calendar_first_intent_to_final_terminal_seconds": 19952.890028,
+    "sum_controller_execution_session_wall_seconds": 4476.524355,
+    "calendar_first_controller_intent_to_final_terminal_seconds": 19956.525587
+  },
+  "stopping": {
+    "decision": "futility",
+    "completed_pairs": 35,
+    "terminal_recorded_utc": "2026-10-16T23:51:03.196557+00:00",
+    "no_intents_beyond_pair_35": true,
+    "no_api_events_after_terminal": true,
+    "planned_executions_avoided_by_statistical_stop": 170,
+    "extra_invalid_original_attempts": 1,
+    "net_fewer_physical_attempts_than_240_no_retry_plan": 169,
+    "sole_authorized_retry_physical_id": "pair_000014_challenger_retry1"
+  },
+  "budget": {
+    "global_cap_usd": 75,
+    "opening_allocation_reconciled": true,
+    "known_plus_reservations_below_cap": true,
+    "original_api_ledger_unchanged": true,
+    "every_request_reservation_within_global_cap": true
+  },
+  "host": {
+    "session_launch_utc": "2026-10-16T23:08:10.913049+00:00",
+    "launch_to_terminal_seconds": 2572.283508,
+    "remaining_launch_process_ids": [],
+    "runner_exited": true,
+    "caffeinate_exited": true,
+    "caffeinate_assertion_released": true,
+    "caffeinate_assertion_events": [
+      {
+        "timestamp_utc": "2026-10-16T23:16:34+00:00",
+        "pid": 29935,
+        "action": "Summary",
+        "assertion_type": "PreventUserIdleSystemSleep"
+      },
+      {
+        "timestamp_utc": "2026-10-16T23:31:34+00:00",
+        "pid": 29935,
+        "action": "Summary",
+        "assertion_type": "PreventUserIdleSystemSleep"
+      },
+      {
+        "timestamp_utc": "2026-10-16T23:46:34+00:00",
+        "pid": 29935,
+        "action": "Summary",
+        "assertion_type": "PreventUserIdleSystemSleep"
+      },
+      {
+        "timestamp_utc": "2026-10-16T23:51:04+00:00",
+        "pid": 29935,
+        "action": "ClientDied",
+        "assertion_type": "PreventUserIdleSystemSleep"
+      }
+    ],
+    "recorded_sleep_wake_events_during_continuation": [],
+    "no_recorded_system_sleep_or_wake_during_continuation": true,
+    "caffeinate_assertion_release_utc": "2026-10-16T23:51:04+00:00"
+  },
+  "limitations": [
+    "Original request_000458 remains unacknowledged; exact invoice cost and token totals remain unknown.",
+    "Known API charges are independently recomputed from provider usage at frozen standard prices, not invoice totals.",
+    "Absence of system sleep/wake entries is evidence from available host logs, not proof of uninterrupted network or provider stability.",
+    "The continuation is an authorized post-outcome protocol amendment; the original terminal result is preserved."
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "recorded_utc": "2026-10-16T23:08:17.113427+00:00",
+  "idle_sleep_assertion_verified": true,
+  "method": "caffeinate -i",
+  "assertion_pid": 29935,
+  "protected_runner_pid": 29933,
+  "limitation": "Idle sleep prevention does not prevent lid-triggered sleep; see independent operational audit for actual session events."
+}

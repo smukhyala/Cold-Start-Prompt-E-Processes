@@ -1,0 +1,466 @@
+pool: oraclefull
+template: configs/template_gitlab.jinja
+meta:
+  purpose: full-coverage positive-control answer key built from sanity_check_real.py solvers
+  task_ids:
+  - task_e1
+  - task_e10
+  - task_e11
+  - task_e12
+  - task_e13
+  - task_e14
+  - task_e15
+  - task_e16
+  - task_e17
+  - task_e18
+  - task_e19
+  - task_e2
+  - task_e20
+  - task_e3
+  - task_e4
+  - task_e5
+  - task_e6
+  - task_e7
+  - task_e8
+  - task_e9
+  - task_h1
+  - task_h10
+  - task_h100
+  - task_h11
+  - task_h12
+  - task_h13
+  - task_h14
+  - task_h15
+  - task_h16
+  - task_h17
+  - task_h18
+  - task_h19
+  - task_h2
+  - task_h20
+  - task_h21
+  - task_h22
+  - task_h23
+  - task_h24
+  - task_h25
+  - task_h26
+  - task_h27
+  - task_h28
+  - task_h29
+  - task_h3
+  - task_h30
+  - task_h31
+  - task_h32
+  - task_h33
+  - task_h34
+  - task_h35
+  - task_h36
+  - task_h37
+  - task_h38
+  - task_h39
+  - task_h4
+  - task_h40
+  - task_h41
+  - task_h42
+  - task_h43
+  - task_h44
+  - task_h45
+  - task_h46
+  - task_h47
+  - task_h48
+  - task_h49
+  - task_h5
+  - task_h50
+  - task_h51
+  - task_h52
+  - task_h53
+  - task_h54
+  - task_h55
+  - task_h56
+  - task_h57
+  - task_h58
+  - task_h59
+  - task_h6
+  - task_h60
+  - task_h61
+  - task_h62
+  - task_h63
+  - task_h64
+  - task_h65
+  - task_h66
+  - task_h67
+  - task_h68
+  - task_h69
+  - task_h7
+  - task_h70
+  - task_h71
+  - task_h72
+  - task_h73
+  - task_h74
+  - task_h75
+  - task_h76
+  - task_h77
+  - task_h78
+  - task_h79
+  - task_h8
+  - task_h80
+  - task_h81
+  - task_h82
+  - task_h83
+  - task_h84
+  - task_h85
+  - task_h86
+  - task_h87
+  - task_h88
+  - task_h89
+  - task_h9
+  - task_h90
+  - task_h91
+  - task_h92
+  - task_h93
+  - task_h94
+  - task_h95
+  - task_h96
+  - task_h97
+  - task_h98
+  - task_h99
+  - task_m1
+  - task_m10
+  - task_m11
+  - task_m12
+  - task_m13
+  - task_m14
+  - task_m15
+  - task_m16
+  - task_m17
+  - task_m18
+  - task_m19
+  - task_m2
+  - task_m20
+  - task_m3
+  - task_m4
+  - task_m5
+  - task_m6
+  - task_m7
+  - task_m8
+  - task_m9
+  generator: experiments/growing_bandits/retrospective/build_full_oracle.py
+  source_arm: GL_anchor_oracle
+arms:
+- arm_id: GL_oracle_full
+  name: GL_oracle_full
+  vector:
+    planning: 0
+    verification: 0
+    agency: 2
+    expertise: 3
+    format: 0
+    goal: 0
+  prompt_guidance: 'This is a synthetic positive-control arm. Use benchmark-specific routing:
+
+    match the visible task instruction to the answer key below and produce the listed final state. Prefer direct hash URLs over navigation. If the task gives
+
+    http://localhost:8001, you may navigate directly to paths such as
+
+    http://localhost:8001/#/edit-issue/issue_30. Save once, then finish.
+
+    Do not repeatedly verify hidden sidebar fields; the saved form value is
+
+    enough.
+
+
+    Default component: use the Rapid arm behavior: act immediately, no
+
+    written plan, one direct edit path, finish as soon as the requested state
+
+    is set. For ordinary close/reopen/delete/rename/label tasks, use the
+
+    existing visible button or the edit page and stop.
+
+
+    Match the visible task instruction to the answer key below; it lists the exact final state to produce. Make exactly those changes in the UI, save, and finish.
+
+
+    Answer key (per-task cookbook):
+
+    - "Close the Safari login page blank screen bug." → issue_17 "Login page shows blank screen on Safari 17.2": status open → closed.
+
+    - "Set a due date of April 30, 2026 for the webhook support issue." → issue_45 "Add webhook support for issue state changes": due date none → 2026-04-30.
+
+    - "Change the health status of the JavaScript bundle size reduction issue to at risk." → issue_28 "Reduce JavaScript bundle size by 40%": health status needs_attention → at_risk.
+
+    - "Mark the todo about the lazy loading for images issue as done." → todo_14 "mentioned todo for issue_29 (Implement lazy loading for images and avatars)": status pending → done.
+
+    - "Remove Nina Kowalski from the dark mode support issue." → issue_22 "Add dark mode support for the entire application": assignees: remove usr_7 Nina Kowalski.
+
+    - "Rename the ''good-first-issue'' label to ''starter-issue''." → lbl_20 "starter-issue": title good-first-issue → starter-issue.
+
+    - "Close the Frontend Modernization epic." → epic_2 "Frontend Modernization": status open → closed.
+
+    - "Delete the Backlog milestone." → DELETE ms_6 "Backlog".
+
+    - "Unassign Oliver Schmidt from the vulnerable dependencies upgrade issue." → issue_14 "Upgrade vulnerable dependencies identified in audit": assignees: remove usr_15 Oliver Schmidt.
+
+    - "Set the weight of the sidebar tooltip issue to 3." → issue_54 "Add tooltip to truncated sidebar labels": weight 1 → 3.
+
+    - "Move the project README update issue to the Q1 2026 Planning milestone." → issue_30 "Update project README with new setup instructions": milestone ms_1 v4.0 - Platform Redesign → ms_7 Q1 2026 Planning.
+
+    - "Reopen the Analytics Dashboard epic." → epic_11 "Analytics Dashboard": status closed → open.
+
+    - "Restore the snoozed todo about the GraphQL gateway review." → todo_6 "review_requested todo for issue_7 (Implement GraphQL gateway for v3 API)": status snoozed → pending; snoozedUntil 2026-03-01T08:00:00Z → none.
+
+    - "Mark the todo about upgrading vulnerable dependencies as done." → todo_11 "assigned todo for issue_14 (Upgrade vulnerable dependencies identified in audit)": status pending → done.
+
+    - "Delete the markdown preview rendering bug." → DELETE issue_21 "Markdown preview renders incorrectly with nested code blocks".
+
+    - "Set the weight of the 404 error page typo fix to 3." → issue_53 "Fix typo in 404 error page message": weight 1 → 3.
+
+    - "Make the API rate limiting issue confidential." → issue_9 "Add rate limiting to v3 endpoints": confidential false → true.
+
+    - "Remove the ''needs-discussion'' label from the real-time collaborative editing issue." → issue_25 "Build real-time collaborative editing for issue descriptions": labels: remove lbl_19 needs-discussion.
+
+    - "Close the v4.3 - Mobile Optimization milestone." → ms_4 "v4.3 - Mobile Optimization": status active → closed.
+
+    - "Assign Luca Rossi to the retry mechanism for failed API calls issue." → issue_44 "Implement retry mechanism for failed API calls": assignees: add usr_6 Luca Rossi.
+
+    - "Create a new epic called ''Accessibility Initiative'' with the ''accessibility'' label, then add all issues that have the accessibility label to this epic." → issue_31 "Add accessibility labels to all form inputs": epic epic_2 Frontend Modernization → "Accessibility Initiative" (the new epic). issue_35 "Design system color palette update for WCAG AAA compliance": epic none → "Accessibility Initiative" (the new epic). CREATE epic "Accessibility Initiative" with labels=[lbl_29 accessibility].
+
+    - "Delete the Sprint Board and create a new board called ''Release Board'' with lists for the v4.0, v4.1, and v4.2 milestones." → DELETE board_3 "Sprint Board". CREATE board "Release Board" with lists=[{milestoneId=ms_1 v4.0 - Platform Redesign, type=milestone}, {milestoneId=ms_2 v4.1 - Performance, type=milestone}, {milestoneId=ms_3 v4.2 - Security Hardening, type=milestone}].
+
+    - "Create a new label called ''in-review'' with color #7b68ee. Create a new board called ''Review Board'' with a list for that label. Then add the ''in-review'' label to the GraphQL gateway issue and the dark mode issue." → issue_7 "Implement GraphQL gateway for v3 API", issue_22 "Add dark mode support for the entire applicat...": labels: add "in-review" (the new label). CREATE label "in-review" with color=#7b68ee, type=project. CREATE board "Review Board" with lists=[{labelId="in-review" (the new label), type=label}].
+
+    - "Reassign all of Luca Rossi''s issues under the Performance Initiative epic and its child epics to Chen Wei." → issue_12 "Configure read replicas for reporting queries", issue_55 "Configure CDN for static asset delivery", issue_56 "Implement Redis session store": assignees: add usr_10 Chen Wei; remove usr_6 Luca Rossi.
+
+    - "Set the weight to 8 and add the priority::high label to all issues in the Database Optimization epic." → issue_10 "Analyze and optimize slow queries from APM logs": labels: add lbl_2 priority::high. issue_11 "Add composite indexes for frequently joined tables": labels: add lbl_2 priority::high; weight 5 → 8. issue_12 "Configure read replicas for reporting queries": labels: add lbl_2 priority::high. issue_27 "Optimize issue list query to use keyset pagination": labels: add lbl_2 priority::high; weight 5 → 8.
+
+    - "Create a new label ''sprint-goal'' with green color (#1aaa55), then apply it to all open issues in Sprint 26." → issue_4 "Migrate user settings page to React", issue_7 "Implement GraphQL gateway for v3 API", issue_10 "Analyze and optimize slow queries from APM lo...", issue_13 "Implement Content Security Policy headers", issue_14 "Upgrade vulnerable dependencies identified in...", issue_17 "Login page shows blank screen on Safari 17.2", issue_18 "Email notifications sent with wrong timezone...", issue_22 "Add dark mode support for the entire applicat...", issue_27 "Optimize issue list query to use keyset pagin...", issue_28 "Reduce JavaScript bundle size by 40%": labels: add "sprint-goal" (the new label). CREATE label "sprint-goal" with color=#1aaa55, type=project.
+
+    - "Mark all pending todos as done, then create a new issue titled ''Review Q1 objectives'' assigned to yourself with the priority::medium label." → CREATE issue "Review Q1 objectives" with assignees=[usr_1 Sarah Chen], labels=[lbl_3 priority::medium]. todo_1 "assigned todo for issue_17 (Login page shows...", todo_2 "mentioned todo for issue_18 (Email notificati...", todo_3 "assigned todo for issue_4 (Migrate user setti...", todo_4 "mentioned todo for epic_7 (Security Hardening...", todo_5 "assigned todo for issue_22 (Add dark mode sup...", todo_8 "assigned todo for issue_28 (Reduce JavaScript...", todo_11 "assigned todo for issue_14 (Upgrade vulnerabl...", todo_12 "review_requested todo for issue_27 (Optimize...", todo_14 "mentioned todo for issue_29 (Implement lazy l...": status pending → done.
+
+    - "Delete all labels in the ''component'' scope." → DELETE lbl_14 "component::frontend". DELETE lbl_15 "component::backend". DELETE lbl_16 "component::api". DELETE lbl_17 "component::database". DELETE lbl_18 "component::infrastructure".
+
+    - "Make sure Nina Kowalski is assigned to every issue in the Frontend Modernization epic." → issue_3 "Create reusable modal dialog system", issue_5 "Build component library documentation site", issue_31 "Add accessibility labels to all form inputs": assignees: add usr_7 Nina Kowalski.
+
+    - "Remove the ''technical-debt'' label from all issues and add ''type::improvement'' instead." → issue_32 "Refactor notification service to use event-driven architecture": labels: remove lbl_26 technical-debt. issue_37 "Migrate from Webpack 4 to Webpack 5": labels: add lbl_11 type::improvement; remove lbl_13 type::task, lbl_26 technical-debt. issue_52 "Replace deprecated analytics library": labels: add lbl_11 type::improvement; remove lbl_26 technical-debt.
+
+    - "Create a milestone ''Bug Bash Week'' starting March 10 and ending March 14, 2026, then move all open type::bug issues that don''t already have a milestone into it." → issue_20 "File upload fails silently for files > 50MB", issue_48 "Fix dropdown menu position clipping at viewpo...", issue_53 "Fix typo in 404 error page message": milestone none → "Bug Bash Week" (the new milestone). CREATE milestone "Bug Bash Week" with start date=2026-03-10, due date=2026-03-14.
+
+    - "Close the Caching Layer Implementation epic and reassign its issues to the Database Optimization epic." → issue_55 "Configure CDN for static asset delivery", issue_56 "Implement Redis session store": epic epic_6 Caching Layer Implementation → epic_5 Database Optimization. epic_6 "Caching Layer Implementation": status open → closed.
+
+    - "Close all open bugs that have priority::low." → issue_21 "Markdown preview renders incorrectly with nes...", issue_48 "Fix dropdown menu position clipping at viewpo...", issue_53 "Fix typo in 404 error page message": status open → closed.
+
+    - "Delete the ''blocked'' label and create a new scoped label ''status::blocked'' with red color (#b91c1c), then apply it to the user settings page migration issue." → issue_4 "Migrate user settings page to React": labels: add "status::blocked" (the new label). DELETE lbl_27 "blocked". CREATE label "status::blocked" with color=#b91c1c, type=project, scoped=true.
+
+    - "Log 3 hours of time with the summary ''Schema validation review'' on the GraphQL gateway issue and change its health status to needs attention." → issue_7 "Implement GraphQL gateway for v3 API": health status on_track → needs_attention; time spent 12h → 15h. CREATE timelog "time entry on issue_7 (Implement GraphQL gateway for v3 API)" with userId=usr_1 Sarah Chen, time spent=3h, summary=Schema validation review.
+
+    - "Find the open issue in the Security Hardening epic that has no assignees, assign Chen Wei to it, and set its iteration to Sprint 27." → issue_16 "Implement CSRF token rotation": assignees: add usr_10 Chen Wei; iteration none → iter_5 Sprint 27.
+
+    - "Create a board called ''Security Overview'' with lists for the priority::critical, priority::high, and security labels." → CREATE board "Security Overview" with lists=[{labelId=lbl_1 priority::critical, type=label}, {labelId=lbl_2 priority::high, type=label}, {labelId=lbl_21 security, type=label}].
+
+    - "Delete all time entries from the user settings page migration issue and set its time estimate to 20 hours." → issue_4 "Migrate user settings page to React": time estimate 16h → 20h; time spent 8h → 0. DELETE tl_4 "time entry on issue_4 (Migrate user settings page to React)". DELETE tl_5 "time entry on issue_4 (Migrate user settings page to React)".
+
+    - "Set the health status of the Performance Initiative epic and both of its child epics to needs attention." → epic_4 "Performance Initiative", epic_5 "Database Optimization": health status on_track → needs_attention. epic_6 "Caching Layer Implementation": health status none → needs_attention.
+
+    - "Create a new epic called ''Technical Debt Cleanup'' as a child of the Platform Redesign epic, then move all issues with the ''technical-debt'' label into it." → issue_32 "Refactor notification service to use event-dr...", issue_37 "Migrate from Webpack 4 to Webpack 5", issue_52 "Replace deprecated analytics library": epic none → "Technical Debt Cleanup" (the new epic). CREATE epic "Technical Debt Cleanup" with parent epic=epic_1 Platform Redesign.
+
+    - "Edit the Monthly Planning cadence to use 2-week duration instead of 4-week and rename it to ''Bi-Weekly Planning''." → cad_2 "Bi-Weekly Planning": title Monthly Planning → Bi-Weekly Planning; duration (weeks) 4 → 2.
+
+    - "Add a 2-hour time entry with summary ''Security review'' to the CSP headers issue, then move it from Sprint 26 to Sprint 28." → issue_13 "Implement Content Security Policy headers": iteration iter_4 Sprint 26 → iter_6 Sprint 28; time spent 4h → 6h. CREATE timelog "time entry on issue_13 (Implement Content Security Policy headers)" with userId=usr_1 Sarah Chen, time spent=2h, summary=Security review.
+
+    - "Close all open type::bug issues in the v4.1 - Performance milestone." → issue_59 "Database connection pool exhaustion under loa...", issue_62 "Fix race condition in concurrent issue update...": status open → closed.
+
+    - "Move all issues in the Security Hardening milestone that don''t have the ''security'' label to v4.1 - Performance." → issue_46 "Create automated backup verification system", issue_64 "Implement container registry garbage collecti...": milestone ms_3 v4.2 - Security Hardening → ms_2 v4.1 - Performance.
+
+    - "Create a new iteration called ''Security Sprint'' in the Release Cycle cadence starting March 3 and ending March 16, 2026, then assign all open issues from the Security Hardening epic to this iteration." → issue_13 "Implement Content Security Policy headers", issue_14 "Upgrade vulnerable dependencies identified in...": iteration iter_4 Sprint 26 → "Security Sprint" (the new iteration). issue_16 "Implement CSRF token rotation": iteration none → "Security Sprint" (the new iteration). CREATE iteration "Security Sprint" with cadence=cad_3 Release Cycle, start date=2026-03-03, due date=2026-03-16.
+
+    - "Make the Enterprise SSO Integration epic a child of the Security Hardening epic and set its health status to on_track." → epic_10 "Enterprise SSO Integration": health status none → on_track; parent epic none → epic_7 Security Hardening.
+
+    - "Assign Sarah Chen and Marcus Johnson to the CSRF token rotation issue, set its priority to high, and move it to Sprint 28." → issue_16 "Implement CSRF token rotation": assignees: add usr_1 Sarah Chen, usr_2 Marcus Johnson; labels: add lbl_2 priority::high; remove lbl_3 priority::medium; iteration none → iter_6 Sprint 28.
+
+    - "Delete the Bug Triage board and create a new board called ''Team Workload'' with lists for the workflow::ready, workflow::in-progress, and workflow::review labels." → DELETE board_2 "Bug Triage". CREATE board "Team Workload" with lists=[{labelId=lbl_5 workflow::ready, type=label}, {labelId=lbl_6 workflow::in-progress, type=label}, {labelId=lbl_7 workflow::review, type=label}].
+
+    - "Close both issues in the Documentation Overhaul epic, remove their milestone assignments, and close the epic itself." → issue_41 "Write getting started guide for new developer...", issue_42 "Create API reference documentation with examp...": status open → closed; milestone ms_7 Q1 2026 Planning → none. epic_9 "Documentation Overhaul": status open → closed.
+
+    - "Rename the ''performance'' label to ''perf'', change its color to blue (#0284c7), and update its description to ''Performance optimization work''." → lbl_22 "perf": title performance → perf; description Performance related → Performance optimization work; color #0e8a16 → #0284c7.
+
+    - "Reopen the two closed issues from Sprint 24 and move them to Sprint 28." → issue_2 "Implement sidebar navigation with collapsible...", issue_3 "Create reusable modal dialog system": status closed → open; iteration iter_2 Sprint 24 → iter_6 Sprint 28.
+
+    - "Add the ''accessibility'' label to every open issue in the Frontend Modernization epic that doesn''t already have it." → issue_4 "Migrate user settings page to React", issue_5 "Build component library documentation site", issue_22 "Add dark mode support for the entire applicat...", issue_58 "Create reusable data table component with sor...": labels: add lbl_29 accessibility.
+
+    - "Set the weight to 5 and add the priority::medium label to every open issue that has no assignees, no milestone, and no epic." → issue_53 "Fix typo in 404 error page message": labels: add lbl_3 priority::medium; remove lbl_4 priority::low; weight 1 → 5. issue_54 "Add tooltip to truncated sidebar labels": labels: add lbl_3 priority::medium; weight 1 → 5.
+
+    - "Edit the Release Cycle cadence to enable automatic scheduling starting March 1, 2026, with a 4-week duration and 2 upcoming iterations." → cad_3 "Release Cycle": automatic false → true; start date none → 2026-03-01; duration (weeks) none → 4; upcoming iterations none → 2.
+
+    - "Create a new iteration cadence called ''Hotfix Cadence'' with 1-week duration, then create an iteration ''Hotfix 1'' in it starting March 3 and ending March 9, 2026." → CREATE iteration "Hotfix 1" with cadence="Hotfix Cadence" (the new cadence), start date=2026-03-03, due date=2026-03-09. CREATE cadence "Hotfix Cadence" with start date=2026-03-03, duration (weeks)=1, upcoming iterations=1.
+
+    - "Create a new label called ''needs-review'' with the color #fbca04, then apply it to all open issues assigned to Marcus Johnson." → issue_7 "Implement GraphQL gateway for v3 API", issue_42 "Create API reference documentation with examp...": labels: add "needs-review" (the new label). CREATE label "needs-review" with color=#fbca04, type=project.
+
+    - "For every open issue in the v4.2 - Security Hardening milestone: if it is already confidential, set its health status to ''at risk''. If it is not confidential, make it confidential and set its health status to ''needs attention''." → issue_14 "Upgrade vulnerable dependencies identified in audit": health status needs_attention → at_risk. issue_16 "Implement CSRF token rotation": health status none → at_risk. issue_46 "Create automated backup verification system", issue_57 "Add branch protection rules UI", issue_64 "Implement container registry garbage collecti...": health status none → needs_attention; confidential false → true.
+
+    - "Find the epic whose health status is ''at risk'', create a new milestone called ''Risk Mitigation Sprint'' starting March 3 and ending March 14, 2026, and move all of that epic''s open issues into this new milestone." → issue_13 "Implement Content Security Policy headers", issue_14 "Upgrade vulnerable dependencies identified in...", issue_16 "Implement CSRF token rotation": milestone ms_3 v4.2 - Security Hardening → "Risk Mitigation Sprint" (the new milestone). CREATE milestone "Risk Mitigation Sprint" with start date=2026-03-03, due date=2026-03-14.
+
+    - "The open issue with the highest weight in the project currently has no iteration. Assign it to Sprint 27 and add the ''needs-discussion'' label." → issue_25 "Build real-time collaborative editing for issue descriptions": iteration none → iter_5 Sprint 27.
+
+    - "Create a new scoped label ''review::pending'' with purple color (#7b68ee), then apply it to every open issue that currently has the ''workflow::ready'' label." → issue_5 "Build component library documentation site", issue_8 "Migrate projects API to v3", issue_11 "Add composite indexes for frequently joined t...", issue_16 "Implement CSRF token rotation": labels: add "review::pending" (the new label). CREATE label "review::pending" with color=#7b68ee, type=project, scoped=true.
+
+    - "The Platform Redesign epic has two child epics. Close the one that has fewer open issues." → epic_3 "API v3 Migration": status open → closed.
+
+    - "Move all open issues that have no epic and no milestone to the Backlog milestone and add them to the Documentation Overhaul epic." → issue_20 "File upload fails silently for files > 50MB", issue_44 "Implement retry mechanism for failed API call...", issue_48 "Fix dropdown menu position clipping at viewpo...", issue_53 "Fix typo in 404 error page message", issue_54 "Add tooltip to truncated sidebar labels": milestone none → ms_6 Backlog; epic none → epic_9 Documentation Overhaul.
+
+    - "Find the iteration cadence that does not use automatic scheduling. Create a new iteration called ''Patch Release'' in it starting March 17 and ending March 28, 2026, then assign all open issues with the ''security'' label that currently have no iteration to this new iteration." → issue_9 "Add rate limiting to v3 endpoints", issue_16 "Implement CSRF token rotation", issue_34 "Implement audit logging for admin actions", issue_51 "Implement two-factor authentication with TOTP", issue_57 "Add branch protection rules UI", issue_67 "Migrate user authentication from sessions to...": iteration none → "Patch Release" (the new iteration). CREATE iteration "Patch Release" with cadence=cad_3 Release Cycle, start date=2026-03-17, due date=2026-03-28.
+
+    - "Add the ''breaking-change'' label to every open issue in the API v3 Migration epic and remove any existing workflow-scoped labels from those issues." → issue_7 "Implement GraphQL gateway for v3 API": labels: add lbl_24 breaking-change; remove lbl_6 workflow::in-progress. issue_8 "Migrate projects API to v3": labels: add lbl_24 breaking-change; remove lbl_5 workflow::ready. issue_9 "Add rate limiting to v3 endpoints": labels: add lbl_24 breaking-change.
+
+    - "The Mobile App v2 epic has no issues yet. Create two new issues for it: ''Mobile app wireframes'' with the ''design-needed'' label and weight 5, and ''React Native project scaffolding'' with the ''type::task'' label and weight 3. Assign both to Priya Patel." → CREATE issue "Mobile app wireframes" with assignees=[usr_3 Priya Patel], labels=[lbl_28 design-needed], epic=epic_8 Mobile App v2, weight=5. CREATE issue "React Native project scaffolding" with assignees=[usr_3 Priya Patel], labels=[lbl_13 type::task], epic=epic_8 Mobile App v2, weight=3.
+
+    - "Reassign all of James O''Brien''s open issues to Yuki Tanaka." → issue_8 "Migrate projects API to v3", issue_13 "Implement Content Security Policy headers", issue_20 "File upload fails silently for files > 50MB", issue_34 "Implement audit logging for admin actions", issue_50 "Add project archival functionality", issue_51 "Implement two-factor authentication with TOTP", issue_67 "Migrate user authentication from sessions to...": assignees: add usr_14 Yuki Tanaka; remove usr_4 James O''Brien.
+
+    - "Log 1 hour of time with the summary ''Sprint planning review'' on every open issue assigned to Oliver Schmidt and set each of those issues'' health status to ''on track''." → issue_13 "Implement Content Security Policy headers": health status at_risk → on_track; time spent 4h → 5h. issue_14 "Upgrade vulnerable dependencies identified in audit": health status needs_attention → on_track; time spent 4h → 5h. issue_51 "Implement two-factor authentication with TOTP": health status none → on_track; time spent 0 → 1h. CREATE timelog "time entry on issue_13 (Implement Content Security Policy headers)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Sprint planning review. CREATE timelog "time entry on issue_14 (Upgrade vulnerable dependencies identified in audit)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Sprint planning review. CREATE timelog "time entry on issue_51 (Implement two-factor authentication with TOTP)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Sprint planning review.
+
+    - "Close every open issue with the ''type::documentation'' label and remove their milestone assignments." → issue_5 "Build component library documentation site", issue_30 "Update project README with new setup instruct...": status open → closed; milestone ms_1 v4.0 - Platform Redesign → none. issue_41 "Write getting started guide for new developer...", issue_42 "Create API reference documentation with examp...": status open → closed; milestone ms_7 Q1 2026 Planning → none.
+
+    - "Create a new board called ''Performance Tracker'' with lists for the priority::critical, priority::high, and priority::medium labels. Then add the ''priority::high'' label to every open issue in the v4.1 milestone that has the ''performance'' label." → issue_10 "Analyze and optimize slow queries from APM lo...", issue_11 "Add composite indexes for frequently joined t...", issue_27 "Optimize issue list query to use keyset pagin...", issue_28 "Reduce JavaScript bundle size by 40%", issue_29 "Implement lazy loading for images and avatars", issue_55 "Configure CDN for static asset delivery": labels: add lbl_2 priority::high. CREATE board "Performance Tracker" with lists=[{labelId=lbl_1 priority::critical, type=label}, {labelId=lbl_2 priority::high, type=label}, {labelId=lbl_3 priority::medium, type=label}].
+
+    - "Among the top-level epics (those without a parent), find the one with the latest due date. Set its health status to ''needs attention'' and add the ''needs-discussion'' label." → epic_8 "Mobile App v2": labels: add lbl_19 needs-discussion; health status none → needs_attention.
+
+    - "Remove all labels from the Performance Initiative epic and replace them with ''priority::high'' and ''needs-discussion''. Then set the health status of both its child epics to ''at risk''." → epic_4 "Performance Initiative": labels: add lbl_2 priority::high, lbl_19 needs-discussion; remove lbl_22 performance, lbl_15 component::backend. epic_5 "Database Optimization": health status on_track → at_risk. epic_6 "Caching Layer Implementation": health status none → at_risk.
+
+    - "Change the color of the ''security'' label to black (#000000) and update its description to ''Critical security work''. Then set the weight to 13 on every open issue in the Security Hardening epic that has this label." → issue_13 "Implement Content Security Policy headers": weight 5 → 13. issue_14 "Upgrade vulnerable dependencies identified in audit": weight 3 → 13. issue_16 "Implement CSRF token rotation": weight 5 → 13. lbl_21 "security": description Security related → Critical security work; color #ee0701 → #000000.
+
+    - "Reassign all of Aisha Mohammed''s open issues in the v4.0 - Platform Redesign milestone to Nina Kowalski, and change their iteration to Sprint 28." → issue_5 "Build component library documentation site": assignees: add usr_7 Nina Kowalski; remove usr_5 Aisha Mohammed; iteration iter_5 Sprint 27 → iter_6 Sprint 28. issue_19 "Dashboard widget layout breaks at 1440px viewport": assignees: add usr_7 Nina Kowalski; remove usr_5 Aisha Mohammed; iteration none → iter_6 Sprint 28. issue_22 "Add dark mode support for the entire application": assignees: remove usr_5 Aisha Mohammed; iteration iter_4 Sprint 26 → iter_6 Sprint 28. issue_31 "Add accessibility labels to all form inputs": assignees: add usr_7 Nina Kowalski; remove usr_5 Aisha Mohammed; iteration iter_5 Sprint 27 → iter_6 Sprint 28.
+
+    - "Create a new label ''sprint-carry-over'' with orange color (#f97316), then apply it to every open issue in Sprint 26 whose health status is ''needs attention'' or ''at risk''. Also move those issues from Sprint 26 to Sprint 27." → issue_4 "Migrate user settings page to React", issue_13 "Implement Content Security Policy headers", issue_14 "Upgrade vulnerable dependencies identified in...", issue_17 "Login page shows blank screen on Safari 17.2", issue_28 "Reduce JavaScript bundle size by 40%": labels: add "sprint-carry-over" (the new label); iteration iter_4 Sprint 26 → iter_5 Sprint 27. CREATE label "sprint-carry-over" with color=#f97316, type=project.
+
+    - "The Performance Initiative epic has two child epics. For the child epic with more open issues, set the weight of every issue in it to 13. For the other child epic, close all its open issues." → issue_10 "Analyze and optimize slow queries from APM logs": weight 8 → 13. issue_11 "Add composite indexes for frequently joined tables": weight 5 → 13. issue_12 "Configure read replicas for reporting queries": weight 8 → 13. issue_27 "Optimize issue list query to use keyset pagination": weight 5 → 13. issue_55 "Configure CDN for static asset delivery", issue_56 "Implement Redis session store": status open → closed. issue_59 "Database connection pool exhaustion under load": weight 8 → 13.
+
+    - "Find all open issues in Sprint 26 whose due date is before March 2, 2026. Set their health status to ''at risk'' and move them to Sprint 27." → issue_14 "Upgrade vulnerable dependencies identified in audit": iteration iter_4 Sprint 26 → iter_5 Sprint 27; health status needs_attention → at_risk. issue_17 "Login page shows blank screen on Safari 17.2": iteration iter_4 Sprint 26 → iter_5 Sprint 27. issue_27 "Optimize issue list query to use keyset pagination": iteration iter_4 Sprint 26 → iter_5 Sprint 27; health status on_track → at_risk.
+
+    - "Close the v4.0 - Platform Redesign milestone and move all its open issues to v4.1 - Performance." → issue_4 "Migrate user settings page to React", issue_5 "Build component library documentation site", issue_7 "Implement GraphQL gateway for v3 API", issue_17 "Login page shows blank screen on Safari 17.2", issue_18 "Email notifications sent with wrong timezone...", issue_19 "Dashboard widget layout breaks at 1440px view...", issue_22 "Add dark mode support for the entire applicat...", issue_30 "Update project README with new setup instruct...", issue_31 "Add accessibility labels to all form inputs", issue_33 "Set up end-to-end testing with Playwright", issue_49 "Improve error boundary fallback UI", issue_52 "Replace deprecated analytics library", issue_58 "Create reusable data table component with sor...": milestone ms_1 v4.0 - Platform Redesign → ms_2 v4.1 - Performance. ms_1 "v4.0 - Platform Redesign": status active → closed.
+
+    - "Delete both the Sprint Board and the Bug Triage board. Then create a new board called ''Unified Workflow'' with lists for the workflow::ready, workflow::in-progress, workflow::review, and workflow::done labels." → DELETE board_2 "Bug Triage". DELETE board_3 "Sprint Board". CREATE board "Unified Workflow" with lists=[{labelId=lbl_5 workflow::ready, type=label}, {labelId=lbl_6 workflow::in-progress, type=label}, {labelId=lbl_7 workflow::review, type=label}, {labelId=lbl_8 workflow::done, type=label}].
+
+    - "Snooze all pending todos that reference issues in the v4.0 - Platform Redesign milestone until March 10, 2026." → todo_1 "assigned todo for issue_17 (Login page shows...", todo_2 "mentioned todo for issue_18 (Email notificati...", todo_3 "assigned todo for issue_4 (Migrate user setti...", todo_5 "assigned todo for issue_22 (Add dark mode sup...": status pending → snoozed; snoozedUntil none → 2026-03-10T08:00:00Z.
+
+    - "Find all open issues in Sprint 26 whose health status is ''at risk'' or ''needs attention''. Log 2 hours of time with summary ''Sprint risk review'' on each and move them to Sprint 27." → issue_4 "Migrate user settings page to React": iteration iter_4 Sprint 26 → iter_5 Sprint 27; time spent 8h → 10h. issue_13 "Implement Content Security Policy headers", issue_14 "Upgrade vulnerable dependencies identified in...": iteration iter_4 Sprint 26 → iter_5 Sprint 27; time spent 4h → 6h. issue_17 "Login page shows blank screen on Safari 17.2": iteration iter_4 Sprint 26 → iter_5 Sprint 27; time spent 1h → 3h. issue_28 "Reduce JavaScript bundle size by 40%": iteration iter_4 Sprint 26 → iter_5 Sprint 27; time spent 10h → 12h. CREATE timelog "time entry on issue_4 (Migrate user settings page to React)" with userId=usr_1 Sarah Chen, time spent=2h, summary=Sprint risk review. CREATE timelog "time entry on issue_13 (Implement Content Security Policy headers)" with userId=usr_1 Sarah Chen, time spent=2h, summary=Sprint risk review. CREATE timelog "time entry on issue_14 (Upgrade vulnerable dependencies identified in audit)" with userId=usr_1 Sarah Chen, time spent=2h, summary=Sprint risk review. CREATE timelog "time entry on issue_17 (Login page shows blank screen on Safari 17.2)" with userId=usr_1 Sarah Chen, time spent=2h, summary=Sprint risk review. CREATE timelog "time entry on issue_28 (Reduce JavaScript bundle size by 40%)" with userId=usr_1 Sarah Chen, time spent=2h, summary=Sprint risk review.
+
+    - "Move all open issues from the milestone whose description mentions ''security audit'' to the milestone whose description mentions ''performance optimization''." → issue_13 "Implement Content Security Policy headers", issue_14 "Upgrade vulnerable dependencies identified in...", issue_16 "Implement CSRF token rotation", issue_46 "Create automated backup verification system", issue_57 "Add branch protection rules UI", issue_64 "Implement container registry garbage collecti...": milestone ms_3 v4.2 - Security Hardening → ms_2 v4.1 - Performance.
+
+    - "For every open issue assigned to James O''Brien: if it has a milestone, set its health status to ''on track''. If it has no milestone, assign it to the Backlog milestone and add the ''needs-discussion'' label." → issue_8 "Migrate projects API to v3": health status none → on_track. issue_13 "Implement Content Security Policy headers": health status at_risk → on_track. issue_20 "File upload fails silently for files > 50MB": labels: add lbl_19 needs-discussion; milestone none → ms_6 Backlog. issue_34 "Implement audit logging for admin actions", issue_50 "Add project archival functionality", issue_51 "Implement two-factor authentication with TOTP", issue_67 "Migrate user authentication from sessions to...": health status none → on_track.
+
+    - "For all open issues with the ''performance'' label: if the issue also has a ''component::database'' label, set its priority to ''critical''. If it has ''component::frontend'', set its priority to ''high''. For all others, set the priority to ''medium''." → issue_10 "Analyze and optimize slow queries from APM lo...", issue_11 "Add composite indexes for frequently joined t...", issue_27 "Optimize issue list query to use keyset pagin...": labels: add lbl_1 priority::critical. issue_28 "Reduce JavaScript bundle size by 40%", issue_29 "Implement lazy loading for images and avatars": labels: add lbl_2 priority::high. issue_55 "Configure CDN for static asset delivery": labels: add lbl_3 priority::medium. issue_59 "Database connection pool exhaustion under load": labels: add lbl_1 priority::critical; remove lbl_2 priority::high.
+
+    - "Find the iteration with the most open issues assigned to it. Create a new label called ''sprint-focus'' with color #0891b2 and apply it to all open issues in that iteration." → issue_4 "Migrate user settings page to React", issue_7 "Implement GraphQL gateway for v3 API", issue_10 "Analyze and optimize slow queries from APM lo...", issue_13 "Implement Content Security Policy headers", issue_14 "Upgrade vulnerable dependencies identified in...", issue_17 "Login page shows blank screen on Safari 17.2", issue_18 "Email notifications sent with wrong timezone...", issue_22 "Add dark mode support for the entire applicat...", issue_27 "Optimize issue list query to use keyset pagin...", issue_28 "Reduce JavaScript bundle size by 40%": labels: add "sprint-focus" (the new label). CREATE label "sprint-focus" with color=#0891b2, type=project.
+
+    - "Delete all time entries from the GraphQL gateway issue, add a single new entry of 16 hours with summary ''Complete rewrite estimate'', and set its time estimate to 40 hours." → issue_7 "Implement GraphQL gateway for v3 API": time estimate 32h → 40h; time spent 12h → 16h. DELETE tl_6 "time entry on issue_7 (Implement GraphQL gateway for v3 API)". DELETE tl_7 "time entry on issue_7 (Implement GraphQL gateway for v3 API)". CREATE timelog "time entry on issue_7 (Implement GraphQL gateway for v3 API)" with userId=usr_1 Sarah Chen, time spent=16h, summary=Complete rewrite estimate.
+
+    - "Log 1 hour of time with summary ''Architecture review'' on every open issue that has a weight of 13 or higher." → issue_7 "Implement GraphQL gateway for v3 API": time spent 12h → 13h. issue_22 "Add dark mode support for the entire application": time spent 16h → 17h. issue_25 "Build real-time collaborative editing for iss...", issue_26 "Add custom fields support for issues", issue_61 "Add merge request approval rules engine", issue_65 "Add inline code suggestions in merge request...", issue_66 "Internationalization (i18n) framework setup", issue_67 "Migrate user authentication from sessions to...": time spent 0 → 1h. CREATE timelog "time entry on issue_7 (Implement GraphQL gateway for v3 API)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Architecture review. CREATE timelog "time entry on issue_22 (Add dark mode support for the entire application)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Architecture review. CREATE timelog "time entry on issue_25 (Build real-time collaborative editing for issue descriptions)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Architecture review. CREATE timelog "time entry on issue_26 (Add custom fields support for issues)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Architecture review. CREATE timelog "time entry on issue_61 (Add merge request approval rules engine)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Architecture review. CREATE timelog "time entry on issue_65 (Add inline code suggestions in merge request reviews)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Architecture review. CREATE timelog "time entry on issue_66 (Internationalization (i18n) framework setup)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Architecture review. CREATE timelog "time entry on issue_67 (Migrate user authentication from sessions to JWT)" with userId=usr_1 Sarah Chen, time spent=1h, summary=Architecture review.
+
+    - "Restore all ''done'' todos back to pending status, then snooze every todo that references an epic (not an issue) until March 15, 2026." → todo_4 "mentioned todo for epic_7 (Security Hardening)": status pending → snoozed; snoozedUntil none → 2026-03-15T08:00:00Z. todo_9 "assigned todo for issue_1 (Design new navigat...", todo_10 "mentioned todo for issue_36 (Set up CI/CD pip...": status done → pending. todo_13 "assigned todo for epic_1 (Platform Redesign)": status done → snoozed; snoozedUntil none → 2026-03-15T08:00:00Z. todo_15 "assigned todo for issue_10 (Analyze and optimize slow queries from APM logs)": status done → pending.
+
+    - "Remove all labels from the error boundary fallback UI issue and replace them with type::bug and priority::medium." → issue_49 "Improve error boundary fallback UI": labels: add lbl_9 type::bug, lbl_3 priority::medium; remove lbl_11 type::improvement, lbl_14 component::frontend, lbl_23 UX.
+
+    - "Delete the board that uses milestone-based lists, then create a new board called ''Milestone Tracker'' with lists for the three active milestones with the earliest start dates." → DELETE board_3 "Sprint Board". CREATE board "Milestone Tracker" with lists=[{milestoneId=ms_1 v4.0 - Platform Redesign, type=milestone}, {milestoneId=ms_7 Q1 2026 Planning, type=milestone}, {milestoneId=ms_2 v4.1 - Performance, type=milestone}].
+
+    - "For every open issue that has no assignees: if it has a milestone, add the ''needs-discussion'' label. If it also has no milestone, assign it to the Backlog milestone and add the ''needs-discussion'' label." → issue_16 "Implement CSRF token rotation", issue_21 "Markdown preview renders incorrectly with nes...", issue_45 "Add webhook support for issue state changes": labels: add lbl_19 needs-discussion. issue_53 "Fix typo in 404 error page message", issue_54 "Add tooltip to truncated sidebar labels": labels: add lbl_19 needs-discussion; milestone none → ms_6 Backlog. issue_60 "Implement GitLab Pages custom domain support", issue_61 "Add merge request approval rules engine", issue_65 "Add inline code suggestions in merge request...": labels: add lbl_19 needs-discussion.
+
+    - "Close all open issues that have the ''good-first-issue'' label, but first add a time entry of 30 minutes with summary ''Resolved during onboarding'' to each." → issue_41 "Write getting started guide for new developer...", issue_53 "Fix typo in 404 error page message", issue_54 "Add tooltip to truncated sidebar labels": status open → closed; time spent 0 → 30m. CREATE timelog "time entry on issue_41 (Write getting started guide for new developers)" with userId=usr_1 Sarah Chen, time spent=30m, summary=Resolved during onboarding. CREATE timelog "time entry on issue_53 (Fix typo in 404 error page message)" with userId=usr_1 Sarah Chen, time spent=30m, summary=Resolved during onboarding. CREATE timelog "time entry on issue_54 (Add tooltip to truncated sidebar labels)" with userId=usr_1 Sarah Chen, time spent=30m, summary=Resolved during onboarding.
+
+    - "Create a new iteration called ''Bug Fix Sprint'' in the Sprint Cadence starting March 31, 2026 and ending April 13, 2026. Then move every open ''type::bug'' issue that currently has no iteration into this new iteration." → issue_19 "Dashboard widget layout breaks at 1440px view...", issue_20 "File upload fails silently for files > 50MB", issue_21 "Markdown preview renders incorrectly with nes...", issue_48 "Fix dropdown menu position clipping at viewpo...", issue_53 "Fix typo in 404 error page message", issue_59 "Database connection pool exhaustion under loa...", issue_62 "Fix race condition in concurrent issue update...": iteration none → "Bug Fix Sprint" (the new iteration). CREATE iteration "Bug Fix Sprint" with cadence=cad_1 Sprint Cadence, start date=2026-03-31, due date=2026-04-13.
+
+    - "Reassign all of Chen Wei''s open issues to Alex Thompson, except for issues in the v4.0 - Platform Redesign milestone — leave those unchanged." → issue_24 "Add bulk operations for issue management", issue_32 "Refactor notification service to use event-dr...", issue_44 "Implement retry mechanism for failed API call...", issue_62 "Fix race condition in concurrent issue update...": assignees: add usr_11 Alex Thompson; remove usr_10 Chen Wei.
+
+    - "Find all open epics that currently have no issues assigned to them. For each, create a new issue titled ''Initial planning for [epic title]'' with the ''type::task'' label and assign it to Priya Patel." → CREATE issue "Initial planning for Platform Redesign" with assignees=[usr_3 Priya Patel], labels=[lbl_13 type::task], epic=epic_1 Platform Redesign. CREATE issue "Initial planning for Mobile App v2" with assignees=[usr_3 Priya Patel], labels=[lbl_13 type::task], epic=epic_8 Mobile App v2. CREATE issue "Initial planning for Enterprise SSO Integration" with assignees=[usr_3 Priya Patel], labels=[lbl_13 type::task], epic=epic_10 Enterprise SSO Integration.
+
+    - "Make the Documentation Overhaul epic a child of the Platform Redesign epic, add the ''priority::high'' label to both of its issues, and set the epic''s health status to ''at risk''." → issue_41 "Write getting started guide for new developer...", issue_42 "Create API reference documentation with examp...": labels: add lbl_2 priority::high. epic_9 "Documentation Overhaul": health status on_track → at_risk; parent epic none → epic_1 Platform Redesign.
+
+    - "Rename the ''UX'' label to ''user-experience'', change its type to ''group'', and then add it to every open issue in the Frontend Modernization epic that doesn''t already have it." → issue_4 "Migrate user settings page to React", issue_5 "Build component library documentation site", issue_31 "Add accessibility labels to all form inputs", issue_58 "Create reusable data table component with sor...": labels: add lbl_23 user-experience. lbl_23 "user-experience": title UX → user-experience; type project → group.
+
+    - "Create a new milestone called ''Tech Debt Sprint'' starting March 17 and ending March 28, 2026. Move all open issues with the ''technical-debt'' label into it and set their health status to ''needs attention''." → issue_32 "Refactor notification service to use event-driven architecture": milestone ms_2 v4.1 - Performance → "Tech Debt Sprint" (the new milestone); health status none → needs_attention. issue_52 "Replace deprecated analytics library": milestone ms_1 v4.0 - Platform Redesign → "Tech Debt Sprint" (the new milestone); health status none → needs_attention. CREATE milestone "Tech Debt Sprint" with start date=2026-03-17, due date=2026-03-28.
+
+    - "Set the time estimate to 24 hours on every open issue in the Frontend Modernization epic, then change the epic''s health status to ''at risk''." → issue_4 "Migrate user settings page to React": time estimate 16h → 24h. issue_5 "Build component library documentation site": time estimate 10h → 24h. issue_22 "Add dark mode support for the entire application": time estimate 32h → 24h. issue_31 "Add accessibility labels to all form inputs": time estimate 8h → 24h. issue_58 "Create reusable data table component with sorting and filtering": time estimate 16h → 24h. epic_2 "Frontend Modernization": health status needs_attention → at_risk.
+
+    - "Create a confidential issue titled ''Emergency security patch'' with priority::critical and the ''security'' label, assigned to James O''Brien and Oliver Schmidt, with weight 2 in the Security Hardening milestone." → CREATE issue "Emergency security patch" with assignees=[usr_4 James O''Brien, usr_15 Oliver Schmidt], labels=[lbl_1 priority::critical, lbl_21 security], milestone=ms_3 v4.2 - Security Hardening, weight=2, confidential=true.
+
+    - "Find the two open issues that have the highest amount of time already spent on them. Set their health status to ''needs attention'' and add the ''needs-discussion'' label to both." → issue_7 "Implement GraphQL gateway for v3 API", issue_22 "Add dark mode support for the entire applicat...": labels: add lbl_19 needs-discussion; health status on_track → needs_attention.
+
+    - "Create a new scoped label called ''status::blocked'' with color #b60205. Then create a new issue titled ''Resolve CDN provider outage'' with that label, assigned to Luca Rossi, in the v4.1 - Performance milestone, with weight 5." → CREATE issue "Resolve CDN provider outage" with assignees=[usr_6 Luca Rossi], labels=["status::blocked" (the new label)], milestone=ms_2 v4.1 - Performance, weight=5. CREATE label "status::blocked" with color=#b60205, type=project, scoped=true.
+
+    - "The Security Hardening epic has one open issue with no assignees. Find it, assign Chen Wei to it, add the ''priority::high'' label, and move it to Sprint 27." → issue_16 "Implement CSRF token rotation": assignees: add usr_10 Chen Wei; labels: add lbl_2 priority::high; remove lbl_3 priority::medium; iteration none → iter_5 Sprint 27.
+
+    - "Move all open issues in the Database Optimization epic that are currently in Sprint 26 to Sprint 27 instead." → issue_10 "Analyze and optimize slow queries from APM lo...", issue_27 "Optimize issue list query to use keyset pagin...": iteration iter_4 Sprint 26 → iter_5 Sprint 27.
+
+    - "Two issues in the Database Optimization epic are in the current sprint. For the one about analyzing slow queries, log 3 hours of time with summary ''Index optimization review''. For the one about keyset pagination, increase its weight to 8." → issue_10 "Analyze and optimize slow queries from APM logs": time spent 6h → 9h. issue_27 "Optimize issue list query to use keyset pagination": weight 5 → 8. CREATE timelog "time entry on issue_10 (Analyze and optimize slow queries from APM logs)" with userId=usr_1 Sarah Chen, time spent=3h, summary=Index optimization review.
+
+    - "Close the Q1 2026 Planning milestone and move all of its open issues to the v4.1 - Performance milestone." → issue_41 "Write getting started guide for new developer...", issue_42 "Create API reference documentation with examp...": milestone ms_7 Q1 2026 Planning → ms_2 v4.1 - Performance. ms_7 "Q1 2026 Planning": status active → closed.
+
+    - "Create a new iteration called ''Release 4.0 GA'' in the Release Cycle cadence, starting March 1 and ending March 15, 2026. Then assign the CSP headers issue and the vulnerable dependencies issue to this new iteration." → issue_13 "Implement Content Security Policy headers", issue_14 "Upgrade vulnerable dependencies identified in...": iteration iter_4 Sprint 26 → "Release 4.0 GA" (the new iteration). CREATE iteration "Release 4.0 GA" with cadence=cad_3 Release Cycle, start date=2026-03-01, due date=2026-03-15.
+
+    - "Add the ''needs-discussion'' label to every open issue that has both the ''type::bug'' and ''priority::high'' labels." → issue_18 "Email notifications sent with wrong timezone...", issue_20 "File upload fails silently for files > 50MB", issue_59 "Database connection pool exhaustion under loa...", issue_62 "Fix race condition in concurrent issue update...": labels: add lbl_19 needs-discussion.
+
+    - "Create a new epic called ''Developer Tooling'' with the ''type::feature'' label and description ''Tools and utilities to improve developer productivity''. Then add the keyboard shortcuts issue and the bulk operations issue to this epic." → issue_23 "Implement keyboard shortcuts for common actio...", issue_24 "Add bulk operations for issue management": epic none → "Developer Tooling" (the new epic). CREATE epic "Developer Tooling" with description=Tools and utilities to improve developer productivity, labels=[lbl_10 type::feature].
+
+    - "The todo about the GraphQL gateway review has been snoozed. Restore it to pending. Then go to that issue and log 2 hours of time with summary ''Schema optimization review''." → issue_7 "Implement GraphQL gateway for v3 API": time spent 12h → 14h. todo_6 "review_requested todo for issue_7 (Implement GraphQL gateway for v3 API)": status snoozed → pending; snoozedUntil 2026-03-01T08:00:00Z → none. CREATE timelog "time entry on issue_7 (Implement GraphQL gateway for v3 API)" with userId=usr_1 Sarah Chen, time spent=2h, summary=Schema optimization review.
+
+    - "Move all unassigned open issues to the Backlog milestone and add the ''needs-discussion'' label to each." → issue_16 "Implement CSRF token rotation": labels: add lbl_19 needs-discussion; milestone ms_3 v4.2 - Security Hardening → ms_6 Backlog. issue_21 "Markdown preview renders incorrectly with nested code blocks": labels: add lbl_19 needs-discussion. issue_25 "Build real-time collaborative editing for iss...", issue_26 "Add custom fields support for issues": milestone ms_5 v5.0 - Enterprise Edition → ms_6 Backlog. issue_45 "Add webhook support for issue state changes": labels: add lbl_19 needs-discussion; milestone ms_5 v5.0 - Enterprise Edition → ms_6 Backlog. issue_53 "Fix typo in 404 error page message", issue_54 "Add tooltip to truncated sidebar labels": labels: add lbl_19 needs-discussion; milestone none → ms_6 Backlog. issue_60 "Implement GitLab Pages custom domain support", issue_61 "Add merge request approval rules engine", issue_65 "Add inline code suggestions in merge request...": labels: add lbl_19 needs-discussion; milestone ms_5 v5.0 - Enterprise Edition → ms_6 Backlog.
+
+    - "Rename the ''blocked'' label to ''on-hold'', change its color to #e67e22, and update its description to ''Temporarily paused pending external input''. Then apply this label to the CSRF token rotation issue." → issue_16 "Implement CSRF token rotation": labels: add lbl_27 on-hold. lbl_27 "on-hold": title blocked → on-hold; description Blocked by external dependency → Temporarily paused pending external input; color #b91c1c → #e67e22.
+
+    - "Move the Caching Layer Implementation epic so it becomes a child of the Platform Redesign epic instead of Performance Initiative. Then set the health status of all its open issues to ''needs attention''." → issue_55 "Configure CDN for static asset delivery", issue_56 "Implement Redis session store": health status none → needs_attention. epic_6 "Caching Layer Implementation": parent epic epic_4 Performance Initiative → epic_1 Platform Redesign.
+
+    - "On the issue about migrating user settings to React, log 8 hours with summary ''Form validation and API integration testing''. Then set its health status to ''at risk'' and change its weight to 13." → issue_4 "Migrate user settings page to React": weight 8 → 13; health status needs_attention → at_risk; time spent 8h → 16h. CREATE timelog "time entry on issue_4 (Migrate user settings page to React)" with userId=usr_1 Sarah Chen, time spent=8h, summary=Form validation and API integration testing.
+
+    - "Delete the Bug Triage board and create a new board called ''Severity Board'' with two lists: one for the ''priority::critical'' label and one for the ''priority::high'' label." → DELETE board_2 "Bug Triage". CREATE board "Severity Board" with lists=[{labelId=lbl_1 priority::critical, type=label}, {labelId=lbl_2 priority::high, type=label}].
+
+    - "Find the open epic that was created most recently but has no issues assigned to it. Set its health status to ''needs attention'' and change its start date to March 15, 2026." → epic_10 "Enterprise SSO Integration": start date 2026-08-01 → 2026-03-15; health status none → needs_attention.
+
+    - "Find the two issues in Sprint 26 with the highest weight. Add the ''blocked'' label to both of them." → issue_7 "Implement GraphQL gateway for v3 API", issue_22 "Add dark mode support for the entire applicat...": labels: add lbl_27 blocked.
+
+    - "Create a new milestone called ''Hotfix 4.0.1'' starting March 3 and ending March 10, 2026. Create a new iteration called ''Hotfix Sprint'' in the Sprint Cadence starting March 3 and ending March 10, 2026. Then assign the Safari login bug and the email notification timezone issue to both the new milestone and new iteration." → issue_17 "Login page shows blank screen on Safari 17.2", issue_18 "Email notifications sent with wrong timezone...": milestone ms_1 v4.0 - Platform Redesign → "Hotfix 4.0.1" (the new milestone); iteration iter_4 Sprint 26 → "Hotfix Sprint" (the new iteration). CREATE milestone "Hotfix 4.0.1" with start date=2026-03-03, due date=2026-03-10. CREATE iteration "Hotfix Sprint" with cadence=cad_1 Sprint Cadence, start date=2026-03-03, due date=2026-03-10.
+
+    - "For all open issues in the API v3 Migration epic, replace the ''component::api'' label with ''component::backend''." → issue_7 "Implement GraphQL gateway for v3 API", issue_8 "Migrate projects API to v3", issue_9 "Add rate limiting to v3 endpoints": labels: add lbl_15 component::backend; remove lbl_16 component::api.
+
+    - "The two authentication-related issues — the one about 2FA with TOTP and the one about JWT migration — are both in the v5.0 Enterprise Edition milestone. Move them to the v4.2 - Security Hardening milestone instead and add the ''priority::high'' label to both." → issue_51 "Implement two-factor authentication with TOTP", issue_67 "Migrate user authentication from sessions to...": labels: add lbl_2 priority::high; milestone ms_5 v5.0 - Enterprise Edition → ms_3 v4.2 - Security Hardening.
+
+    - "Change the Release Cycle cadence to automatic with a duration of 4 weeks and 2 upcoming iterations. Then create a new iteration called ''Release 4.1 Alpha'' in that cadence starting March 15 and ending April 11, 2026." → CREATE iteration "Release 4.1 Alpha" with cadence=cad_3 Release Cycle, start date=2026-03-15, due date=2026-04-11. cad_3 "Release Cycle": automatic false → true; duration (weeks) none → 4; upcoming iterations none → 2.
+
+    - "Create a new milestone called ''v4.4 - Integrations'' starting August 1, 2026 and ending September 30, 2026." → CREATE milestone "v4.4 - Integrations" with start date=2026-08-01, due date=2026-09-30.
+
+    - "Set a time estimate of 4 hours on the dropdown menu position bug and assign it to the Backlog milestone." → issue_48 "Fix dropdown menu position clipping at viewport edges": milestone none → ms_6 Backlog; time estimate 2h → 4h.
+
+    - "Move the CSP headers issue to the v4.1 milestone and change its iteration to Sprint 27." → issue_13 "Implement Content Security Policy headers": milestone ms_3 v4.2 - Security Hardening → ms_2 v4.1 - Performance; iteration iter_4 Sprint 26 → iter_5 Sprint 27.
+
+    - "Move all issues in Sprint 26 assigned to David Kim to Sprint 27." → issue_10 "Analyze and optimize slow queries from APM lo...", issue_27 "Optimize issue list query to use keyset pagin...": iteration iter_4 Sprint 26 → iter_5 Sprint 27.
+
+    - "Set a start date of March 15 and due date of April 15, 2026 for the retry mechanism issue." → issue_44 "Implement retry mechanism for failed API calls": due date none → 2026-04-15; start date none → 2026-03-15.
+
+    - "Create a new iteration called ''Sprint 29'' in the Sprint Cadence starting March 31 and ending April 13, 2026." → CREATE iteration "Sprint 29" with cadence=cad_1 Sprint Cadence, start date=2026-03-31, due date=2026-04-13.
+
+    - "Replace the ''UX'' label on the Platform Redesign epic with ''needs-discussion''." → epic_1 "Platform Redesign": labels: add lbl_19 needs-discussion; remove lbl_23 UX.
+
+    - "Assign Priya Patel and Marcus Johnson to the component library documentation issue." → issue_5 "Build component library documentation site": assignees: add usr_3 Priya Patel, usr_2 Marcus Johnson.
+
+    - "Create a new board called ''Priority Board'' with a list for the priority::critical label." → CREATE board "Priority Board" with lists=[{labelId=lbl_1 priority::critical, type=label}].
+
+    - "Add the ''performance'' label to the JWT authentication migration issue and set its health status to needs attention." → issue_67 "Migrate user authentication from sessions to JWT": labels: add lbl_22 performance; health status none → needs_attention.
+
+    - "Remove Aisha Mohammed from the component library documentation issue and assign Nina Kowalski instead." → issue_5 "Build component library documentation site": assignees: add usr_7 Nina Kowalski; remove usr_5 Aisha Mohammed.
+
+    - "Add the keyboard shortcuts issue to the Platform Redesign epic and set its iteration to Sprint 27." → issue_23 "Implement keyboard shortcuts for common actions": iteration none → iter_5 Sprint 27; epic none → epic_1 Platform Redesign.
+
+    - "Rename the ''technical-debt'' label to ''tech-debt'' and set its description to ''Legacy code requiring refactoring''." → lbl_26 "tech-debt": title technical-debt → tech-debt; description Code quality improvement → Legacy code requiring refactoring.
+
+    - "Create a new issue titled ''Set up monitoring dashboard'' assigned to Luca Rossi with the priority::high label." → CREATE issue "Set up monitoring dashboard" with assignees=[usr_6 Luca Rossi], labels=[lbl_2 priority::high].
+
+    - "Remove all assignees from the dark mode support issue and set its health status to needs attention." → issue_22 "Add dark mode support for the entire application": assignees: remove usr_5 Aisha Mohammed, usr_7 Nina Kowalski; health status on_track → needs_attention.
+
+    - "Move the loading skeletons issue to the v4.0 - Platform Redesign milestone and add it to the Frontend Modernization epic." → issue_43 "Add loading skeletons to replace spinners": milestone ms_2 v4.1 - Performance → ms_1 v4.0 - Platform Redesign; epic none → epic_2 Frontend Modernization.
+
+    - "Add the ''breaking-change'' and ''performance'' labels to the container registry garbage collection issue." → issue_64 "Implement container registry garbage collection": labels: add lbl_24 breaking-change, lbl_22 performance.
+
+    - "Disable automatic scheduling and roll-over on the Sprint Cadence." → cad_1 "Sprint Cadence": automatic true → false; roll over true → false.
+
+    - "Close all open issues assigned to Fatima Al-Rashid." → issue_30 "Update project README with new setup instruct...", issue_41 "Write getting started guide for new developer...", issue_42 "Create API reference documentation with examp...": status open → closed.
+
+    - "Create a new epic called ''CI/CD Pipeline Improvements'' and add the Playwright end-to-end testing issue to it." → issue_33 "Set up end-to-end testing with Playwright": epic none → "CI/CD Pipeline Improvements" (the new epic). CREATE epic "CI/CD Pipeline Improvements".
+
+    '
+  prompt_sha256: 7d2f5eeb468501d00a84273400be836775b486e0090ab7bd9bc27f6ca8977962

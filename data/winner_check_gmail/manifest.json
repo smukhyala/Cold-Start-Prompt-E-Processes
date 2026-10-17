@@ -1,0 +1,70 @@
+{
+  "study": "Pre-registration 13, Gmail arm (winner's-curse test)",
+  "design": "default arm x the first-run pilot's 30 held-out Gmail tasks x replicates 0 and 1; single worker, seeded random order; profile prereg9 (180 s clock); compared with the pilot's 2 G_14 runs",
+  "source_manifest_sha256": "1f59088b57d23281b7f3f8b1dfa9c82606e7060d2056409e568e42e9439b0e9c",
+  "pilot_manifest_sha256": "2f89610ba1572e6ddad83e44181d797c2b3f6ea12c637984f93a20d086d75d24",
+  "pilot_log": "logs/first_run_pilot_gmail/worker_0.jsonl (G_14 replicates 0 = 'first', 1 = 'same')",
+  "seed": 20261012,
+  "profile": "prereg9",
+  "task_ids": [
+    "task_e1",
+    "task_e17",
+    "task_e18",
+    "task_e3",
+    "task_e4",
+    "task_e5",
+    "task_e6",
+    "task_e7",
+    "task_e8",
+    "task_e9",
+    "task_h1",
+    "task_h11",
+    "task_h14",
+    "task_h18",
+    "task_h2",
+    "task_h3",
+    "task_h4",
+    "task_h5",
+    "task_h7",
+    "task_h9",
+    "task_m1",
+    "task_m10",
+    "task_m11",
+    "task_m12",
+    "task_m19",
+    "task_m2",
+    "task_m5",
+    "task_m6",
+    "task_m8",
+    "task_m9"
+  ],
+  "n_tasks": 30,
+  "n_episodes": 60,
+  "default_arm": "anchor_baseline",
+  "default_pool": "anchor",
+  "winner_arm": "G_14",
+  "september_in_sample": {
+    "G_14_rate": 0.7,
+    "default_rate": 0.6,
+    "difference": 0.1,
+    "tasks": "Pre-reg 9 task_subset (30 tasks), replicate 0, uncapped"
+  },
+  "registered_reading": {
+    "primary": "mean(d) with one-sided 95% bound, d_t = G14_t - default_t, both arms 30-step rescored",
+    "reproduced": "95% LOWER bound >= 0.10",
+    "shrank": "95% UPPER bound < 0.10",
+    "otherwise": "inconclusive"
+  },
+  "rescore_rule": "experiments/growing_bandits/empirical/study.py::rescore(outcomes, 30)",
+  "disclosure": {
+    "step_cap": "The pilot G_14 episodes (2026-10-09) ran effectively UNCAPPED (the 30-step cap bug was fixed on 2026-10-10 in src/cold_start/tasks/webarena.py); the default episodes run NOW with the 30-step cap enforced. The PRIMARY analysis therefore scores BOTH arms at the 30-step rescore (study.rescore(outcomes, 30): success and not timed_out and steps <= 30, the glk30 rule). The as-collected comparison (uncapped G_14 vs capped default) is SECONDARY and confounded.",
+    "time_gap": "G_14 pilot episodes ran 2026-10-09; the default episodes run after 2026-10-12 (frozen date). Provider/model drift between the two runs is not controlled; the noise recheck (2026-10-11) bounds how large rerun noise is, not drift.",
+    "june_baseline": "These 30 tasks were also run in June 2026 as part of the gmail_paired12 baseline (12 hand-written prompts, results/audit/matrices/gmail_paired12.csv), long before G_14 was selected. They were not used to select G_14 or to define the default; disclosed for completeness."
+  },
+  "files": {
+    "pool_G.yaml": "20da6911d1b79749aa134f8255257bc4393a24c43930d82588d5d44eba62a4f6",
+    "pool_F.yaml": "b47c2327d0ed6565878ec1c545108587cee3b2fb88ad3fcc250dca87301b15a0",
+    "pool_anchor.yaml": "9681872cd65cdf43374d18e5dd35be3a606653a9235c1330c691cf177e3238e6",
+    "queue.jsonl": "566ef0efafc0720a2318244571e05c7d5cf550847b45d9745faef1694462f7cc"
+  }
+}

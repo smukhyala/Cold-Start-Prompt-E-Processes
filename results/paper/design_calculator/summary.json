@@ -1,0 +1,92 @@
+{
+  "registered_target": "decision by 50 after unresolved pilot at 10",
+  "total_rows": 1160,
+  "pilot_decided": {},
+  "remaining": 1160,
+  "heldout_tasks": {
+    "train_n": 573,
+    "test_n": 587,
+    "params": {
+      "C": 0.1,
+      "cv_log_loss": 0.2321931834013973
+    },
+    "model": {
+      "n": 587,
+      "counts": {
+        "unresolved": 531,
+        "futility": 26,
+        "efficacy": 30
+      },
+      "brier": 0.13126856128556322,
+      "log_loss": 0.24101973868214852
+    },
+    "prevalence": {
+      "n": 587,
+      "counts": {
+        "unresolved": 531,
+        "futility": 26,
+        "efficacy": 30
+      },
+      "brier": 0.17735407844926473,
+      "log_loss": 0.3820277067423169
+    },
+    "improves_both": true
+  },
+  "prompt_eval_to_mizrahi": {
+    "train_n": 855,
+    "test_n": 305,
+    "params": {
+      "C": 0.1,
+      "cv_log_loss": 0.17723563913949977
+    },
+    "model": {
+      "n": 305,
+      "counts": {
+        "efficacy": 58,
+        "unresolved": 245,
+        "futility": 2
+      },
+      "brier": 0.3903898281877078,
+      "log_loss": 5.275935925394455
+    },
+    "prevalence": {
+      "n": 305,
+      "counts": {
+        "efficacy": 58,
+        "unresolved": 245,
+        "futility": 2
+      },
+      "brier": 0.3778170444485931,
+      "log_loss": 6.91609805531168
+    },
+    "improves_both": false
+  },
+  "mizrahi_to_prompt_eval": {
+    "train_n": 305,
+    "test_n": 855,
+    "params": {
+      "C": 0.1,
+      "cv_log_loss": 0.35379205197937336
+    },
+    "model": {
+      "n": 855,
+      "counts": {
+        "unresolved": 811,
+        "futility": 44
+      },
+      "brier": 0.10315820989899976,
+      "log_loss": 0.267156143736646
+    },
+    "prevalence": {
+      "n": 855,
+      "counts": {
+        "unresolved": 811,
+        "futility": 44
+      },
+      "brier": 0.15690632116437286,
+      "log_loss": 0.46648851965254473
+    },
+    "improves_both": true
+  },
+  "validated_for_design": false
+}

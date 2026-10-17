@@ -1,0 +1,13 @@
+pool,arm_id,task_id,first_scored_success,repeat_scored_success,first_raw_success,repeat_raw_success,first_steps,repeat_steps,first_timed_out,repeat_timed_out,first_actions,repeat_actions,first_action_types,repeat_action_types
+G,G_37,task_h6,0,0,0,0,19,30,False,True,25,42,click|done|find_elements|input|navigate|replace_file|scroll|search_page|send_keys|wait|write_file,click|evaluate|find_elements|go_back|navigate|search_page|wait|write_file
+G,G_36,task_h8,0,0,0,0,30,14,True,False,86,28,click|find_text|navigate|replace_file|scroll|search_page|write_file,click|done|navigate|scroll|search_page
+G,G_23,task_e11,0,1,0,1,16,4,False,False,17,5,click|done|evaluate|find_elements|navigate|search_page,click|done|navigate|search_page
+G,G_37,task_h19,0,1,0,1,8,24,False,False,8,26,click|done|navigate,click|done|find_elements|navigate|search_page|wait
+F,F_47,task_h20,0,0,0,0,8,7,False,False,12,9,click|done|input|navigate|search_page|send_keys,click|done|navigate
+F,F_12,task_h8,0,0,0,0,30,30,True,True,78,83,click|navigate|scroll|write_file,click|done|find_elements|find_text|navigate|scroll|search_page|wait
+F,F_06,task_m17,0,1,0,1,20,28,False,False,25,39,click|done|input|navigate|scroll|search_page|send_keys|wait,click|done|evaluate|find_elements|input|navigate|replace_file|search_page|send_keys|wait|write_file
+F,F_30,task_h8,0,1,0,1,30,13,True,False,81,21,click|find_elements|navigate|replace_file|scroll|search_page|write_file,click|done|navigate|scroll|search_page
+GLK30,GLK_38,task_h26,0,0,0,0,30,41,False,False,40,55,click|done|extract|find_elements|go_back|input|navigate|replace_file|search_page|switch|write_file,click|done|extract|find_elements|go_back|input|navigate|replace_file|scroll|search_page|write_file
+GLK30,GLK_23,task_h77,0,0,0,1,27,34,False,False,39,54,click|done|go_back|input|navigate|replace_file|scroll|write_file,click|done|extract|go_back|input|navigate|replace_file|write_file
+GLK30,GLK_08,task_e3,0,1,0,1,1,7,False,False,1,7,navigate,click|done|input|navigate|send_keys
+GLK30,GLK_04,task_m16,0,1,0,1,5,10,False,False,7,12,click|done|navigate,click|done|input|navigate|search_page|send_keys

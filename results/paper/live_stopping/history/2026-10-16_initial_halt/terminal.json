@@ -1,0 +1,9 @@
+{
+  "completed_pairs": 13,
+  "decision": "unresolved",
+  "first_crossing": null,
+  "frozen_sha256": "74228e82cfbb1320abc297bf7100d1446bcea16169d8e6936e0fd53a89ffe1e9",
+  "reason": "infrastructure_error",
+  "recorded_at": "2026-10-16T18:50:13.219839+00:00",
+  "recovered_before_scheduling": false
+}

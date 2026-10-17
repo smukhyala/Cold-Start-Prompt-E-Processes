@@ -59,7 +59,7 @@ def _tmp_het_lock(tmp_path, monkeypatch):
 
 def test_profile_table_round_trip():
     p = collect.PROFILES
-    assert set(p) == {"prereg9", "gitlab", "gmail", "bridge"}
+    assert set(p) == {"prereg9", "gitlab", "gmail", "bridge", "linear", "sampled_linear"}
     het = ROOT / "data" / "heterogeneity"
     expected = {
         "gitlab": ("apps/gitlab-plan-and-track", 600, 140, "gitlab/queue.jsonl",

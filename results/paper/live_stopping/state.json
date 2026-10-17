@@ -1,0 +1,43 @@
+{
+  "ambiguous_episode_ids": [],
+  "completed_pairs": 35,
+  "cost_accounting_complete": true,
+  "decision": "futility",
+  "frozen_sha256": "74228e82cfbb1320abc297bf7100d1446bcea16169d8e6936e0fd53a89ffe1e9",
+  "input_tokens": 12511281,
+  "known_cost_usd": 4.88758635,
+  "last_evidence": {
+    "efficacy_crossed": false,
+    "futility_crossed": true,
+    "log_efficacy": 0.0,
+    "log_futility": 3.7200401211084815,
+    "pair_index": 35
+  },
+  "log_threshold_efficacy": 3.6888794541139363,
+  "log_threshold_futility": 3.6888794541139363,
+  "max_planned_episodes": 240,
+  "output_tokens": 493448,
+  "recorded_episodes": 70,
+  "scheduled_episodes": 70,
+  "schema": "live_stopping/1",
+  "status": "terminal",
+  "terminal": {
+    "completed_pairs": 35,
+    "decision": "futility",
+    "first_crossing": {
+      "efficacy_crossed": false,
+      "futility_crossed": true,
+      "log_efficacy": 0.0,
+      "log_futility": 3.7200401211084815,
+      "pair_index": 35
+    },
+    "frozen_sha256": "74228e82cfbb1320abc297bf7100d1446bcea16169d8e6936e0fd53a89ffe1e9",
+    "reason": "statistical_boundary",
+    "recorded_at": "2026-10-16T23:51:03.196557+00:00",
+    "recovered_before_scheduling": false
+  },
+  "token_accounting_complete": true,
+  "unscheduled_planned_episodes": 170,
+  "updated_at": "2026-10-16T23:51:03.197224+00:00",
+  "valid_outcome_episodes": 70
+}

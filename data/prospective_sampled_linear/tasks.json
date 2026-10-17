@@ -1,0 +1,842 @@
+[
+  {
+    "id": "generated_000",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Mira Chen' and your account email to 'mirachen3902@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_000.py"
+  },
+  {
+    "id": "generated_001",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Amara Alvarez' and your username to 'amaraalvarez7303'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_001.py"
+  },
+  {
+    "id": "generated_002",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Theo Bennett', username to 'theobennett9373', and account email to 'theobennett9373@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_002.py"
+  },
+  {
+    "id": "generated_003",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Noah Kim' and your account email to 'noahkim8545@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_003.py"
+  },
+  {
+    "id": "generated_004",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Owen Kim' and your username to 'owenkim7312'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_004.py"
+  },
+  {
+    "id": "generated_005",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Owen Nolan' and your account email to 'owennolan2445@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_005.py"
+  },
+  {
+    "id": "generated_006",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Eli Sato' and your account email to 'elisato7294@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_006.py"
+  },
+  {
+    "id": "generated_007",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Mira Patel' and your username to 'mirapatel6412'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_007.py"
+  },
+  {
+    "id": "generated_008",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Leila Sato', username to 'leilasato5689', and account email to 'leilasato5689@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_008.py"
+  },
+  {
+    "id": "generated_009",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Amara Sato' and your account email to 'amarasato3434@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_009.py"
+  },
+  {
+    "id": "generated_010",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'amararivera7746' and your account email to 'amararivera7746@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_010.py"
+  },
+  {
+    "id": "generated_011",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Caleb Shah' and your username to 'calebshah3304'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_011.py"
+  },
+  {
+    "id": "generated_012",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'rinachen1052' and your account email to 'rinachen1052@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_012.py"
+  },
+  {
+    "id": "generated_013",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Nadia Patel', username to 'nadiapatel4607', and account email to 'nadiapatel4607@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_013.py"
+  },
+  {
+    "id": "generated_014",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Eli Chen' and your username to 'elichen7553'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_014.py"
+  },
+  {
+    "id": "generated_015",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Tara Rivera' and your account email to 'tararivera9977@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_015.py"
+  },
+  {
+    "id": "generated_016",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Caleb Nolan', username to 'calebnolan7102', and account email to 'calebnolan7102@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_016.py"
+  },
+  {
+    "id": "generated_017",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Tara Chen' and your account email to 'tarachen3106@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_017.py"
+  },
+  {
+    "id": "generated_018",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Eli Chen' and your account email to 'elichen7291@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_018.py"
+  },
+  {
+    "id": "generated_019",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Nadia Shah' and your username to 'nadiashah4347'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_019.py"
+  },
+  {
+    "id": "generated_020",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Caleb Park' and your account email to 'calebpark7761@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_020.py"
+  },
+  {
+    "id": "generated_021",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Hugo Park' and your account email to 'hugopark7709@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_021.py"
+  },
+  {
+    "id": "generated_022",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'hugoshah2235' and your account email to 'hugoshah2235@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_022.py"
+  },
+  {
+    "id": "generated_023",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Leila Rivera' and your account email to 'leilarivera8531@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_023.py"
+  },
+  {
+    "id": "generated_024",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Owen Okafor', username to 'owenokafor9284', and account email to 'owenokafor9284@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_024.py"
+  },
+  {
+    "id": "generated_025",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Rina Ibrahim' and your username to 'rinaibrahim2678'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_025.py"
+  },
+  {
+    "id": "generated_026",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Hugo Alvarez' and your account email to 'hugoalvarez7752@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_026.py"
+  },
+  {
+    "id": "generated_027",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Eli Park' and your username to 'elipark5350'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_027.py"
+  },
+  {
+    "id": "generated_028",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Amara Shah' and your username to 'amarashah2976'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_028.py"
+  },
+  {
+    "id": "generated_029",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Hugo Kim', username to 'hugokim9390', and account email to 'hugokim9390@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_029.py"
+  },
+  {
+    "id": "generated_030",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Noah Ibrahim' and your account email to 'noahibrahim1821@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_030.py"
+  },
+  {
+    "id": "generated_031",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Nadia Okafor' and your username to 'nadiaokafor4771'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_031.py"
+  },
+  {
+    "id": "generated_032",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'theoibrahim3212' and your account email to 'theoibrahim3212@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_032.py"
+  },
+  {
+    "id": "generated_033",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Caleb Kim' and your account email to 'calebkim6088@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_033.py"
+  },
+  {
+    "id": "generated_034",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Mira Rivera', username to 'mirarivera8866', and account email to 'mirarivera8866@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_034.py"
+  },
+  {
+    "id": "generated_035",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'taraalvarez9558' and your account email to 'taraalvarez9558@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_035.py"
+  },
+  {
+    "id": "generated_036",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'amarashah3119' and your account email to 'amarashah3119@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_036.py"
+  },
+  {
+    "id": "generated_037",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Amara Sato' and your account email to 'amarasato8618@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_037.py"
+  },
+  {
+    "id": "generated_038",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Owen Park' and your account email to 'owenpark3298@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_038.py"
+  },
+  {
+    "id": "generated_039",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Noah Patel' and your username to 'noahpatel4436'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_039.py"
+  },
+  {
+    "id": "generated_040",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Owen Patel', username to 'owenpatel6200', and account email to 'owenpatel6200@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_040.py"
+  },
+  {
+    "id": "generated_041",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Noah Okafor', username to 'noahokafor5099', and account email to 'noahokafor5099@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_041.py"
+  },
+  {
+    "id": "generated_042",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Nadia Patel', username to 'nadiapatel4946', and account email to 'nadiapatel4946@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_042.py"
+  },
+  {
+    "id": "generated_043",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Eli Alvarez', username to 'elialvarez1400', and account email to 'elialvarez1400@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_043.py"
+  },
+  {
+    "id": "generated_044",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Theo Shah', username to 'theoshah2348', and account email to 'theoshah2348@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_044.py"
+  },
+  {
+    "id": "generated_045",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Owen Rivera' and your account email to 'owenrivera2261@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_045.py"
+  },
+  {
+    "id": "generated_046",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Leila Ibrahim' and your username to 'leilaibrahim7059'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_046.py"
+  },
+  {
+    "id": "generated_047",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Theo Park', username to 'theopark3696', and account email to 'theopark3696@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_047.py"
+  },
+  {
+    "id": "generated_048",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Theo Park' and your username to 'theopark7310'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_048.py"
+  },
+  {
+    "id": "generated_049",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'amarabennett1234' and your account email to 'amarabennett1234@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_049.py"
+  },
+  {
+    "id": "generated_050",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'elichen2426' and your account email to 'elichen2426@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_050.py"
+  },
+  {
+    "id": "generated_051",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Owen Nolan' and your username to 'owennolan2877'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_051.py"
+  },
+  {
+    "id": "generated_052",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Tara Kim', username to 'tarakim4310', and account email to 'tarakim4310@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_052.py"
+  },
+  {
+    "id": "generated_053",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Mira Kim' and your username to 'mirakim1640'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_053.py"
+  },
+  {
+    "id": "generated_054",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Caleb Chen', username to 'calebchen1648', and account email to 'calebchen1648@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_054.py"
+  },
+  {
+    "id": "generated_055",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Noah Rivera' and your username to 'noahrivera1365'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_055.py"
+  },
+  {
+    "id": "generated_056",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Leila Chen', username to 'leilachen1743', and account email to 'leilachen1743@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_056.py"
+  },
+  {
+    "id": "generated_057",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Hugo Shah' and your username to 'hugoshah3905'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_057.py"
+  },
+  {
+    "id": "generated_058",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Caleb Nolan', username to 'calebnolan5389', and account email to 'calebnolan5389@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_058.py"
+  },
+  {
+    "id": "generated_059",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'theonolan8375' and your account email to 'theonolan8375@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_059.py"
+  },
+  {
+    "id": "generated_060",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'noahshah7370' and your account email to 'noahshah7370@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_060.py"
+  },
+  {
+    "id": "generated_061",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Rina Patel', username to 'rinapatel1620', and account email to 'rinapatel1620@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_061.py"
+  },
+  {
+    "id": "generated_062",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Theo Rivera' and your username to 'theorivera1271'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_062.py"
+  },
+  {
+    "id": "generated_063",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Noah Kim' and your account email to 'noahkim4048@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_063.py"
+  },
+  {
+    "id": "generated_064",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'mirarivera9625' and your account email to 'mirarivera9625@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_064.py"
+  },
+  {
+    "id": "generated_065",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Noah Bennett' and your username to 'noahbennett4092'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_065.py"
+  },
+  {
+    "id": "generated_066",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Owen Bennett' and your username to 'owenbennett9131'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_066.py"
+  },
+  {
+    "id": "generated_067",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'rinashah8755' and your account email to 'rinashah8755@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_067.py"
+  },
+  {
+    "id": "generated_068",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Rina Ibrahim' and your username to 'rinaibrahim4408'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_068.py"
+  },
+  {
+    "id": "generated_069",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Theo Bennett' and your username to 'theobennett4159'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_069.py"
+  },
+  {
+    "id": "generated_070",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Mira Nolan', username to 'miranolan6129', and account email to 'miranolan6129@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_070.py"
+  },
+  {
+    "id": "generated_071",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Mira Okafor' and your username to 'miraokafor4722'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_071.py"
+  },
+  {
+    "id": "generated_072",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'nadiachen7074' and your account email to 'nadiachen7074@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_072.py"
+  },
+  {
+    "id": "generated_073",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Caleb Ibrahim' and your username to 'calebibrahim8963'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_073.py"
+  },
+  {
+    "id": "generated_074",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'owenkim3085' and your account email to 'owenkim3085@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_074.py"
+  },
+  {
+    "id": "generated_075",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'elibennett7684' and your account email to 'elibennett7684@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_075.py"
+  },
+  {
+    "id": "generated_076",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'nadiachen2274' and your account email to 'nadiachen2274@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_076.py"
+  },
+  {
+    "id": "generated_077",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'owenkim1256' and your account email to 'owenkim1256@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_077.py"
+  },
+  {
+    "id": "generated_078",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Eli Park' and your username to 'elipark7640'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_078.py"
+  },
+  {
+    "id": "generated_079",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Owen Park' and your account email to 'owenpark1465@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_079.py"
+  },
+  {
+    "id": "generated_080",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Nadia Nolan' and your username to 'nadianolan8959'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_080.py"
+  },
+  {
+    "id": "generated_081",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'elipark4775' and your account email to 'elipark4775@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_081.py"
+  },
+  {
+    "id": "generated_082",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Owen Chen' and your account email to 'owenchen4693@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_082.py"
+  },
+  {
+    "id": "generated_083",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Nadia Shah' and your account email to 'nadiashah7869@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_083.py"
+  },
+  {
+    "id": "generated_084",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Mira Okafor' and your account email to 'miraokafor1145@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_084.py"
+  },
+  {
+    "id": "generated_085",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Noah Park', username to 'noahpark1838', and account email to 'noahpark1838@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_085.py"
+  },
+  {
+    "id": "generated_086",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Hugo Ibrahim' and your account email to 'hugoibrahim6690@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_086.py"
+  },
+  {
+    "id": "generated_087",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'mirabennett3543' and your account email to 'mirabennett3543@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_087.py"
+  },
+  {
+    "id": "generated_088",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'rinapatel6637' and your account email to 'rinapatel6637@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_088.py"
+  },
+  {
+    "id": "generated_089",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Nadia Park' and your username to 'nadiapark4879'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_089.py"
+  },
+  {
+    "id": "generated_090",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Mira Rivera' and your username to 'mirarivera8126'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_090.py"
+  },
+  {
+    "id": "generated_091",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Amara Sato' and your account email to 'amarasato8539@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_091.py"
+  },
+  {
+    "id": "generated_092",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Rina Alvarez' and your account email to 'rinaalvarez7769@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_092.py"
+  },
+  {
+    "id": "generated_093",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Leila Park' and your username to 'leilapark8287'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_093.py"
+  },
+  {
+    "id": "generated_094",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Theo Patel' and your account email to 'theopatel7317@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_094.py"
+  },
+  {
+    "id": "generated_095",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Mira Kim', username to 'mirakim9859', and account email to 'mirakim9859@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_095.py"
+  },
+  {
+    "id": "generated_096",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'nadianolan9162' and your account email to 'nadianolan9162@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_096.py"
+  },
+  {
+    "id": "generated_097",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Noah Ibrahim', username to 'noahibrahim2519', and account email to 'noahibrahim2519@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_097.py"
+  },
+  {
+    "id": "generated_098",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Eli Chen' and your username to 'elichen6145'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_098.py"
+  },
+  {
+    "id": "generated_099",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'miranolan5008' and your account email to 'miranolan5008@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_099.py"
+  },
+  {
+    "id": "generated_100",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Mira Shah' and your username to 'mirashah1660'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_100.py"
+  },
+  {
+    "id": "generated_101",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Amara Chen' and your username to 'amarachen1679'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_101.py"
+  },
+  {
+    "id": "generated_102",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Rina Park', username to 'rinapark1167', and account email to 'rinapark1167@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_102.py"
+  },
+  {
+    "id": "generated_103",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Mira Ibrahim' and your account email to 'miraibrahim8330@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_103.py"
+  },
+  {
+    "id": "generated_104",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Hugo Shah' and your account email to 'hugoshah4381@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_104.py"
+  },
+  {
+    "id": "generated_105",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'mirabennett7974' and your account email to 'mirabennett7974@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_105.py"
+  },
+  {
+    "id": "generated_106",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Theo Rivera' and your account email to 'theorivera7629@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_106.py"
+  },
+  {
+    "id": "generated_107",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Nadia Okafor' and your account email to 'nadiaokafor5542@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_107.py"
+  },
+  {
+    "id": "generated_108",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Owen Park' and your account email to 'owenpark5758@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_108.py"
+  },
+  {
+    "id": "generated_109",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'calebchen2634' and your account email to 'calebchen2634@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_109.py"
+  },
+  {
+    "id": "generated_110",
+    "difficulty": "sampled",
+    "family": "all_three",
+    "instruction": "Update your account name to 'Hugo Kim', username to 'hugokim9433', and account email to 'hugokim9433@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_110.py"
+  },
+  {
+    "id": "generated_111",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Noah Patel' and your account email to 'noahpatel8976@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_111.py"
+  },
+  {
+    "id": "generated_112",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'leilaalvarez6686' and your account email to 'leilaalvarez6686@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_112.py"
+  },
+  {
+    "id": "generated_113",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'hugorivera2569' and your account email to 'hugorivera2569@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_113.py"
+  },
+  {
+    "id": "generated_114",
+    "difficulty": "sampled",
+    "family": "name_email",
+    "instruction": "Update your account name to 'Noah Chen' and your account email to 'noahchen4514@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_114.py"
+  },
+  {
+    "id": "generated_115",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'taranolan3353' and your account email to 'taranolan3353@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_115.py"
+  },
+  {
+    "id": "generated_116",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Hugo Rivera' and your username to 'hugorivera1505'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_116.py"
+  },
+  {
+    "id": "generated_117",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'owenpatel5004' and your account email to 'owenpatel5004@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_117.py"
+  },
+  {
+    "id": "generated_118",
+    "difficulty": "sampled",
+    "family": "name_username",
+    "instruction": "Set your account name to 'Caleb Kim' and your username to 'calebkim6981'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_118.py"
+  },
+  {
+    "id": "generated_119",
+    "difficulty": "sampled",
+    "family": "username_email",
+    "instruction": "Change your username to 'nadiakim2547' and your account email to 'nadiakim2547@example.net'.",
+    "verify": "../../../coldStartPrompts/data/prospective_sampled_linear/verifiers/generated_119.py"
+  }
+]

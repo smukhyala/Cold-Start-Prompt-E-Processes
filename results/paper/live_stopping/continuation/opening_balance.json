@@ -1,0 +1,17 @@
+{
+  "accounting_rule": "global charge upper bound = old known + old reserved + new known + new reserved",
+  "global_maximum_usd": 75.0,
+  "logical_episode_id": "pair_000014_challenger",
+  "new_segment_maximum_usd": 72.91925985,
+  "original_known_cost_usd": 1.76230815,
+  "original_started_requests": 458,
+  "original_unknown_request_ids": [
+    "request_000458"
+  ],
+  "original_unknown_reserved_usd": 0.318432,
+  "physical_episode_id": "pair_000014_challenger_retry1",
+  "request_id_namespace": "request IDs are local to the source/continuation directory segment",
+  "schema": "live_stopping/authorized_continuation_balance/1",
+  "source_api_ledger_sha256": "317b0c09a83a9c094359a6fb4d94785fd555161b8d320e405654c7e3a30e856c",
+  "source_directory": "/Users/sanjay/projects/BerkeleyProjects/Research/IanWaudbySmith/coldStartPrompts/logs/prospective_live_stopping"
+}

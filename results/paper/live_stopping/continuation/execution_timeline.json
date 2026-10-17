@@ -1,0 +1,22 @@
+[
+  {
+    "session": "original",
+    "first_episode_utc": "2026-10-16T18:18:30.306529+00:00",
+    "last_receipt_utc": "2026-10-16T18:50:13.211407+00:00",
+    "terminal_utc": "2026-10-16T18:50:13.219839+00:00",
+    "execution_elapsed_s": 1902.91331,
+    "physical_episode_attempts": 28,
+    "requests_started": 458,
+    "responses_with_usage": 457
+  },
+  {
+    "session": "continuation",
+    "first_episode_utc": "2026-10-16T23:08:16.464561+00:00",
+    "last_receipt_utc": "2026-10-16T23:51:03.177700+00:00",
+    "terminal_utc": "2026-10-16T23:51:03.196557+00:00",
+    "execution_elapsed_s": 2566.731996,
+    "physical_episode_attempts": 43,
+    "requests_started": 754,
+    "responses_with_usage": 754
+  }
+]

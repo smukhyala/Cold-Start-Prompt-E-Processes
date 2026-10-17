@@ -1,0 +1,6 @@
+{
+  "seed": 20261006,
+  "rule": "two cells per pool from each first-fail/repeat-fail and first-fail/repeat-success stratum",
+  "n_cells": 12,
+  "outcome_role": "descriptive audit; selected on repeat outcome; no causal coding"
+}

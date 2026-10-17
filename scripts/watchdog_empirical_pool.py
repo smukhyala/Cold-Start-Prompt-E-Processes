@@ -58,7 +58,7 @@ LOG_DIR = ROOT / "logs" / "empirical_pool"
 HET_LOG_ROOT = ROOT / "logs" / "heterogeneity"
 DEFAULT_PROFILE = "prereg9"
 #: collect.py's `PROFILES` (kept stdlib-only here; tests assert the two agree).
-PROFILE_NAMES = ("prereg9", "gitlab", "gmail", "bridge")
+PROFILE_NAMES = ("prereg9", "gitlab", "gmail", "bridge", "linear", "sampled_linear")
 COLLECT = ROOT / "experiments" / "growing_bandits" / "empirical" / "collect.py"
 POLL_SECONDS = 120
 STALL_MINUTES = 30.0

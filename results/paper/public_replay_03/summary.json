@@ -1,0 +1,71 @@
+{
+  "revision": "40f164d5b8f1d249bf95a6df8b74b577fd8e519d",
+  "pairs": [
+    {
+      "pair": 0,
+      "reference": "20240402_rag_gpt4",
+      "challenger": "20240402_sweagent_gpt4",
+      "model": "gpt-4-1106-preview",
+      "common_tasks": 495,
+      "reference_only": 5,
+      "challenger_only": 0,
+      "ambiguous": 0,
+      "duplicate_status_records": {
+        "reference": 0,
+        "challenger": 4
+      },
+      "reference_resolved": 13,
+      "challenger_resolved": 112,
+      "paired_gain": 0.2,
+      "gain_bootstrap_ci": [
+        0.16565656565656567,
+        0.23636363636363636
+      ],
+      "challenger_only_wins": 100,
+      "reference_only_wins": 1,
+      "prespecified_cross_task": 92,
+      "max_log_e": 39.44789852214834,
+      "final_log_e": 39.44789852214834,
+      "full_grid_episodes": 990,
+      "prespecified_stop_episodes": 184,
+      "replay_crossings": 2000,
+      "replay_orders": 2000,
+      "replay_median_cross_task_among_hits": 53.0,
+      "replay_min_cross_task": 24,
+      "replay_max_cross_task": 112
+    },
+    {
+      "pair": 1,
+      "reference": "20240402_rag_claude3opus",
+      "challenger": "20240402_sweagent_claude3opus",
+      "model": "claude-3-opus-20240229",
+      "common_tasks": 496,
+      "reference_only": 4,
+      "challenger_only": 0,
+      "ambiguous": 0,
+      "duplicate_status_records": {
+        "reference": 0,
+        "challenger": 0
+      },
+      "reference_resolved": 35,
+      "challenger_resolved": 79,
+      "paired_gain": 0.08870967741935484,
+      "gain_bootstrap_ci": [
+        0.056451612903225805,
+        0.12096774193548387
+      ],
+      "challenger_only_wins": 58,
+      "reference_only_wins": 14,
+      "prespecified_cross_task": 95,
+      "max_log_e": 13.407450634326118,
+      "final_log_e": 13.407450634326118,
+      "full_grid_episodes": 992,
+      "prespecified_stop_episodes": 190,
+      "replay_crossings": 2000,
+      "replay_orders": 2000,
+      "replay_median_cross_task_among_hits": 140.0,
+      "replay_min_cross_task": 35,
+      "replay_max_cross_task": 354
+    }
+  ]
+}

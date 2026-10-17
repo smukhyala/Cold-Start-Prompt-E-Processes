@@ -1,0 +1,1018 @@
+{
+  "revision": "40f164d5b8f1d249bf95a6df8b74b577fd8e519d",
+  "coverage_policy": "strict",
+  "folders": 182,
+  "with_results": 135,
+  "missing_results": 47,
+  "eligible": 12,
+  "excluded": 123,
+  "exclusion_reasons": {
+    "fewer": 123
+  },
+  "initial_leader": "20231010_rag_claude2",
+  "final_leader": "20240721_amazon-q-developer-agent-20240719-dev",
+  "universe_ids": 500,
+  "eligible_with_missing_ids": 5,
+  "max_missing_ids": 8,
+  "duplicate_status_records": 4,
+  "metadata_only_with_score": 47,
+  "metadata_only_max_percent": 76.8,
+  "metadata_only_at_least_final_subset_leader": 38,
+  "comparisons": 11,
+  "leader_claims": 8,
+  "nominal_crossing_claims": 3,
+  "spent_crossing_claims": 3,
+  "nominal_median_cross_task": 68.0,
+  "spent_median_cross_task": 240.0,
+  "nominal_claim_episode_saving": 2450,
+  "spent_claim_episode_saving": 1584,
+  "nonclaim_nominal_crossings": 0,
+  "missing_result_names": [
+    "20250720_mini-v0.0.0-Llama-4-Maverick-17B-Instruct",
+    "20250720_mini-v0.0.0-Llama-4-Scout-17B-Instruct",
+    "20250720_mini-v0.0.0-claude-3-7-sonnet-20250219",
+    "20250720_mini-v0.0.0-gpt-4o-2024-11-20",
+    "20250720_mini-v0.0.0_gpt-4.1-mini-2025-04-14",
+    "20250726_mini-v1.0.0_claude-sonnet-4-20250514",
+    "20250726_mini-v1.0.0_gemini-2.0-flash",
+    "20250726_mini-v1.0.0_gemini-2.5-flash",
+    "20250726_mini-v1.0.0_gemini-2.5-pro",
+    "20250726_mini-v1.0.0_gpt-4.1-2025-04-14",
+    "20250726_mini-v1.0.0_o3-2025-04-16",
+    "20250726_mini-v1.0.0_o4-mini-2025-04-16",
+    "20250802_mini-v1.0.0_claude-4-opus-20250514",
+    "20250802_mini-v1.0.0_qwen3-coder-480b-a35b-instruct",
+    "20250803_mini-v1.0.0_qwen2-5-coder-32b-instruct",
+    "20250807_mini-v1.7.0_gpt-5",
+    "20250807_mini-v1.7.0_gpt-5-mini",
+    "20250807_mini-v1.7.0_gpt-5-nano",
+    "20250807_mini-v1.7.0_gpt-oss-120b",
+    "20250807_mini-v1.7.0_kimi-k2-instruct",
+    "20250822_mini-v1.9.1_glm-4.5",
+    "20250929_mini-v1.13.3_sonnet-4-5-20250929",
+    "20251118_mini-v1.15.0_gemini-3-pro-preview-20251118",
+    "20251120_mini-v1.15.0_gpt-5.1-2025-11-13",
+    "20251124_mini-v1.16.0_claude-opus-4-5-20251101",
+    "20251124_mini-v1.16.0_gpt-5.1-codex",
+    "20251124_mini-v1.17.0_minimax-m2",
+    "20251201_mini-v1.17.1_deepseek-v3.2-reasoner",
+    "20251201_mini-v1.17.1_glm-4.6",
+    "20251209_mini-v1.17.2_devstral-2512",
+    "20251209_mini-v1.17.2_devstral-small-2512",
+    "20251210_mini-v1.17.2_kimi-k2-thinking",
+    "20251211_mini-v1.17.2_gpt-5.2-2025-12-11",
+    "20251211_mini-v1.17.2_gpt-5.2-2025-12-11-high",
+    "20260217_mini-v2.0.0_claude-4-5-haiku-high",
+    "20260217_mini-v2.0.0_claude-4-5-opus-high",
+    "20260217_mini-v2.0.0_claude-4-5-sonnet-high",
+    "20260217_mini-v2.0.0_claude-4-6-opus",
+    "20260217_mini-v2.0.0_deepseek-3-2-high",
+    "20260217_mini-v2.0.0_gemini-3-flash-high",
+    "20260217_mini-v2.0.0_glm-5-high",
+    "20260217_mini-v2.0.0_gpt-5-2-high",
+    "20260217_mini-v2.0.0_gpt-5-mini",
+    "20260217_mini-v2.0.0_kimi-k2-5-high",
+    "20260217_mini-v2.0.0_minimax-2-5-high",
+    "20260219_mini-v2.0.0_gpt-5-2-codex",
+    "20260226_mini-v2.0.0_gemini-3-pro-high"
+  ],
+  "metadata_only_rows": [
+    {
+      "name": "20250720_mini-v0.0.0-Llama-4-Maverick-17B-Instruct",
+      "resolved_percent": 21.04
+    },
+    {
+      "name": "20250720_mini-v0.0.0-Llama-4-Scout-17B-Instruct",
+      "resolved_percent": 9.06
+    },
+    {
+      "name": "20250720_mini-v0.0.0-claude-3-7-sonnet-20250219",
+      "resolved_percent": 52.8
+    },
+    {
+      "name": "20250720_mini-v0.0.0-gpt-4o-2024-11-20",
+      "resolved_percent": 21.62
+    },
+    {
+      "name": "20250720_mini-v0.0.0_gpt-4.1-mini-2025-04-14",
+      "resolved_percent": 23.94
+    },
+    {
+      "name": "20250726_mini-v1.0.0_claude-sonnet-4-20250514",
+      "resolved_percent": 64.93
+    },
+    {
+      "name": "20250726_mini-v1.0.0_gemini-2.0-flash",
+      "resolved_percent": 13.52
+    },
+    {
+      "name": "20250726_mini-v1.0.0_gemini-2.5-flash",
+      "resolved_percent": 28.73
+    },
+    {
+      "name": "20250726_mini-v1.0.0_gemini-2.5-pro",
+      "resolved_percent": 53.6
+    },
+    {
+      "name": "20250726_mini-v1.0.0_gpt-4.1-2025-04-14",
+      "resolved_percent": 39.58
+    },
+    {
+      "name": "20250726_mini-v1.0.0_o3-2025-04-16",
+      "resolved_percent": 58.4
+    },
+    {
+      "name": "20250726_mini-v1.0.0_o4-mini-2025-04-16",
+      "resolved_percent": 45.0
+    },
+    {
+      "name": "20250802_mini-v1.0.0_claude-4-opus-20250514",
+      "resolved_percent": 67.6
+    },
+    {
+      "name": "20250802_mini-v1.0.0_qwen3-coder-480b-a35b-instruct",
+      "resolved_percent": 55.4
+    },
+    {
+      "name": "20250803_mini-v1.0.0_qwen2-5-coder-32b-instruct",
+      "resolved_percent": 9.0
+    },
+    {
+      "name": "20250807_mini-v1.7.0_gpt-5",
+      "resolved_percent": 65.0
+    },
+    {
+      "name": "20250807_mini-v1.7.0_gpt-5-mini",
+      "resolved_percent": 59.8
+    },
+    {
+      "name": "20250807_mini-v1.7.0_gpt-5-nano",
+      "resolved_percent": 34.8
+    },
+    {
+      "name": "20250807_mini-v1.7.0_gpt-oss-120b",
+      "resolved_percent": 26.0
+    },
+    {
+      "name": "20250807_mini-v1.7.0_kimi-k2-instruct",
+      "resolved_percent": 43.8
+    },
+    {
+      "name": "20250822_mini-v1.9.1_glm-4.5",
+      "resolved_percent": 54.2
+    },
+    {
+      "name": "20250929_mini-v1.13.3_sonnet-4-5-20250929",
+      "resolved_percent": 70.6
+    },
+    {
+      "name": "20251118_mini-v1.15.0_gemini-3-pro-preview-20251118",
+      "resolved_percent": 74.2
+    },
+    {
+      "name": "20251120_mini-v1.15.0_gpt-5.1-2025-11-13",
+      "resolved_percent": 66.0
+    },
+    {
+      "name": "20251124_mini-v1.16.0_claude-opus-4-5-20251101",
+      "resolved_percent": 74.4
+    },
+    {
+      "name": "20251124_mini-v1.16.0_gpt-5.1-codex",
+      "resolved_percent": 66.0
+    },
+    {
+      "name": "20251124_mini-v1.17.0_minimax-m2",
+      "resolved_percent": 61.0
+    },
+    {
+      "name": "20251201_mini-v1.17.1_deepseek-v3.2-reasoner",
+      "resolved_percent": 60.0
+    },
+    {
+      "name": "20251201_mini-v1.17.1_glm-4.6",
+      "resolved_percent": 55.4
+    },
+    {
+      "name": "20251209_mini-v1.17.2_devstral-2512",
+      "resolved_percent": 53.8
+    },
+    {
+      "name": "20251209_mini-v1.17.2_devstral-small-2512",
+      "resolved_percent": 56.4
+    },
+    {
+      "name": "20251210_mini-v1.17.2_kimi-k2-thinking",
+      "resolved_percent": 63.4
+    },
+    {
+      "name": "20251211_mini-v1.17.2_gpt-5.2-2025-12-11",
+      "resolved_percent": 69.0
+    },
+    {
+      "name": "20251211_mini-v1.17.2_gpt-5.2-2025-12-11-high",
+      "resolved_percent": 71.8
+    },
+    {
+      "name": "20260217_mini-v2.0.0_claude-4-5-haiku-high",
+      "resolved_percent": 66.6
+    },
+    {
+      "name": "20260217_mini-v2.0.0_claude-4-5-opus-high",
+      "resolved_percent": 76.8
+    },
+    {
+      "name": "20260217_mini-v2.0.0_claude-4-5-sonnet-high",
+      "resolved_percent": 71.4
+    },
+    {
+      "name": "20260217_mini-v2.0.0_claude-4-6-opus",
+      "resolved_percent": 75.6
+    },
+    {
+      "name": "20260217_mini-v2.0.0_deepseek-3-2-high",
+      "resolved_percent": 70.0
+    },
+    {
+      "name": "20260217_mini-v2.0.0_gemini-3-flash-high",
+      "resolved_percent": 75.8
+    },
+    {
+      "name": "20260217_mini-v2.0.0_glm-5-high",
+      "resolved_percent": 72.8
+    },
+    {
+      "name": "20260217_mini-v2.0.0_gpt-5-2-high",
+      "resolved_percent": 72.8
+    },
+    {
+      "name": "20260217_mini-v2.0.0_gpt-5-mini",
+      "resolved_percent": 56.2
+    },
+    {
+      "name": "20260217_mini-v2.0.0_kimi-k2-5-high",
+      "resolved_percent": 70.8
+    },
+    {
+      "name": "20260217_mini-v2.0.0_minimax-2-5-high",
+      "resolved_percent": 75.8
+    },
+    {
+      "name": "20260219_mini-v2.0.0_gpt-5-2-codex",
+      "resolved_percent": 72.8
+    },
+    {
+      "name": "20260226_mini-v2.0.0_gemini-3-pro-high",
+      "resolved_percent": 69.6
+    }
+  ],
+  "exclusions": [
+    {
+      "name": "20231010_rag_swellama13b",
+      "reason": "fewer_than_490_ids_481"
+    },
+    {
+      "name": "20240612_MASAI_gpt4o",
+      "reason": "fewer_than_490_ids_189"
+    },
+    {
+      "name": "20240620_sweagent_claude3.5sonnet",
+      "reason": "fewer_than_490_ids_182"
+    },
+    {
+      "name": "20240728_sweagent_gpt4o",
+      "reason": "fewer_than_490_ids_169"
+    },
+    {
+      "name": "20240820_epam-ai-run-gpt-4o",
+      "reason": "fewer_than_490_ids_140"
+    },
+    {
+      "name": "20240820_honeycomb",
+      "reason": "fewer_than_490_ids_264"
+    },
+    {
+      "name": "20240824_gru",
+      "reason": "fewer_than_490_ids_228"
+    },
+    {
+      "name": "20240918_lingma-agent_lingma-swe-gpt-72b",
+      "reason": "fewer_than_490_ids_142"
+    },
+    {
+      "name": "20240918_lingma-agent_lingma-swe-gpt-7b",
+      "reason": "fewer_than_490_ids_92"
+    },
+    {
+      "name": "20240920_solver",
+      "reason": "fewer_than_490_ids_222"
+    },
+    {
+      "name": "20240924_solver",
+      "reason": "fewer_than_490_ids_229"
+    },
+    {
+      "name": "20241001_nfactorial",
+      "reason": "fewer_than_490_ids_149"
+    },
+    {
+      "name": "20241002_lingma-agent_lingma-swe-gpt-72b",
+      "reason": "fewer_than_490_ids_153"
+    },
+    {
+      "name": "20241002_lingma-agent_lingma-swe-gpt-7b",
+      "reason": "fewer_than_490_ids_179"
+    },
+    {
+      "name": "20241007_nfactorial",
+      "reason": "fewer_than_490_ids_180"
+    },
+    {
+      "name": "20241016_composio_swekit",
+      "reason": "fewer_than_490_ids_203"
+    },
+    {
+      "name": "20241016_epam-ai-run-gpt-4o",
+      "reason": "fewer_than_490_ids_147"
+    },
+    {
+      "name": "20241022_tools_claude-3-5-haiku",
+      "reason": "fewer_than_490_ids_222"
+    },
+    {
+      "name": "20241022_tools_claude-3-5-sonnet-updated",
+      "reason": "fewer_than_490_ids_262"
+    },
+    {
+      "name": "20241023_emergent",
+      "reason": "fewer_than_490_ids_235"
+    },
+    {
+      "name": "20241025_composio_swekit",
+      "reason": "fewer_than_490_ids_244"
+    },
+    {
+      "name": "20241028_agentless-1.5_gpt4o",
+      "reason": "fewer_than_490_ids_198"
+    },
+    {
+      "name": "20241028_solver",
+      "reason": "fewer_than_490_ids_251"
+    },
+    {
+      "name": "20241029_OpenHands-CodeAct-2.1-sonnet-20241022",
+      "reason": "fewer_than_490_ids_272"
+    },
+    {
+      "name": "20241029_epam-ai-run-claude-3-5-sonnet",
+      "reason": "fewer_than_490_ids_223"
+    },
+    {
+      "name": "20241030_nfactorial",
+      "reason": "fewer_than_490_ids_211"
+    },
+    {
+      "name": "20241105_nfactorial",
+      "reason": "fewer_than_490_ids_257"
+    },
+    {
+      "name": "20241106_navie-2-gpt4o-sonnet",
+      "reason": "fewer_than_490_ids_243"
+    },
+    {
+      "name": "20241108_autocoderover-v2.0-claude-3-5-sonnet-20241022",
+      "reason": "fewer_than_490_ids_235"
+    },
+    {
+      "name": "20241108_devlo",
+      "reason": "fewer_than_490_ids_271"
+    },
+    {
+      "name": "20241113_nebius-search-open-weight-models-11-24",
+      "reason": "fewer_than_490_ids_204"
+    },
+    {
+      "name": "20241120_artemis_agent",
+      "reason": "fewer_than_490_ids_171"
+    },
+    {
+      "name": "20241125_enginelabs",
+      "reason": "fewer_than_490_ids_267"
+    },
+    {
+      "name": "20241125_marscode-agent-dev",
+      "reason": "fewer_than_490_ids_252"
+    },
+    {
+      "name": "20241128_SWE-Fixer_Qwen2.5-7b-retriever_Qwen2.5-72b-editor_20241128",
+      "reason": "fewer_than_490_ids_153"
+    },
+    {
+      "name": "20241202_agentless-1.5_claude-3.5-sonnet-20241022",
+      "reason": "fewer_than_490_ids_257"
+    },
+    {
+      "name": "20241202_amazon-q-developer-agent-20241202-dev",
+      "reason": "fewer_than_490_ids_276"
+    },
+    {
+      "name": "20241208_gru",
+      "reason": "fewer_than_490_ids_285"
+    },
+    {
+      "name": "20241212_epam-ai-run-claude-3-5-sonnet",
+      "reason": "fewer_than_490_ids_286"
+    },
+    {
+      "name": "20241212_google_jules_gemini_2.0_flash_experimental",
+      "reason": "fewer_than_490_ids_261"
+    },
+    {
+      "name": "20241213_devlo",
+      "reason": "fewer_than_490_ids_291"
+    },
+    {
+      "name": "20241221_codestory_midwit_claude-3-5-sonnet_swe-search",
+      "reason": "fewer_than_490_ids_356"
+    },
+    {
+      "name": "20241223_emergent",
+      "reason": "fewer_than_490_ids_286"
+    },
+    {
+      "name": "20250110_blackboxai_agent_v1.1",
+      "reason": "fewer_than_490_ids_334"
+    },
+    {
+      "name": "20250110_learn_by_interact_claude3.5",
+      "reason": "fewer_than_490_ids_391"
+    },
+    {
+      "name": "20250112_ugaiforge",
+      "reason": "fewer_than_490_ids_215"
+    },
+    {
+      "name": "20250117_wandb_programmer_o1_crosscheck5",
+      "reason": "fewer_than_490_ids_324"
+    },
+    {
+      "name": "20250118_codeshellagent_gemini_2.0_flash_experimental",
+      "reason": "fewer_than_490_ids_235"
+    },
+    {
+      "name": "20250120_Bracket",
+      "reason": "fewer_than_490_ids_283"
+    },
+    {
+      "name": "20250122_autocoderover-v2.1-claude-3-5-sonnet-20241022",
+      "reason": "fewer_than_490_ids_263"
+    },
+    {
+      "name": "20250203_openhands_4x_scaled",
+      "reason": "fewer_than_490_ids_306"
+    },
+    {
+      "name": "20250206_agentscope",
+      "reason": "fewer_than_490_ids_319"
+    },
+    {
+      "name": "20250214_agentless_lite_o3_mini",
+      "reason": "fewer_than_490_ids_222"
+    },
+    {
+      "name": "20250224_tools_claude-3-7-sonnet",
+      "reason": "fewer_than_490_ids_316"
+    },
+    {
+      "name": "20250225_sweagent_claude-3-7-sonnet",
+      "reason": "fewer_than_490_ids_314"
+    },
+    {
+      "name": "20250226_swerl_llama3_70b",
+      "reason": "fewer_than_490_ids_207"
+    },
+    {
+      "name": "20250228_epam-ai-run-claude-3-5-sonnet",
+      "reason": "fewer_than_490_ids_322"
+    },
+    {
+      "name": "20250306_SWE-Fixer_Qwen2.5-7b-retriever_Qwen2.5-72b-editor",
+      "reason": "fewer_than_490_ids_183"
+    },
+    {
+      "name": "20250316_augment_agent_v0",
+      "reason": "fewer_than_490_ids_327"
+    },
+    {
+      "name": "20250405_amazon-q-developer-agent-20250405-dev",
+      "reason": "fewer_than_490_ids_327"
+    },
+    {
+      "name": "20250405_swe-rizzo_claude37",
+      "reason": "fewer_than_490_ids_283"
+    },
+    {
+      "name": "20250410_cortexa",
+      "reason": "fewer_than_490_ids_291"
+    },
+    {
+      "name": "20250415_openhands",
+      "reason": "fewer_than_490_ids_330"
+    },
+    {
+      "name": "20250430_zencoder_ai",
+      "reason": "fewer_than_490_ids_351"
+    },
+    {
+      "name": "20250503_patchpilot-v1.1-o4-mini",
+      "reason": "fewer_than_490_ids_336"
+    },
+    {
+      "name": "20250511_sweagent_lm_32b",
+      "reason": "fewer_than_490_ids_205"
+    },
+    {
+      "name": "20250514_aime_coder",
+      "reason": "fewer_than_490_ids_332"
+    },
+    {
+      "name": "20250515_Refact_Agent",
+      "reason": "fewer_than_490_ids_353"
+    },
+    {
+      "name": "20250516_cortexa_o3",
+      "reason": "fewer_than_490_ids_462"
+    },
+    {
+      "name": "20250519_devlo",
+      "reason": "fewer_than_490_ids_351"
+    },
+    {
+      "name": "20250519_trae",
+      "reason": "fewer_than_490_ids_353"
+    },
+    {
+      "name": "20250520_openhands_devstral_small",
+      "reason": "fewer_than_490_ids_242"
+    },
+    {
+      "name": "20250522_sweagent_claude-4-sonnet-20250514",
+      "reason": "fewer_than_490_ids_333"
+    },
+    {
+      "name": "20250522_tools_claude-4-opus",
+      "reason": "fewer_than_490_ids_366"
+    },
+    {
+      "name": "20250522_tools_claude-4-sonnet",
+      "reason": "fewer_than_490_ids_362"
+    },
+    {
+      "name": "20250524_openhands_claude_4_sonnet",
+      "reason": "fewer_than_490_ids_353"
+    },
+    {
+      "name": "20250527_amazon.nova-premier-v1.0",
+      "reason": "fewer_than_490_ids_227"
+    },
+    {
+      "name": "20250528_patchpilot_Co-PatcheR",
+      "reason": "fewer_than_490_ids_230"
+    },
+    {
+      "name": "20250603_Refact_Agent_claude-4-sonnet",
+      "reason": "fewer_than_490_ids_373"
+    },
+    {
+      "name": "20250610_augment_agent_v1",
+      "reason": "fewer_than_490_ids_352"
+    },
+    {
+      "name": "20250611_moatless_claude-4-sonnet-20250514",
+      "reason": "fewer_than_490_ids_357"
+    },
+    {
+      "name": "20250612_trae",
+      "reason": "fewer_than_490_ids_377"
+    },
+    {
+      "name": "20250616_Skywork-SWE-32B",
+      "reason": "fewer_than_490_ids_200"
+    },
+    {
+      "name": "20250616_Skywork-SWE-32B+TTS_Bo8",
+      "reason": "fewer_than_490_ids_236"
+    },
+    {
+      "name": "20250623_warp",
+      "reason": "fewer_than_490_ids_361"
+    },
+    {
+      "name": "20250627_agentless_MCTS-Refine-7B",
+      "reason": "fewer_than_490_ids_155"
+    },
+    {
+      "name": "20250629_deepswerl_r2eagent",
+      "reason": "fewer_than_490_ids_256"
+    },
+    {
+      "name": "20250629_deepswerl_r2eagent_tts",
+      "reason": "fewer_than_490_ids_297"
+    },
+    {
+      "name": "20250710_bloop",
+      "reason": "fewer_than_490_ids_356"
+    },
+    {
+      "name": "20250715_qodo_command",
+      "reason": "fewer_than_490_ids_356"
+    },
+    {
+      "name": "20250716_openhands_kimi_k2",
+      "reason": "fewer_than_490_ids_328"
+    },
+    {
+      "name": "20250720_Lingxi-v1.5_claude-4-sonnet-20250514",
+      "reason": "fewer_than_490_ids_374"
+    },
+    {
+      "name": "20250725_sweagent_devstral_small_2507",
+      "reason": "fewer_than_490_ids_196"
+    },
+    {
+      "name": "20250728_zai_glm4-5",
+      "reason": "fewer_than_490_ids_322"
+    },
+    {
+      "name": "20250731_harness_ai",
+      "reason": "fewer_than_490_ids_374"
+    },
+    {
+      "name": "20250804_codesweep_sweagent_kimi_k2_instruct",
+      "reason": "fewer_than_490_ids_286"
+    },
+    {
+      "name": "20250804_epam-ai-run-claude-4-sonnet",
+      "reason": "fewer_than_490_ids_386"
+    },
+    {
+      "name": "20250805_openhands-Qwen3-Coder-30B-A3B-Instruct",
+      "reason": "fewer_than_490_ids_259"
+    },
+    {
+      "name": "20250805_openhands-Qwen3-Coder-480B-A35B-Instruct",
+      "reason": "fewer_than_490_ids_349"
+    },
+    {
+      "name": "20250806_SWE-Exp_DeepSeek-V3",
+      "reason": "fewer_than_490_ids_242"
+    },
+    {
+      "name": "20250807_openhands_gpt5",
+      "reason": "fewer_than_490_ids_360"
+    },
+    {
+      "name": "20250819_ACoder",
+      "reason": "fewer_than_490_ids_382"
+    },
+    {
+      "name": "20250901_entroPO_R2E_QwenCoder30BA3B",
+      "reason": "fewer_than_490_ids_273"
+    },
+    {
+      "name": "20250901_entroPO_R2E_QwenCoder30BA3B_tts",
+      "reason": "fewer_than_490_ids_307"
+    },
+    {
+      "name": "20250901_warp",
+      "reason": "fewer_than_490_ids_382"
+    },
+    {
+      "name": "20250902_atlassian-rovo-dev",
+      "reason": "fewer_than_490_ids_384"
+    },
+    {
+      "name": "20250915_JoyCode",
+      "reason": "fewer_than_490_ids_373"
+    },
+    {
+      "name": "20250924_artemis_agent_v2",
+      "reason": "fewer_than_490_ids_297"
+    },
+    {
+      "name": "20250928_trae_doubao_seed_code",
+      "reason": "fewer_than_490_ids_396"
+    },
+    {
+      "name": "20250929_Prometheus_v1.2_gpt5",
+      "reason": "fewer_than_490_ids_357"
+    },
+    {
+      "name": "20250930_zai_glm4-6",
+      "reason": "fewer_than_490_ids_344"
+    },
+    {
+      "name": "20251014_Lingxi_kimi_k2",
+      "reason": "fewer_than_490_ids_357"
+    },
+    {
+      "name": "20251015_Prometheus_v1.2.1_gpt5",
+      "reason": "fewer_than_490_ids_373"
+    },
+    {
+      "name": "20251021_SalesforceAIResearch_SAGE_bash_only",
+      "reason": "fewer_than_490_ids_366"
+    },
+    {
+      "name": "20251103_SalesforceAIResearch_SAGE_OpenHands",
+      "reason": "fewer_than_490_ids_372"
+    },
+    {
+      "name": "20251103_sonar-foundation-agent_claude-sonnet-4-5",
+      "reason": "fewer_than_490_ids_377"
+    },
+    {
+      "name": "20251110_frogboss-32b",
+      "reason": "fewer_than_490_ids_278"
+    },
+    {
+      "name": "20251110_frogmini-14b",
+      "reason": "fewer_than_490_ids_231"
+    },
+    {
+      "name": "20251120_livesweagent_gemini-3-pro-preview",
+      "reason": "fewer_than_490_ids_390"
+    },
+    {
+      "name": "20251127_openhands_claude-opus-4-5",
+      "reason": "fewer_than_490_ids_390"
+    },
+    {
+      "name": "20251205_sonar-foundation-agent_claude-opus-4-5",
+      "reason": "fewer_than_490_ids_396"
+    },
+    {
+      "name": "20251215_livesweagent_claude-opus-4-5",
+      "reason": "fewer_than_490_ids_401"
+    },
+    {
+      "name": "20260901_mini-v2.4.2_gemini-3-5-flash",
+      "reason": "fewer_than_490_ids_418"
+    }
+  ],
+  "comparison_rows": [
+    {
+      "entrant_index": 1,
+      "directory_date": "20231010",
+      "entrant": "20231010_rag_gpt35",
+      "prior_leader": "20231010_rag_claude2",
+      "entrant_resolved": 2,
+      "leader_resolved": 22,
+      "reported_gain_tasks": -20,
+      "paired_gain": -0.04,
+      "leader_claim": false,
+      "discordant_wins": 1,
+      "discordant_losses": 21,
+      "nominal_cross_task": null,
+      "spent_cross_task": null,
+      "spent_alpha": 0.025,
+      "max_log_e": 0.0,
+      "final_log_e": 0.0,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 1000,
+      "spent_stop_episodes": 1000,
+      "entrant_missing_ids": 0,
+      "leader_missing_ids": 0
+    },
+    {
+      "entrant_index": 2,
+      "directory_date": "20231010",
+      "entrant": "20231010_rag_swellama7b",
+      "prior_leader": "20231010_rag_claude2",
+      "entrant_resolved": 7,
+      "leader_resolved": 22,
+      "reported_gain_tasks": -15,
+      "paired_gain": -0.03,
+      "leader_claim": false,
+      "discordant_wins": 5,
+      "discordant_losses": 20,
+      "nominal_cross_task": null,
+      "spent_cross_task": null,
+      "spent_alpha": 0.008333333333333333,
+      "max_log_e": 0.0,
+      "final_log_e": 0.0,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 1000,
+      "spent_stop_episodes": 1000,
+      "entrant_missing_ids": 4,
+      "leader_missing_ids": 0
+    },
+    {
+      "entrant_index": 3,
+      "directory_date": "20240402",
+      "entrant": "20240402_rag_claude3opus",
+      "prior_leader": "20231010_rag_claude2",
+      "entrant_resolved": 35,
+      "leader_resolved": 22,
+      "reported_gain_tasks": 13,
+      "paired_gain": 0.026,
+      "leader_claim": true,
+      "discordant_wins": 24,
+      "discordant_losses": 11,
+      "nominal_cross_task": null,
+      "spent_cross_task": null,
+      "spent_alpha": 0.004166666666666667,
+      "max_log_e": 2.1661049961931473,
+      "final_log_e": 2.034460975359278,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 1000,
+      "spent_stop_episodes": 1000,
+      "entrant_missing_ids": 0,
+      "leader_missing_ids": 0
+    },
+    {
+      "entrant_index": 4,
+      "directory_date": "20240402",
+      "entrant": "20240402_rag_gpt4",
+      "prior_leader": "20240402_rag_claude3opus",
+      "entrant_resolved": 14,
+      "leader_resolved": 35,
+      "reported_gain_tasks": -21,
+      "paired_gain": -0.042,
+      "leader_claim": false,
+      "discordant_wins": 6,
+      "discordant_losses": 27,
+      "nominal_cross_task": null,
+      "spent_cross_task": null,
+      "spent_alpha": 0.0025,
+      "max_log_e": 0.0,
+      "final_log_e": 0.0,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 1000,
+      "spent_stop_episodes": 1000,
+      "entrant_missing_ids": 0,
+      "leader_missing_ids": 0
+    },
+    {
+      "entrant_index": 5,
+      "directory_date": "20240402",
+      "entrant": "20240402_sweagent_claude3opus",
+      "prior_leader": "20240402_rag_claude3opus",
+      "entrant_resolved": 79,
+      "leader_resolved": 35,
+      "reported_gain_tasks": 44,
+      "paired_gain": 0.088,
+      "leader_claim": true,
+      "discordant_wins": 58,
+      "discordant_losses": 14,
+      "nominal_cross_task": 51,
+      "spent_cross_task": 240,
+      "spent_alpha": 0.0016666666666666668,
+      "max_log_e": 13.695132706777912,
+      "final_log_e": 13.40745063432613,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 102,
+      "spent_stop_episodes": 480,
+      "entrant_missing_ids": 4,
+      "leader_missing_ids": 0
+    },
+    {
+      "entrant_index": 6,
+      "directory_date": "20240402",
+      "entrant": "20240402_sweagent_gpt4",
+      "prior_leader": "20240402_sweagent_claude3opus",
+      "entrant_resolved": 112,
+      "leader_resolved": 79,
+      "reported_gain_tasks": 33,
+      "paired_gain": 0.066,
+      "leader_claim": true,
+      "discordant_wins": 54,
+      "discordant_losses": 21,
+      "nominal_cross_task": 156,
+      "spent_cross_task": 287,
+      "spent_alpha": 0.0011904761904761906,
+      "max_log_e": 8.527862922916402,
+      "final_log_e": 6.919553523862101,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 312,
+      "spent_stop_episodes": 574,
+      "entrant_missing_ids": 5,
+      "leader_missing_ids": 4
+    },
+    {
+      "entrant_index": 7,
+      "directory_date": "20240509",
+      "entrant": "20240509_amazon-q-developer-agent-20240430-dev",
+      "prior_leader": "20240402_sweagent_gpt4",
+      "entrant_resolved": 128,
+      "leader_resolved": 112,
+      "reported_gain_tasks": 16,
+      "paired_gain": 0.032,
+      "leader_claim": true,
+      "discordant_wins": 61,
+      "discordant_losses": 45,
+      "nominal_cross_task": null,
+      "spent_cross_task": null,
+      "spent_alpha": 0.0008928571428571429,
+      "max_log_e": 0.0,
+      "final_log_e": -0.7572328380354773,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 1000,
+      "spent_stop_episodes": 1000,
+      "entrant_missing_ids": 0,
+      "leader_missing_ids": 5
+    },
+    {
+      "entrant_index": 8,
+      "directory_date": "20240615",
+      "entrant": "20240615_appmap-navie_gpt4o",
+      "prior_leader": "20240509_amazon-q-developer-agent-20240430-dev",
+      "entrant_resolved": 131,
+      "leader_resolved": 128,
+      "reported_gain_tasks": 3,
+      "paired_gain": 0.006,
+      "leader_claim": true,
+      "discordant_wins": 52,
+      "discordant_losses": 49,
+      "nominal_cross_task": null,
+      "spent_cross_task": null,
+      "spent_alpha": 0.0006944444444444445,
+      "max_log_e": 1.4764307622872326,
+      "final_log_e": -2.5390712005905067,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 1000,
+      "spent_stop_episodes": 1000,
+      "entrant_missing_ids": 1,
+      "leader_missing_ids": 0
+    },
+    {
+      "entrant_index": 9,
+      "directory_date": "20240617",
+      "entrant": "20240617_factory_code_droid",
+      "prior_leader": "20240615_appmap-navie_gpt4o",
+      "entrant_resolved": 185,
+      "leader_resolved": 131,
+      "reported_gain_tasks": 54,
+      "paired_gain": 0.108,
+      "leader_claim": true,
+      "discordant_wins": 77,
+      "discordant_losses": 23,
+      "nominal_cross_task": 68,
+      "spent_cross_task": 181,
+      "spent_alpha": 0.0005555555555555556,
+      "max_log_e": 17.0566366072996,
+      "final_log_e": 14.872963063341736,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 136,
+      "spent_stop_episodes": 362,
+      "entrant_missing_ids": 0,
+      "leader_missing_ids": 1
+    },
+    {
+      "entrant_index": 10,
+      "directory_date": "20240628",
+      "entrant": "20240628_autocoderover-v20240620",
+      "prior_leader": "20240617_factory_code_droid",
+      "entrant_resolved": 192,
+      "leader_resolved": 185,
+      "reported_gain_tasks": 7,
+      "paired_gain": 0.014,
+      "leader_claim": true,
+      "discordant_wins": 56,
+      "discordant_losses": 49,
+      "nominal_cross_task": null,
+      "spent_cross_task": null,
+      "spent_alpha": 0.00045454545454545455,
+      "max_log_e": 0.04584225476314244,
+      "final_log_e": -1.121427255994461,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 1000,
+      "spent_stop_episodes": 1000,
+      "entrant_missing_ids": 8,
+      "leader_missing_ids": 0
+    },
+    {
+      "entrant_index": 11,
+      "directory_date": "20240721",
+      "entrant": "20240721_amazon-q-developer-agent-20240719-dev",
+      "prior_leader": "20240628_autocoderover-v20240620",
+      "entrant_resolved": 194,
+      "leader_resolved": 192,
+      "reported_gain_tasks": 2,
+      "paired_gain": 0.004,
+      "leader_claim": true,
+      "discordant_wins": 55,
+      "discordant_losses": 53,
+      "nominal_cross_task": null,
+      "spent_cross_task": null,
+      "spent_alpha": 0.0003787878787878788,
+      "max_log_e": 1.3129143625001207,
+      "final_log_e": -2.3605161881086105,
+      "full_grid_episodes": 1000,
+      "nominal_stop_episodes": 1000,
+      "spent_stop_episodes": 1000,
+      "entrant_missing_ids": 0,
+      "leader_missing_ids": 8
+    }
+  ]
+}

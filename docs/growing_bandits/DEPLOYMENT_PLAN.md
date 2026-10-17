@@ -1249,3 +1249,446 @@ of GLK data**; the only data seen remains the audit aggregates disclosed above.
   launch into that log dir with a different `--pools` / `--through-index` / `--pilot`, or none, refuses before
   touching STATUS or any lock, and the watchdog does not relaunch it. A hand relaunch after `provider_down`
   therefore cannot spend the budget on withdrawn GLG cells.
+
+## Pre-registration 12 — linguistic distance versus behavioural distance (registered 2026-10-05, before any embedding is computed)
+
+*Branch `paper`. An analysis of data that are already collected: no new agent episode is run. The behavioural
+results (Pre-reg 9 §13, Pre-reg 11 §15) were known when this was written; the linguistic distances were not.
+Results become §16 of `DEPLOYMENT_RESULTS.md` and support claim S4 ("linguistic diversity is not behavioural
+diversity") in the paper.*
+
+### Question
+
+Did the prompts in each real pool actually differ in wording and meaning, how much, and does linguistic distance
+between two prompts predict behavioural distance between them, beyond what execution noise explains?
+
+### Data
+
+- Pools: G (50, Gmail), F (50, Gmail), GLK (40, GitLab; primary outcome = the 30-step re-score `glk30`, the
+  uncapped `glk` as secondary). Anchors are reported as reference points only, never pooled.
+- Text: the `prompt_guidance` field (the part that varies; the template is shared). The full rendered prompt is a
+  sensitivity check.
+- Outcomes: the episode-level outcomes already behind §13 and §15, including their replicate cells. Nothing is
+  re-collected.
+
+### Measures
+
+- **Linguistic distance (primary):** cosine distance between OpenAI `text-embedding-3-large` embeddings.
+  Secondary: `text-embedding-3-small`, TF-IDF cosine distance, token Jaccard distance. Embeddings are cached
+  with model name and text SHA-256. Expected cost: under $0.05.
+- **Behavioural distance, two kinds:**
+  - *Main effect:* |rate_i − rate_j| over the shared tasks (raw), set against the deconvolved spread already in
+    §13 and §15.
+  - *Profile:* the per-task disagreement rate between prompts i and j. Its noise floor is the disagreement rate
+    between two replicate episodes of the *same* prompt on the same task, taken from the replicate cells.
+    Excess disagreement = profile disagreement − noise floor.
+- **Linguistic dispersion of a pool:** mean pairwise linguistic distance, with a bootstrap 95% interval over
+  prompts. Between-pool and cross-domain (Gmail vs GitLab) distances are reported as reference scales.
+
+### Registered tests
+
+1. **L1 (dispersion ordering).** F's mean pairwise linguistic distance (primary embedding) is ≥ G's. This is a
+   descriptive check with a bootstrap interval for the difference.
+2. **L2 (no linguistic → behavioural association).** In each pool, a Mantel test (Spearman, 10,000 permutations,
+   one-sided for positive association) between the linguistic and behavioural distance matrices, run once for
+   main-effect distance and once for excess profile disagreement. The correlation is reported with a bootstrap
+   95% interval over prompts.
+3. **L3 (excess over noise).** Per pool, mean excess profile disagreement with a bootstrap 95% interval over
+   prompts and tasks.
+
+### Decision rules for the paper
+
+- **The S4 sentence stays as written** ("prompts written to differ behave like one"; "linguistic diversity did
+  not produce behavioural diversity") if both hold:
+  - L1 holds; and
+  - in F, the L2 main-effect Mantel test is not significant at 0.05 and the upper end of its correlation interval
+    is < 0.3.
+- **If L1 fails** (F is not more linguistically dispersed than G), the paper drops "written to differ" and
+  reports F's dispersion relative to G and GLK.
+- **If L2 is significant and positive in any pool**, the paper reports it in that pool and scopes S4 to the pools
+  where it holds.
+- **L3** is descriptive. A positive excess with a near-zero main effect is reported as prompt × task interaction,
+  consistent with the §13 and §15 variance components. It is not reported as prompt quality.
+
+### Disclosed
+
+- The behavioural results were known before registration. Only the linguistic side is blind.
+- The choice of embedding model is a researcher degree of freedom. Secondary measures are reported in full.
+
+### Pre-registration 12 — Amendment 1: power and trajectories (registered 2026-10-05, after L1–L3, before either check is run)
+
+*Added after a validity review of the L1–L3 results. Main problems found:*
+- *L2 is close to uninformative when outcomes are flat.*
+- *Only 7 (G) and 9 (F) of the 30 Gmail tasks discriminate.*
+- *The NPMLE spread for F has a degenerate interval.*
+- *"Behavioural" was measured only as pass/fail.*
+
+*Two checks address these. Neither runs a new episode or calls a paid API.*
+
+**P — minimum detectable spread.**
+- **Simulation.** For each pool (G, F, GLK30), simulate pools whose true prompt spread is known:
+  - Spread τ ∈ {0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.10} on the probability scale.
+  - Each pool keeps its own number of prompts, tasks and per-task difficulty (fitted on the logit scale from the
+    data), its estimated prompt × task interaction, its replicate design, and its noise level.
+  - Prompt effects are drawn on the logit scale and scaled so the implied spread on the probability scale equals τ.
+  - 200 simulated pools per τ.
+- **Estimation.** Each simulated pool goes through the repo's own estimators, unchanged: the NPMLE deconvolved
+  spread, the τ interval, the split-half test, and the "detectable" rule Pre-reg 11 used.
+- **Reported:** power against τ; the minimum detectable spread (MDS), defined as the smallest τ with power ≥ 0.8;
+  and the distribution of the NPMLE spread estimate at each τ, in particular P(estimate ≤ 0.005 | τ).
+- **Paper wording.**
+  - Point estimates such as "SD 0.001" are replaced by "no detectable spread; a spread of MDS or more would have
+    been detected with probability ≥ 0.8".
+  - If MDS > 0.05 in a pool, that pool's flatness is reported as uninformative, not as flat.
+
+**T — trajectory distance.**
+- **Features.** From the existing episode logs, compute per episode:
+  - step count (log scale);
+  - the sequence of browser-use action types;
+  - the multiset of action types.
+- **Distances, in each pool:**
+  - (a) Prompt main effect on log steps, tested against the replicate noise (variance components, as in §13/§15,
+    plus a permutation test over prompt labels within task).
+  - (b) Action distance between two episodes: normalised edit distance between action-type sequences (primary)
+    and Jaccard distance between action-type multisets (secondary). Excess = mean distance between different
+    prompts on the same task − mean distance between replicates of the same prompt on the same task. Bootstrap
+    95% interval over prompts and tasks.
+  - (c) A Mantel test between linguistic distance (emb3large) and the per-pair mean action distance, with the
+    same settings as L2.
+- **Decision rules.**
+  - If (b) excess is > 0 with an interval excluding 0 in a pool, the paper says that wording changed *how* the
+    agent acted without changing *whether* it succeeded, and the S4 sentence uses "success" rather than
+    "behaviour".
+  - If (c) is significant and positive, the paper reports that linguistic distance predicts trajectory distance.
+  - If (a) and (b) are both null, "behaviour" may be used, scoped to "success and trajectory".
+
+**Limitation, recorded now.** Gmail has no positive control: no anchor that shows prompts *can* move success on this
+task bank. This cannot be fixed without paid episodes and is reported as a limitation.
+
+## Pre-registration 13 — does the search's winner beat the default on held-out tasks? (registered 2026-10-10, before any episode)
+
+*Branch `paper`. Confirmatory test of the exploratory finding in `docs/RESEARCH_PATHS_AUDIT_2026-10-09.md` §2:
+in every realistic pool, the prompt selected by search did not reliably beat the default prompt on held-out tasks.
+The planted answer-key prompt did. This registration is committed before any of its episodes is run. All three
+legs use one model (`gpt-5.4-mini`, low reasoning effort), the same agent framework, isolated resets, and the
+**30-step cap now actually enforced** (fix `bd3fff5`; it was never enforced before).*
+
+### Leg G (primary): GitLab winner check
+
+- **Arms.**
+  - W = `GLK_25`, frozen by a rule applied to old data only: highest GLK30 success on block A, then the tie-breaks
+    in the manifest. It had no tie: 0.733 against 0.700 for the next four.
+  - D = default `GL_anchor_baseline`.
+  - O = planted positive control `GL_anchor_oracle`, which hard-codes task issue IDs.
+- **Old block-A rates (30 tasks, 30-step):** W 0.733, D 0.733, O 0.867. The searched winner had **no in-sample lead**
+  over the default. This leg therefore tests "the search found nothing better than the default". It does not test
+  the winner's curse; Leg M does that.
+- **Tasks.** The 110 GitLab tasks the September study never ran (`data/winner_check_gitlab/manifest.json`).
+  - **Deviation, signed off by Sanjay 2026-10-10.** The registered "never run by any prompt" rule leaves 0 tasks,
+    because the June strong-arm allocation runs covered all 140 tasks.
+  - **Selection is unaffected.** No GLK prompt has run on these 110 tasks, and none of them was used to select W.
+  - **Exposure in June.** D and O, among other June prompts, ran on them in June under a different regime. No
+    selection used those runs.
+- **Episodes.** 110 tasks × 3 arms × 2 replicates = 660, in seeded order (seed 20261010). The estimated cost is
+  about $92, and the hard stop is `--budget 120`.
+- **Primary analysis** (`analyze_winner_check.py`). Each arm's per-task score is the mean of its 2 replicates, and
+  d_t = W_t − D_t.
+  - **G-primary:** certify "W is not ≥ 10 points better than D" if and only if the one-sided 95% upper bound
+    (paired t over tasks) on mean(d) is below 0.10.
+  - **G-control, required for G-primary to be informative:** the one-sided 95% lower bound on mean(O − D) is above
+    0. If the control fails, the leg is reported as **uninformative**, whatever G-primary says.
+- **Expected power.** In simulation, with W truly equal to D, the chance of certifying is about 0.94. That simulation
+  ignores prompt × task interaction, so real power may be lower.
+
+### Leg M: Gmail winner's-curse test
+
+- **Arms.** G_14, which was the top G prompt in September at 0.70 against the default's 0.60, an **in-sample lead of
+  +10 points**. It is compared with the Gmail default anchor.
+- **Tasks.** The 30 Gmail tasks of the 2026-10-09 first-run pilot. None of them was used to select G_14.
+  - **G_14 data.** Its 2 pilot runs per task are already collected (uncapped; a frozen file).
+  - **New runs.** The default runs 2 × 30 = 60 new episodes (`data/winner_check_gmail/`), estimated at about $5 (hard stop `--budget 8`).
+- **Scoring.** Both arms are scored at the 30-step rescore, the same rule as GLK30, because the pilot ran before the
+  cap fix.
+- **Analysis.** d_t = G14_t − D_t (per-task means of 2 runs each).
+  - **"Lead reproduced"** if the one-sided 95% lower bound of mean(d) is at least 0.10.
+  - **"Lead shrank below its in-sample size"** if the one-sided 95% upper bound is below 0.10.
+  - **Otherwise inconclusive.** With 30 tasks, power is modest; this is disclosed now.
+- **Confounds, disclosed now.** The two arms ran one or more days apart. The as-collected (uncapped G_14) analysis is
+  reported only as a secondary, labelled confounded.
+
+### Leg N: Gmail noise re-check (drift)
+
+- **Design.** 30 historical G repeat cells, randomly sampled with seed 20261011, each run twice now: 60 episodes (hard stop `--budget 8`),
+  about $6 (`data/noise_recheck_gmail/`). In September those cells disagreed in 3 of 30.
+- **Purpose.** The pilot's G_14 rerun disagreement was 33%, against 10.3% in September. This leg tests whether
+  noise has changed: an exact binomial test of the current disagreement against 0.103, plus a paired per-cell
+  comparison.
+- **Reading.** It is descriptive only. A raised rate is reported as possible provider drift and goes in the paper's
+  limitations.
+
+### Decision rules for the paper
+
+- **G-primary certified and G-control holds:** the claim "in a pre-registered held-out test, the search's best
+  prompt was not 10+ points better than the default, while a prompt with a real advantage was detected" moves
+  from exploratory to confirmed, for GitLab and this model.
+- **Leg M reads "shrank":** the winner's-curse claim is confirmed for Gmail at the +10 scale. **"Reproduced"**
+  overturns it, and the paper must say so. **Inconclusive** leaves it exploratory.
+- **Every leg is reported in full, whatever the outcome.** No leg is re-run or extended without a new amendment.
+
+### Order and stopping
+
+- **Run order:** Leg N, then Leg M (both on the Gmail server, one worker each, run one after the other to avoid
+  load confounds), then Leg G (GitLab, `--workers 4`, run alone).
+- **Each leg's `--budget`** is its hard stop. A leg that stops on budget is reported as partial, and its primary
+  analysis is not run.
+
+### Pre-registration 13, Amendment 1 — sleep-spanning episodes (registered 2026-10-10, before any Leg N, M or G outcome was examined)
+
+- **What happened.** The MacBook ran on battery and went into clamshell sleep. `pmset` logs a "Clamshell Sleep"
+  at 09:55 local time on 2026-10-10, and `caffeinate` does not prevent lid-close sleep. Episodes in flight across
+  a sleep fire their clock late.
+  - **Leg N:** 6 `ok` records have `wallclock_s` far above the 180 s clock, up to 8,673 s.
+  - **Leg M:** one such episode was already caught as an `infra_error` and retried automatically.
+  - Only wall-clock times and statuses were inspected to find these. No success, disagreement or arm-level outcome
+    was looked at.
+- **Rule, for every leg.** An `ok` record with `wallclock_s > timeout_s + 60 s` is an infrastructure artifact.
+  - It is moved verbatim to `<log>/archive/worker_<w>.sleep_spanning.jsonl` by
+    `experiments/growing_bandits/retrospective/archive_sleep_spanning.py`, and its queue item is re-run.
+  - Re-runs come out of the same leg's `--budget`.
+  - Archived records are counted and reported, never analysed.
+- **Step-cap note, recorded now.** With the cap enforced, browser-use stops at 31 history steps, not 30, because
+  its final step is counted too. Nothing ran past 31 in Legs N or M. The registered 30-step rescore (steps ≤ 30)
+  scores 31-step episodes as failures in Legs G and M, as registered. Leg N uses raw success.
+- **Order change.** Leg G runs next, as the chain already has it. Leg N's re-runs follow Leg G, so that two
+  servers never run together. Sleep-spanning records in Leg G are handled the same way after it finishes.
+
+## Pre-registration 14: a positive control that covers every Leg G task (registered 2026-10-10, before any study episode)
+
+*Branch `paper`. Pre-registration 13's Leg G was **uninformative**: its positive control `GL_anchor_oracle` carries
+answers for only 20 of the 110 tasks (`docs/growing_bandits/PREREG13_RESULTS.md`). This study re-runs **only the
+control**, using an answer key that covers all 110 tasks, against a fresh default arm, on the same 110 tasks. It does
+not re-run W and does not change Leg G's registered reading. It adds the missing evidence that this task set and
+design could detect a real advantage. Settings are unchanged: `gpt-5.4-mini` at low effort, the same agent framework,
+isolated resets, the 30-step cap enforced, 600 s clock.*
+
+### The new control arm (built before registration)
+
+- **`GL_oracle_full`** is generated mechanically by `experiments/growing_bandits/retrospective/build_full_oracle.py`
+  (sha256 fe0d44c1…), in three steps:
+  1. For every one of the 140 bank tasks, apply the benchmark's own `solve_task_<id>` from `sanity_check_real.py` to
+     the seed state.
+  2. Diff the result against the seed state.
+  3. Write one answer-key line per task: the exact instruction, then the exact item ids and final values.
+- **One prompt for both stages.** The same arm, byte-identical pool file (`pools/oraclefull.yaml`, 59,570
+  characters, about 14,900 tokens, all 140 entries), is used in the pilot and in the study. No solver failed and no
+  diff was empty.
+- **Pilot, on the 30 block-A tasks only** (disjoint from the 110; not study data). One episode per task, gate
+  ≥ 0.80 at the 30-step rescore. The old oracle scored 0.867 on these tasks and the default 0.733.
+  - **v1** (the old oracle's header "Save once, then finish. Do not repeatedly verify", and its vector):
+    **0.633, fails** ($1.91; `data/oracle_full_pilot_v1`, `logs/oracle_full_pilot_v1`). The agent ignored the
+    key: it searched for items itself and finished without checking.
+  - **v2** (`HEADER_V2`: look up the exact line, use the listed ids, reopen and check every value before finishing;
+    `VECTOR_V2`: agency 0, verification 2): **0.800 = 24/30, passes the gate exactly** ($2.33).
+  - v2 is frozen here. It was revised once, on block-A tasks only. No study task has been run with any O2 version.
+  - **Disclosed now:** v2 sits at the gate, and on block A it is about +7 points over the old default rate, not the
+    old oracle's +13. On the harder study tasks (the Leg G default is 0.40) there is more room, but the margin is
+    not guaranteed.
+
+### Design
+
+- **Arms:**
+  - O2 = `GL_oracle_full`.
+  - Dnew = `GL_anchor_baseline`, whose prompt sha must match Leg G's.
+- **Tasks:** the 110 Leg G tasks (`data/winner_check_gitlab/manifest.json`).
+- **Episodes:** 110 tasks × 2 arms × 2 replicates = 440, in seeded order (seed 20261012), with arms shuffled within
+  each task (`data/control_check_gitlab/`).
+  - **Cost.** The prepare script's conservative estimate is $55, at $0.15 per O2 episode; the pilot measured $0.078.
+    Expected spend is about $40–45. The hard stop is `--budget 60`, which is below the script's recommended $75. A
+    run that stops on budget is reported as partial, and its primary analysis is not run.
+  - The run uses `--workers 4` on the GitLab profile, alone on the machine, with the Mac on AC power and the lid open.
+- **Amendment 1 of Pre-registration 13 applies:** sleep-spanning `ok` records are archived and re-run.
+
+### Analysis (`analyze_control_check.py`, sha256 993928c9…, frozen at registration)
+
+- **Scoring:** every record is scored at the 30-step rescore. An arm's per-task score is the mean of its 2
+  replicates.
+- **PRIMARY:** the one-sided 95% lower bound (paired t over 110 tasks) of mean(O2 − Dnew). **The control holds iff this
+  lower bound is > 0.**
+- **Combined reading with Leg G**, which was registered here before any O2 study episode:
+  - **Control holds, and Leg G's registered upper bound (+0.034) is < 0.10:** the paper may state "on 110 held-out
+    GitLab tasks, the search's winner was not ≥ 10 points better than the default (Pre-reg 13), and on the same tasks
+    a prompt with a real advantage was detected (Pre-reg 14, next day)." The paper must disclose the two-session
+    design.
+  - **Control fails:** Leg G stays uninformative and the claim stays exploratory. No further control run without a
+    new registration.
+- **SECONDARY, reported whatever the outcome:**
+  1. A task-cluster bootstrap of the primary.
+  2. **Day-to-day drift:** Dnew − Dold, where Dold is Leg G's default arm, as the mean with a 90% CI. If the CI
+     excludes 0, the combined reading carries a drift caveat.
+  3. **Exploratory:** O2 − Dnew, split by whether the task was in the old oracle's cookbook.
+  4. Per-arm operations.
+- **Power (stated now):** with D at about 0.40 and a per-task sd of the difference about 0.31 (Leg G's O − D, se 0.029),
+  the lower bound exceeds 0 with probability ≈ 0.9 if the true O2 − D ≥ +0.087, and ≈ 0.5 at +0.049.
+  - On its 20 covered tasks the old oracle was +0.10. The new key also covers the harder tasks, where the default sits
+    at 0.32, so more room is expected there.
+  - A control below about +0.05 would likely fail, and that would be reported as is.
+
+## Pre-registration 15: Gmail answer-key headroom (registered 2026-10-11, before any study episode)
+
+*Branch `paper`. Pre-reg 14 found that a full answer key lifts `gpt-5.4-mini` only +5.5 pp on GitLab: there is little
+room for any prompt there. For Gmail it is unknown whether the searches found nothing because there was nothing to
+find (small headroom) or because they missed real gains (large headroom). This study measures Gmail's answer-key
+headroom H: how much a prompt that contains the exact answer to every task beats the default. Settings are Gmail's
+registered ones: profile `gmail`, `gpt-5.4-mini` at low effort, 180 s clock, 30-step cap, isolated resets.*
+
+### Arms (built before registration)
+
+- **O = `GM_oracle_full`.** Generated mechanically by `experiments/growing_bandits/retrospective/build_gmail_oracle.py`
+  (sha256 0cd0e244…).
+  - For each of the 60 Gmail real tasks, the benchmark's own `solve_task_<id>` (`sanity_check_real.py`) is applied to
+    the seed state and diffed against it.
+  - Each entry is one answer-key line: the exact instruction, then the exact emails (id, subject, sender), labels,
+    filters and settings, with their final values.
+  - The header is the GitLab v2 procedure adapted to Gmail's URL routes, with the same vector (`VECTOR_V2`).
+  - Size: 60 entries, 17,233 characters, about 4,300 tokens. No solver failed and no diff was empty.
+  - It renders through `configs/template_gitlab.jinja`, which is byte-identical to `template.jinja` when the guidance
+    is empty, so O differs from D only in guidance and vector.
+- **D = `GM_anchor_baseline`**, the Gmail default. Its rendered prompt sha256 is ae8c7c7f…, the same prompt as Pre-reg
+  13 Leg M's default.
+- **Not piloted.** All 60 Gmail real tasks are study tasks, so there is no disjoint set to pilot on. If the agent
+  ignores the key (as GitLab v1 did), H **underestimates** the true answer-key headroom. H is therefore a lower
+  bound on what a prompt could add.
+
+### Design
+
+- **Episodes:** O and D × the 60 Gmail real tasks × replicates {0, 1} = **240**. Tasks are in a seeded order (seed
+  20261013), and a task's 4 episodes are in a seeded order (`data/headroom_gmail/`, manifest sha256 bf2ccf89…;
+  `prepare_headroom_gmail.py` sha256 313e8152…).
+- **Run:** `--workers 4`, `--budget 30` (hard stop). Estimate $21.60. The Mac is on AC with the lid open. A run that
+  stops on budget is reported as partial, and its primary analysis is not run.
+- **Amendment 1 of Pre-reg 13 applies:** sleep-spanning `ok` records are archived and re-run.
+- **Collector:** gains `agent_overrides` (a manifest may swap the model) and records `llm_model` on every attempt. This
+  manifest has no overrides; the agent is the profile's.
+
+### Analysis (`analyze_headroom_gmail.py`, sha256 41fdc32e…, frozen at registration)
+
+- **Scoring:** the 30-step rescore. An arm's per-task score is the mean of its 2 replicates.
+- **PRIMARY:** H = mean over the 60 tasks of O_t − D_t, paired t, two-sided 90% CI.
+  - **large** iff the lower bound ≥ 0.10;
+  - **small** iff the upper bound < 0.10;
+  - **unresolved** otherwise.
+  - The 0.10 threshold is the margin used throughout: the search winner's in-sample lead (Leg M) and Leg G's
+    certification margin.
+- **Readings, fixed now:**
+  - **large:** Gmail had at least 10 pp of headroom, and the search's winner captured none of it held out (Leg M,
+    0.0 pp). The searches *missed* available gains; the pool, not the ceiling, was the problem. This motivates a
+    realistic-pool study (step 2) on Gmail.
+  - **small:** Gmail, like GitLab, has under 10 pp of headroom for this agent. "There was little to find" holds on
+    both apps.
+  - **unresolved:** report the point estimate and interval; no claim.
+- **SECONDARY, reported whatever the outcome:**
+  1. A task-cluster bootstrap of H (10,000 resamples).
+  2. **Capture:** Leg M's held-out G_14 lead (0.000) against H on Leg M's 30 tasks.
+  3. **Default drift:** D now minus Leg M's default (same prompt) on those 30 tasks, mean with 90% CI. Disclosed:
+     Leg M ran 1 worker, this study 4. Both arms here share the load, so H is unaffected.
+  4. Per-arm operations and rerun disagreement.
+- **Power (stated now):** the per-task sd of O − D is assumed about 0.35 (GitLab's was 0.30), so the se is about
+  0.045 and the CI half-width about 0.075.
+  - True H = 0.25: P(large) ≈ 0.95. True H = 0.20: P(large) ≈ 0.7.
+  - True H = 0.00: P(small) ≈ 0.7. True H = 0.10: neither reading is likely, and the study would most likely end
+    unresolved.
+
+## Pre-registration 16: Gmail answer-key headroom under Claude Haiku 4.5 (registered 2026-10-11, before any study episode)
+
+*Branch `paper`. Pre-reg 15 found Gmail's answer-key headroom "small" for `gpt-5.4-mini` (H −1.7 pp). Exploratory
+diagnosis: that agent referred to the key in only 33 of 120 episodes. This study asks whether an agent from another
+model family uses the answers, and whether that changes the headroom. Everything is Pre-reg 15's except the model.*
+
+### Changes from Pre-reg 15 (only these)
+
+- **Model:** `claude-haiku-4-5-20251001` (provider anthropic), set through the manifest's `agent_overrides`.
+  - Run with browser-use's `use_thinking` **off**. With it on, Haiku inlines its action JSON into the thinking field.
+    In smoke runs most steps then fail browser-use's output schema, and no tokens are counted, so the budget guard
+    would be blind.
+  - With it off, every step was valid in 10 smoke episodes, all on non-study tasks: GitLab block A and Gmail
+    function-tasks.
+  - The adapter (`src/cold_start/tasks/webarena.py`, sha256 181034ef…) gains a `use_thinking` option. Its default
+    (None) leaves every earlier configuration unchanged.
+- **Queue seed:** 20261014 (`data/headroom_haiku_gmail/`, manifest sha256 6a63246c…; `prepare_headroom_haiku.py`
+  sha256 594ffd5b…).
+- **Unchanged:**
+  - The same two prompt files, byte-identical to Pre-reg 15's (the test asserts this).
+  - The same 60 tasks, 2 replicates, profile `gmail`, 180 s clock and 30-step cap: 240 episodes.
+- **Run:** `--workers 4`, `--budget 35` (hard stop), estimate about $22, on AC with the lid open. Amendment 1 of
+  Pre-reg 13 applies.
+- **Disclosed:** Haiku is slower per step than `gpt-5.4-mini` (about 6 s against 4 s in smoke runs), so the 180 s clock
+  binds sooner. It binds equally on both arms.
+
+### Analysis (`analyze_headroom_haiku.py`, sha256 b4b214d4…, frozen at registration)
+
+- **PRIMARY:** exactly Pre-reg 15's rule, computed by its frozen analyzer on this study's logs. H is the mean over the
+  60 tasks of O − D, with a two-sided 90% paired-t CI.
+  - **large** iff the lower bound ≥ 0.10;
+  - **small** iff the upper bound < 0.10;
+  - **unresolved** otherwise.
+- **Readings, fixed now:**
+  - **large:** an agent from another family gains at least 10 pp from the answers. The flat Gmail result is specific to
+    `gpt-5.4-mini`'s weak adherence, and a realistic-pool study on Haiku becomes the next step.
+  - **small:** the low Gmail ceiling holds across two model families.
+  - **unresolved:** no claim.
+- **SECONDARY, reported whatever the outcome:**
+  1. Pre-reg 15's secondaries, computed by its analyzer.
+  2. **Model contrast:** H_haiku − H_mini per task, paired over the 60 tasks, mean with a 90% CI. This is
+     cross-session and descriptive: D drifted by +15 pp between sessions in Pre-reg 15.
+  3. Arm levels (O, D) under each model.
+  4. **Key use** in the answer-key arm under each model:
+     - the reference rate (model outputs match `/answer[ -]key|the key\b/i`);
+     - the direct-URL rate (they match `/#\/email\/\d|#\/settings\//`);
+     - success within each group.
+     - Haiku has no thinking field, so the reference rate is less sensitive for it. The direct-URL rate is
+       behavioural and comparable across models.
+
+### Pre-registration 16, Amendment 1: budget only (registered 2026-10-11, after 10 of 240 episodes)
+
+- **What happened:** the run started at 18:23 PDT and was stopped by hand at 18:30.
+- **Why:** the first 5 episodes cost about $0.26 each, against the registered assumption of $0.08–0.10. At that rate
+  the $35 hard stop would end the run partway, and under the registration a stopped run is partial and gets no
+  primary analysis.
+- **Change:** `--budget 35` becomes **`--budget 75`**. Nothing else changes: queue, prompts, model, settings and
+  analyzer (sha256 b4b214d4…) are all as registered.
+- **Disclosed:** 10 episodes were completed and seen before this amendment, costing $2.63. The decision to stop was
+  taken after 5; the workers finished 5 more before the stop took effect. A first version of this amendment
+  (commit 951c8cf) wrongly said 5.
+  - Results at the 30-step rescore:
+    - `task_e18`: O 0/2 (both 30 steps, clock; the agent repeatedly toggled a setting while trying to verify it);
+      D 2/2.
+    - `task_e16`: O 1/2, D 1/2.
+    - `task_h9`: O 1/1, D 0/1.
+  - The amendment changes only the budget, which does not depend on these outcomes. All 10 records stay in the log
+    and the analysis; nothing is re-run.
+
+### Pre-registration 16, Amendment 2: credit-exhaustion records are infrastructure artifacts (registered 2026-10-11, before any analysis)
+
+- **What happened:**
+  1. The 18:30 hand-stop of Amendment 1 killed only the collector's parent process. Its 4 workers kept running the
+     registered queue under the original $35 stop until they were killed at 18:31, 2 records later (12 in all).
+  2. The restart under `--budget 75` (18:32) ran normally until **18:35 PDT, when the Anthropic account's prepaid
+     credit ran out**. From then on every model call returned HTTP 400 ("Your credit balance is too low…").
+  3. The agent gave up within seconds on each episode. The collector did not recognise that message as a provider
+     error, so it logged each as an `ok` task failure. It burned through the rest of the queue by 18:43: 240
+     records, of which **224 carry the credit refusal**.
+- **Rule, by the logic of Pre-reg 13 Amendment 1:** a record whose text contains `credit balance is too low` was never
+  a real episode. It is archived verbatim to `logs/headroom_haiku_gmail/archive/worker_<w>.credit_exhausted.jsonl` by
+  `archive_credit_exhausted.py` (sha256 1119edfc…) and re-run with the same command once credit is restored.
+- **Archiving order:** done at 18:45 PDT, before this text was written. It reads only the refusal text, not outcomes,
+  and is reversible. Result: 224 archived, 16 kept.
+  - Of the 4 archived records that made some model calls before the refusal, all are re-run.
+- **Collector fix (collect.py sha256 1fb937b6…):** `credit balance is too low` joins `API_ERROR_MARKERS`. A future
+  exhaustion is then classified as a provider error, gets the registered backoff, and ends in `provider_down` instead
+  of logging task failures.
+- **Disclosed:**
+  - The 16 kept records are the 10 listed in Amendment 1 plus 6 completed before 18:35.
+  - During the diagnosis, an aggregate tally of (steps, success) over all records after 18:33 was printed. It mixed
+    those 6 with refused records; their individual outcomes were not examined.
+  - No analysis has been run. Nothing else changes: queue, prompts, model, analyzer (sha256 b4b214d4…), and the $75
+    hard stop.

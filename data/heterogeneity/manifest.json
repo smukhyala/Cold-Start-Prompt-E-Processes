@@ -1,0 +1,692 @@
+{
+  "seed": 20260928,
+  "block_seed": 20260929,
+  "bundle_max_words": 25000,
+  "real_tasks_sha256": {
+    "gitlab": "d612612475df646bd4e9fc32f62f8798ca76e85e04c1979d4ee3ba012f39d3f7",
+    "gmail": "1e6606b186c5515c0cd9582019d547c15afd69415fb639a9202950ccb135133b"
+  },
+  "entity_set_sha256": {
+    "gitlab": "e79da3d7fc97f19ae347a799eae67fbc505c5ee520be0ef8cade44ffc836de2f",
+    "gmail": "05500a4bab68f7afb799f4c122e091564de91a75c2f516d8b9aabdb59cfae7c0"
+  },
+  "bundles": {
+    "gitlab": [
+      {
+        "path": "apps/user-manuals/gitlab/user/project/labels.md",
+        "sha256": "72dc6606be0044839cc01898182097937b9697699d2b087b02f14cb35e1afdf0",
+        "words": 3501,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/project/issue_board.md",
+        "sha256": "50bf8189c3e17bbccfd0c7802bc8068456cab65357037149b73e997971b0f801",
+        "words": 4481,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/project/milestones/_index.md",
+        "sha256": "00ac088bee445ca91e1bc5d8f6b3d49553e8469f9d5502156e33950f2983fded",
+        "words": 1832,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/project/milestones/burndown_and_burnup_charts.md",
+        "sha256": "782ed0596ec00b21cb88eb771024b8952e32bee0edb6d1e8e564e622db19be89",
+        "words": 1633,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/project/issues/managing_issues.md",
+        "sha256": "cbc030f484f53afc17cc1df7c249c8a7a1132cd9401099af9c050b2461a655e3",
+        "words": 5217,
+        "truncated": true
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/group/epics/_index.md",
+        "sha256": "08cbab2caa0bf36a27c5d58b8ec37cbe9e5b78cfb5fa0a42ef76b8a7114159d2",
+        "words": 719,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/group/epics/epic_boards.md",
+        "sha256": "696cac7b55161627371dd2ec949e204cbaf2aeeee61bd3e0b06367b580d8405d",
+        "words": 1467,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/group/epics/linked_epics.md",
+        "sha256": "a845982c909d3284aacc0de02f9989ee1fba94ebeaa3ab8e1ff6e7afc4b420e3",
+        "words": 961,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/group/epics/manage_epics.md",
+        "sha256": "0621e3bbbc962c6043f223752409328c7912985c46cbfb787fffb5791f110ca3",
+        "words": 1019,
+        "truncated": true
+      },
+      {
+        "path": "apps/user-manuals/gitlab/user/group/iterations/_index.md",
+        "sha256": "5ca058790d64b31f3c87c6e39501e61de4ac21c4c36cd556a507469638648ae1",
+        "words": 2513,
+        "truncated": false
+      }
+    ],
+    "gmail": [
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/10079371-learn-about-smart-features-controls-for-google-workspace-other-google-products.md",
+        "sha256": "15c272b5ca70082a1a741162b8b66ed7074ea2ef2a32e7f251e65be05ee06d52",
+        "words": 2336,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/1075549-change-gmail-notifications.md",
+        "sha256": "f71d739daa86cc08404ce23068d5c36002ff8140e013e0a63e2fb340a5c8d8a0",
+        "words": 309,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/10957-automatically-forward-gmail-messages-to-another-account.md",
+        "sha256": "d32585957f89f30fde4605a0489a1c2a19e69c49a8599c127c174d3ceb0b6066",
+        "words": 686,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/1306849-set-up-use-gmail-offline.md",
+        "sha256": "68371a4488d452fced2a8447fe8bf3a74dac3be74e803385144bd2428cd5cb06",
+        "words": 616,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/13273-read-gmail-messages-on-other-email-clients-using-pop.md",
+        "sha256": "a1106bd7948fffd23377b20b1b55f04fa124b2987e418369702ae40a0274abeb",
+        "words": 1311,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/145919-turn-images-on-or-off-in-gmail.md",
+        "sha256": "159b8e3b715692d38390c861c73f7432a8a644c26d8bea4007bc4ff4ffe59ab8",
+        "words": 300,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/15588592-add-an-outlook-account-to-gmail.md",
+        "sha256": "43a250cc47a76d8f8adf7fd6caaa5dc1b05bfd2ba0ba9b1f16732ddf99919e03",
+        "words": 235,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/16604719-learn-about-upcoming-changes-to-gmailify-pop-in-gmail.md",
+        "sha256": "84821d720874fb436585a011ba21e1304544441a4912009ec3b5649c3eaa1b1e",
+        "words": 504,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/175365-best-practices-for-forwarding-email-to-gmail.md",
+        "sha256": "5ea0070bf94cd3b3bd27b13033af5ab22c66fef72e03ed1d168bb20c4082c058",
+        "words": 849,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/21289-add-another-email-account-on-your-computer.md",
+        "sha256": "3bd629ab2732bc226c759552fbae31d17246eb517724804e3069542ed51246d5",
+        "words": 803,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/settings-and-configuration/6078445-add-another-email-account-in-the-gmail-app.md",
+        "sha256": "0a65069fa91e5dc480ed3309bcd5d892dcd1dc3cc2f4cd05af942f26348bae5b",
+        "words": 384,
+        "truncated": true
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/112508-change-your-gmail-background.md",
+        "sha256": "23de2c673be8bfb4e748b87e7ebe2aeb468f5fd440aaca61ac135a878473395f",
+        "words": 129,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/118708-create-manage-labels-in-gmail.md",
+        "sha256": "8867262293c9a144ad390330f45b339dbb95aa9ae148550565a29849a169f1fd",
+        "words": 559,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/12516-mark-messages-as-read-or-unread.md",
+        "sha256": "21f17511765c35ec4cb9cdbf023e8e4598a85d235bd206db04c2c07cd982b9b3",
+        "words": 290,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/15621070-manage-your-subscriptions-in-gmail.md",
+        "sha256": "74aac7f88411c71d5e467aa8a08d1f3354982ba99e40299e94b5055031d279f8",
+        "words": 339,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/16356082-use-the-right-click-menu-in-gmail.md",
+        "sha256": "e1a3a08eb67721584518ceb30385e1de14b9a2265099cfbfcabf0e3d333ddd6b",
+        "words": 220,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/16594169-mute-gmail-messages.md",
+        "sha256": "30941a755ade36b018ac19ec2b567cedbe333756616b266554035ed802138100",
+        "words": 212,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/18522-change-your-gmail-inbox-layout.md",
+        "sha256": "bf48a80d0b79f3f7df6edcd72c66ee53603ef76a49d788ddb6615db7e1f1701b",
+        "words": 366,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/186543-importance-markers-in-gmail.md",
+        "sha256": "c51cb281ef13ec9c9c2c40bc48a30c92fd056d1b1d8653b1dfb07c327af9bd14",
+        "words": 344,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/2473038-buttons-in-your-gmail-toolbar.md",
+        "sha256": "e7825a0878e7396c7af83023d987a4ceb7a262a67ccf7e718383d65230de0e3e",
+        "words": 511,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/3094499-organize-your-emails-into-categories.md",
+        "sha256": "e575696be1e20d6e413c7452bae44764616cf352aead745e49a3035e5fcacc07",
+        "words": 531,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/5900-group-emails-into-conversations.md",
+        "sha256": "cbd1a74d98a5f0495307e6731c873529602cad8a361a839d26f5c73403ac586d",
+        "words": 323,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/5904-star-emails-in-gmail.md",
+        "sha256": "4a3d1cef83ffca256a5c0d13a05ebe6c30112b4146fedf4680ca9efcfe944b28",
+        "words": 268,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/6576-archive-gmail-messages.md",
+        "sha256": "ed45333d09c48cad55a606fa821ab422f013ca66e2bd54d62fb2aee094cfa7a0",
+        "words": 207,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/6579-create-rules-to-filter-your-emails.md",
+        "sha256": "f270b5fa769383bfb16dd5c388397df19875c3651542dd544df9ec355a79c981",
+        "words": 404,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/6593-search-in-gmail.md",
+        "sha256": "48a2ee08597ca0397d98cd26da0e2dba43bd971fb49a6c539bab8d75667ab979",
+        "words": 1147,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/6594-keyboard-shortcuts-for-gmail.md",
+        "sha256": "cc7068e39f430733fe2839eb51a78f9e86febb30837621e1b6d4314304c5ecf1",
+        "words": 1212,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/7190-refine-searches-in-gmail.md",
+        "sha256": "1c8b8d6eaed7c9e7d5864a698114252d393f18dbacc1b58b1ed946800db64225",
+        "words": 715,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/7401-delete-messages-in-gmail.md",
+        "sha256": "0cad5961acf00bdbda3ec6be70a951c696b709ca2c0739e3eb0a7369c5f042eb",
+        "words": 517,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/organize-and-manage/7622010-snooze-emails-until-later.md",
+        "sha256": "a82664cf5443c0de2274e4890bee47aaa6e855179382cb356f6e0b8602d7276c",
+        "words": 39,
+        "truncated": true
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/10960345-create-branded-emails-with-customized-layouts.md",
+        "sha256": "7319629af16922dd8acac492bd50fc03c11df6610a7cc8f5122539f52837f095",
+        "words": 1258,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/11243118-send-personalized-emails-with-mail-merge.md",
+        "sha256": "85e74669719b201f997ff229c90d48b773e705b824e98ae66b13f45ec73252ba",
+        "words": 1426,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/14080429-reply-to-emails-with-emoji-reactions.md",
+        "sha256": "3ec827079551d68c5e90e982155e9f66d651be6c159220145037dcfa350adad2",
+        "words": 444,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/14864208-create-a-template-in-gmail.md",
+        "sha256": "214852b18da6ccd011128755465d069853836e0933375f17f89507e41ea4d217",
+        "words": 368,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/15162918-forward-an-email.md",
+        "sha256": "44234a796e22661830fb809821dd5b47c984a205f9218fd98bcd539e78383505",
+        "words": 112,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/15464222-use-suggested-replies-in-gmail-workspace-labs.md",
+        "sha256": "83e4e6307bdfe67edddfe8826cc45aa6c387bcf0b206ff9029a2fb4c19af9344",
+        "words": 663,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/15464729-use-suggested-replies-in-gmail.md",
+        "sha256": "30bdbd8f01d4c2576e0b96b5f9c42627b1bed0a6dd993caaeea8371614353df9",
+        "words": 413,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/16864784-offer-times-to-meet-in-a-gmail-message.md",
+        "sha256": "83d2be14a3bd4e84bc637c3545e94970eca715da08b242669ecb868848900448",
+        "words": 387,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/16865189-suggest-times-to-meet-with-gemini-in-gmail.md",
+        "sha256": "234f6ecff06eb5d0db0f03d420c15ea45d2bc39b151e53b8ce94b3f2b31bebef",
+        "words": 694,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/16865501-insert-an-event-or-booking-page-in-a-gmail-message.md",
+        "sha256": "5fe7ce725bb3b8886e99245aa351ea622d725ec253000570b517fc353461643d",
+        "words": 371,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/22370-send-emails-from-a-different-address-or-alias.md",
+        "sha256": "2e6c29b2b3baa6605ec6beddfbd000133224ccd1e1e3dacde3edc8918a653d50",
+        "words": 1111,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/2487407-send-google-drive-attachments-in-gmail.md",
+        "sha256": "df2a4b4ca22fc1bdb312aa99b436d3498adc49d8ead18ad83c21268da86d154d",
+        "words": 446,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/25922-send-an-automatic-reply-when-youre-out-of-office.md",
+        "sha256": "9570d7d6904a0a1ed086018ca7bfd8ac37af6d6bc6f74b8e9411924870ccceab",
+        "words": 347,
+        "truncated": false
+      },
+      {
+        "path": "apps/user-manuals/gmail/compose-and-send/2819488-send-or-unsend-gmail-messages.md",
+        "sha256": "1a276dcc095341155aee734577a304354eb61c410ce5890ed6a81c7a25e1c404",
+        "words": 293,
+        "truncated": true
+      }
+    ]
+  },
+  "gitlab_task_bank": [
+    "task_e1",
+    "task_e2",
+    "task_e3",
+    "task_e4",
+    "task_e5",
+    "task_e6",
+    "task_e7",
+    "task_e8",
+    "task_e9",
+    "task_e10",
+    "task_e11",
+    "task_e12",
+    "task_e13",
+    "task_e14",
+    "task_e15",
+    "task_e16",
+    "task_e17",
+    "task_e18",
+    "task_e19",
+    "task_e20",
+    "task_m1",
+    "task_m2",
+    "task_m3",
+    "task_m4",
+    "task_m5",
+    "task_m6",
+    "task_m7",
+    "task_m8",
+    "task_m9",
+    "task_m10",
+    "task_m11",
+    "task_m12",
+    "task_m13",
+    "task_m14",
+    "task_m15",
+    "task_m16",
+    "task_m17",
+    "task_m18",
+    "task_m19",
+    "task_m20",
+    "task_h1",
+    "task_h2",
+    "task_h3",
+    "task_h4",
+    "task_h5",
+    "task_h6",
+    "task_h7",
+    "task_h8",
+    "task_h9",
+    "task_h10",
+    "task_h11",
+    "task_h12",
+    "task_h13",
+    "task_h14",
+    "task_h15",
+    "task_h16",
+    "task_h17",
+    "task_h18",
+    "task_h19",
+    "task_h20",
+    "task_h21",
+    "task_h22",
+    "task_h23",
+    "task_h24",
+    "task_h25",
+    "task_h26",
+    "task_h27",
+    "task_h28",
+    "task_h29",
+    "task_h30",
+    "task_h31",
+    "task_h32",
+    "task_h33",
+    "task_h34",
+    "task_h35",
+    "task_h36",
+    "task_h37",
+    "task_h38",
+    "task_h39",
+    "task_h40",
+    "task_h41",
+    "task_h42",
+    "task_h43",
+    "task_h44",
+    "task_h45",
+    "task_h46",
+    "task_h47",
+    "task_h48",
+    "task_h49",
+    "task_h50",
+    "task_h51",
+    "task_h52",
+    "task_h53",
+    "task_h54",
+    "task_h55",
+    "task_h56",
+    "task_h57",
+    "task_h58",
+    "task_h59",
+    "task_h60",
+    "task_h61",
+    "task_h62",
+    "task_h63",
+    "task_h64",
+    "task_h65",
+    "task_h66",
+    "task_h67",
+    "task_h68",
+    "task_h69",
+    "task_h70",
+    "task_h71",
+    "task_h72",
+    "task_h73",
+    "task_h74",
+    "task_h75",
+    "task_h76",
+    "task_h77",
+    "task_h78",
+    "task_h79",
+    "task_h80",
+    "task_h81",
+    "task_h82",
+    "task_h83",
+    "task_h84",
+    "task_h85",
+    "task_h86",
+    "task_h87",
+    "task_h88",
+    "task_h89",
+    "task_h90",
+    "task_h91",
+    "task_h92",
+    "task_h93",
+    "task_h94",
+    "task_h95",
+    "task_h96",
+    "task_h97",
+    "task_h98",
+    "task_h99",
+    "task_h100"
+  ],
+  "gitlab_task_subset_60": [
+    "task_e1",
+    "task_e2",
+    "task_e3",
+    "task_e4",
+    "task_e5",
+    "task_e6",
+    "task_e7",
+    "task_e8",
+    "task_e9",
+    "task_e10",
+    "task_e11",
+    "task_e12",
+    "task_e13",
+    "task_e14",
+    "task_e15",
+    "task_e16",
+    "task_e17",
+    "task_e18",
+    "task_e19",
+    "task_e20",
+    "task_m1",
+    "task_m2",
+    "task_m3",
+    "task_m4",
+    "task_m5",
+    "task_m6",
+    "task_m7",
+    "task_m8",
+    "task_m9",
+    "task_m10",
+    "task_m11",
+    "task_m12",
+    "task_m13",
+    "task_m14",
+    "task_m15",
+    "task_m16",
+    "task_m17",
+    "task_m18",
+    "task_m19",
+    "task_m20",
+    "task_h8",
+    "task_h12",
+    "task_h18",
+    "task_h19",
+    "task_h24",
+    "task_h25",
+    "task_h26",
+    "task_h37",
+    "task_h40",
+    "task_h49",
+    "task_h54",
+    "task_h67",
+    "task_h72",
+    "task_h77",
+    "task_h84",
+    "task_h89",
+    "task_h90",
+    "task_h93",
+    "task_h95",
+    "task_h100"
+  ],
+  "gitlab_block_a": [
+    "task_e1",
+    "task_e2",
+    "task_e3",
+    "task_e5",
+    "task_e7",
+    "task_e9",
+    "task_e11",
+    "task_e13",
+    "task_e14",
+    "task_e19",
+    "task_m2",
+    "task_m4",
+    "task_m5",
+    "task_m7",
+    "task_m8",
+    "task_m11",
+    "task_m12",
+    "task_m16",
+    "task_m18",
+    "task_m19",
+    "task_h8",
+    "task_h12",
+    "task_h18",
+    "task_h19",
+    "task_h26",
+    "task_h72",
+    "task_h77",
+    "task_h84",
+    "task_h89",
+    "task_h100"
+  ],
+  "gitlab_block_b": [
+    "task_e4",
+    "task_e6",
+    "task_e8",
+    "task_e10",
+    "task_e12",
+    "task_e15",
+    "task_e16",
+    "task_e17",
+    "task_e18",
+    "task_e20",
+    "task_m1",
+    "task_m3",
+    "task_m6",
+    "task_m9",
+    "task_m10",
+    "task_m13",
+    "task_m14",
+    "task_m15",
+    "task_m17",
+    "task_m20",
+    "task_h24",
+    "task_h25",
+    "task_h37",
+    "task_h40",
+    "task_h49",
+    "task_h54",
+    "task_h67",
+    "task_h90",
+    "task_h93",
+    "task_h95"
+  ],
+  "gitlab_stage_ends": {
+    "pilot": 389,
+    "block_a_with_replicates": 3059,
+    "last": 6119
+  },
+  "gmail_task_subset_30": [
+    "task_e2",
+    "task_e10",
+    "task_e11",
+    "task_e12",
+    "task_e13",
+    "task_e14",
+    "task_e15",
+    "task_e16",
+    "task_e19",
+    "task_e20",
+    "task_m3",
+    "task_m4",
+    "task_m7",
+    "task_m13",
+    "task_m14",
+    "task_m15",
+    "task_m16",
+    "task_m17",
+    "task_m18",
+    "task_m20",
+    "task_h6",
+    "task_h8",
+    "task_h10",
+    "task_h12",
+    "task_h13",
+    "task_h15",
+    "task_h16",
+    "task_h17",
+    "task_h19",
+    "task_h20"
+  ],
+  "bridge_source": {
+    "GMB_00": "GLG_26",
+    "GMB_01": "GLG_19",
+    "GMB_02": "GLG_39",
+    "GMB_03": "GLG_09",
+    "GMB_04": "GLG_01",
+    "GMB_05": "GLG_00",
+    "GMB_06": "GLG_06",
+    "GMB_07": "GLG_25",
+    "GMB_08": "GLG_13",
+    "GMB_09": "GLG_11",
+    "GMB_10": "GLG_03",
+    "GMB_11": "GLG_16",
+    "GMB_12": "GLG_18",
+    "GMB_13": "GLG_35",
+    "GMB_14": "GLG_17",
+    "GMB_15": "GLG_21",
+    "GMB_16": "GLG_43",
+    "GMB_17": "GLG_37",
+    "GMB_18": "GLG_10",
+    "GMB_19": "GLG_31"
+  },
+  "files": {
+    "bundles/gitlab.md": "98dc4b9fb56ce5ea4b32385b7e278f96998a90b548e023c98f3a0dc59ad8e70e",
+    "bundles/gmail.md": "dacadc05199707c3842c804e02c133f9d6d3fa2ea7bb3c02db0f2b1bed941ce3",
+    "k_generation_gitlab.json": "7297a92a769700118955c884d7c49773cb6bf1c389bad2e71df47ba6dcf52a35",
+    "k_generation_gmail.json": "2f43748075b16c42044499b932520a1f7e6fe00fc840b61efe255b11dc108a99",
+    "pools/GLG.yaml": "f463fc5cce8573f7728e3908a14aeda4c3735b0bce0b1099f68a4d47199ec00f",
+    "pools/GLK.yaml": "aa0bd7d831f41235d4fca7a2a2ae957c759b95cdcda1e83846156ae80e75e145",
+    "pools/GMK.yaml": "5ec8d43920ba04c6d4c3f5c223b99a47355bb7d56ce5b7bfcbfebc0007ffc7a1",
+    "pools/GMB.yaml": "184600cb44bb49bd3be4b81fdf297152616621a2c376e4baf397853296d34d79",
+    "pools/anchors_gitlab.yaml": "3eed1138206199426916317aff18eee6efc00c062bcc6fab1f15fdb1a17864df",
+    "pools/anchors_gmail.yaml": "9c8a214df0cc3649d8d37d6b717a74ac56ade82d10aaaefb133d37becdb6465d",
+    "gitlab/queue.jsonl": "2b87a9fee22f50787ad3911f5b99c20777c365183e3e08c60831d2b165aedbb9",
+    "gmail/queue.jsonl": "c36e27c397d48747d807e00784d7a3c1d40b5fcdffcd95467e6022a1c764f9a6",
+    "bridge/queue.jsonl": "e354a0949676b2265236ca7a8ae7f75ea810830b4290175f21cbecc373bc2eaf"
+  },
+  "browser_use_version": "0.13.1",
+  "webarena_infinity": {
+    "root": "/Users/sanjay/projects/BerkeleyProjects/Research/IanWaudbySmith/webarena-infinity",
+    "commit": "b3015d794b6ed8bc6fb48b95626e96d28c483904",
+    "dirty": true,
+    "note": null
+  }
+}
